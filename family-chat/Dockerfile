@@ -1,5 +1,7 @@
 FROM python:3.11-alpine
 
+RUN chmod a+x /run.sh
+
 WORKDIR /app
 
 # Install dependencies
@@ -17,3 +19,4 @@ RUN chmod a+x /run.sh
 EXPOSE 8099
 
 CMD ["/run.sh"]
+
