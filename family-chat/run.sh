@@ -1,9 +1,9 @@
-#!/bin/bash
+#!/bin/sh
 
-# Get options from config
-USERNAME1=$(bashio::config 'username1' 2>/dev/null || echo "Family Member 1")
-USERNAME2=$(bashio::config 'username2' 2>/dev/null || echo "Family Member 2")
-THEME=$(bashio::config 'theme' 2>/dev/null || echo "dark")
+# Hardcoded defaults - edit these if needed
+USERNAME1="Family Member 1"
+USERNAME2="Family Member 2"
+THEME="dark"
 
 export USERNAME1 USERNAME2 THEME
 
