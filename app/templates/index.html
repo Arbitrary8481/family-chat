@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="{{ theme }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Family Chat</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Server List -->
+        <div class="server-list">
+            <div class="server-icon active" title="Home">
+                <span class="server-initial">H</span>
+            </div>
+            <div class="server-divider"></div>
+            <div class="server-icon add-server" onclick="openEmojiManager()" title="Manage Emojis">😀</div>
+        </div>
+
+        <!-- Channel List -->
+        <div class="channel-sidebar">
+            <div class="server-header">
+                <h3>🏠 Family Home</h3>
+            </div>
+            <div class="channel-list">
+                <div class="category">TEXT CHANNELS</div>
+                <div class="channel active" data-channel="general">
+                    <span class="channel-icon">#</span>
+                    <span>general</span>
+                </div>
+                <div class="channel" data-channel="plans">
+                    <span class="channel-icon">#</span>
+                    <span>family-plans</span>
+                </div>
+                <div class="channel" data-channel="memories">
+                    <span class="channel-icon">📸</span>
+                    <span>memories</span>
+                </div>
+                <div class="channel" data-channel="files">
+                    <span class="channel-icon">📁</span>
+                    <span>shared-files</span>
+                </div>
+            </div>
+            <div class="user-panel">
+                <div class="user-info">
+                    <div class="avatar" id="currentAvatar"></div>
+                    <div class="user-details">
+                        <span class="username" id="currentUsername">Select User</span>
+                        <span class="user-status">🏠 At Home</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Chat Area -->
+        <div class="chat-container">
+            <div class="chat-header">
+                <div class="channel-info">
+                    <span class="channel-hash">#</span>
+                    <span id="currentChannel">general</span>
+                    <span class="channel-topic">Family communication center</span>
+                </div>
+                <div class="header-actions">
+                    <button class="header-btn" onclick="toggleSearch()" title="Search">🔍</button>
+                    <button class="header-btn" onclick="openFileBrowser()" title="Files">📎</button>
+                </div>
+            </div>
+            
+            <div class="messages-container" id="messagesContainer">
+                <div class="welcome-message">
+                    <h1>Welcome to #<span id="welcomeChannel">general</span>!</h1>
+                    <p>Stay connected with your family 👨‍👩‍👧‍👦</p>
+                </div>
+            </div>
+
+            <!-- Typing indicator -->
+            <div class="typing-indicator hidden" id="typingIndicator">
+                <span id="typingUser">Someone</span> is typing<span class="dots">...</span>
+            </div>
+
+            <div class="input-container">
+                <div class="input-wrapper">
+                    <button class="attach-btn" onclick="document.getElementById('fileInput').click()" title="Upload file">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z"/>
+                        </svg>
+                    </button>
+                    <input type="file" id="fileInput" hidden onchange="handleFileSelect(event)">
+                    
+                    <div class="input-area">
+                        <input type="text" id="messageInput" 
+                               placeholder="Message #general" 
+                               maxlength="2000"
+                               autocomplete="off">
+                    </div>
+                    
+                    <button class="emoji-btn" onclick="toggleEmojiPicker()" title="Add emoji">
+                        😊
+                    </button>
+                    
+                    <button class="send-btn" onclick="sendMessageClick()" title="Send">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                        </svg>
+                    </button>
+                </div>
+                
+                <!-- Emoji Picker -->
+                <div class="emoji-picker hidden" id="emojiPicker">
+                    <div class="emoji-tabs">
+                        <button class="emoji-tab active" onclick="switchEmojiTab('recent')">Recent</button>
+                        <button class="emoji-tab" onclick="switchEmojiTab('people')">😀</button>
+                        <button class="emoji-tab" onclick="switchEmojiTab('nature')">🌸</button>
+                        <button class="emoji-tab" onclick="switchEmojiTab('food')">🍕</button>
+                        <button class="emoji-tab" onclick="switchEmojiTab('activities')">⚽</button>
+                        <button class="emoji-tab" onclick="switchEmojiTab('custom')">Custom</button>
+                    </div>
+                    <div class="emoji-search">
+                        <input type="text" placeholder="Search emojis..." id="emojiSearch">
+                    </div>
+                    <div class="emoji-grid" id="emojiGrid">
+                        <!-- Emojis loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Members List -->
+        <div class="members-sidebar">
+            <div class="members-header">👨‍👩‍👧‍👦 FAMILY — 2</div>
+            <div class="member online" data-user="{{ username1 }}">
+                <div class="member-avatar" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                    {{ username1[0] }}
+                </div>
+                <div class="member-info">
+                    <div class="member-name">{{ username1 }}</div>
+                    <div class="member-status-text">🏠 Online</div>
+                </div>
+            </div>
+            <div class="member online" data-user="{{ username2 }}">
+                <div class="member-avatar" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                    {{ username2[0] }}
+                </div>
+                <div class="member-info">
+                    <div class="member-name">{{ username2 }}</div>
+                    <div class="member-status-text">🏠 Online</div>
+                </div>
+            </div>
+            
+            <div class="shared-media">
+                <div class="media-header">📸 Family Photos</div>
+                <div class="media-grid" id="sharedMedia">
+                    <!-- Photos will appear here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- File Preview Modal -->
+    <div class="modal hidden" id="fileModal">
+        <div class="modal-content file-preview">
+            <div class="file-preview-header">
+                <h3>Send File</h3>
+                <button class="close-btn" onclick="closeFileModal()">×</button>
+            </div>
+            <div class="file-preview-content" id="filePreviewContent">
+                <!-- Preview content -->
+            </div>
+            <div class="file-preview-actions">
+                <input type="text" id="fileCaption" placeholder="Add a caption...">
+                <button class="btn btn-primary" onclick="sendFile()">Send</button>
+                <button class="btn btn-secondary" onclick="closeFileModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Emoji Manager Modal -->
+    <div class="modal hidden" id="emojiModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Custom Emojis</h3>
+                <button class="close-btn" onclick="closeEmojiManager()">×</button>
+            </div>
+            <div class="emoji-upload">
+                <input type="text" id="newEmojiName" placeholder=":emoji_name:">
+                <input type="file" id="emojiFileInput" accept="image/*">
+                <button class="btn btn-primary" onclick="uploadEmoji()">Upload Emoji</button>
+            </div>
+            <div class="custom-emoji-list" id="customEmojiList">
+                <!-- Custom emojis listed here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- User Selection Modal -->
+    <div class="modal" id="userModal">
+        <div class="modal-content user-select">
+            <div class="family-header">
+                <span class="family-icon">🏠</span>
+                <h2>Welcome to Family Chat</h2>
+                <p>Who's using the chat?</p>
+            </div>
+            <div class="user-options">
+                <button class="user-option" onclick="selectUser('{{ username1 }}')" style="--accent: #667eea;">
+                    <div class="avatar-large">{{ username1[0] }}</div>
+                    <span>{{ username1 }}</span>
+                </button>
+                <div class="or-divider">or</div>
+                <button class="user-option" onclick="selectUser('{{ username2 }}')" style="--accent: #f5576c;">
+                    <div class="avatar-large">{{ username2[0] }}</div>
+                    <span>{{ username2 }}</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Image Viewer -->
+    <div class="image-viewer hidden" id="imageViewer" onclick="closeImageViewer()">
+        <img id="viewerImage" src="" alt="Full size">
+        <button class="viewer-close">×</button>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
