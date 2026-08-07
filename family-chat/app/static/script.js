@@ -1,6 +1,3 @@
-Here is the complete `script.js` code:
-
-```javascript
 // Global state
 let socket;
 let currentUser = null;
