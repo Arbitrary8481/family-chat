@@ -14,24 +14,37 @@ const emojiCategories = {
     activities: ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🪀','🏓','🏸','🏒','🏑','🥍','🏏','🥅','⛳','🪁','🏹','🎣','🤿','🥊','🥋','🎽','🛹','🛷','⛸️','🥌','🎿','⛷️','🏂','🏋️','🤼','🤽','🤾','🤺','🏇','⛷️','🏂','🏌️','🏄','🚣','🏊','⛹️','🏋️','🚴','🚵','🎽','🎿','🛷','🥅','⛳','🎣','🎽','🎿','🎯','🎱','🔮','🧿','🎮','🕹️','🎰','🎲','🧩','🧸','🪅','🪆','♠️','♥️','♦️','♣️','♟️','🃏','🀄','🎴','🎭','🖼️','🎨','🧵','🧶','🥼','🥽','🥾','🥿','👟','👞','🥾','🥿','👠','👡','👢','👑','👒','🎩','🎓','🧢','⛑️','📿','💄','💍','💎','🔇','🔈','🔉','🔊','📢','📣','📯','🔔','🔕','🎼','🎵','🎶','🎙️','🎚️','🎛️','🎤','🎧','📻','🎷','🎸','🎹','🎺','🎻','🪕','🥁','📱','📲','☎️','📞','📟','📠','🔋','🔌','💻','🖥️','🖨️','⌨️','🖱️','🖲️','💽','💾','💿','📀','🧮','🎥','🎞️','📽️','🎬','📺','📷','📸','📹','📼','🔍','🔎','🕯️','💡','🔦','🏮','🪔','📔','📕','📖','📗','📘','📙','📚','📓','📒','📃','📜','📄','📰','🗞️','📑','🔖','🏷️','💰','🪙','💴','💵','💶','💷','💸','💳','🧾','💹','✉️','📧','📨','📩','📤','📥','📦','📫','📪','📬','📭','📮','🗳️','✏️','✒️','🖋️','🖊️','🖌️','🖍️','📝','💼','📁','📂','🗂️','📅','📆','🗒️','🗓️','📇','📈','📉','📊','📋','📌','📍','📎','🖇️','📏','📐','✂️','🗃️','🗄️','🗑️','🔒','🔓','🔏','🔐','🔑','🗝️','🔨','🪓','⛏️','⚒️','🛠️','🗡️','⚔️','🔫','🏹','🛡️','🔧','🔩','⚙️','🗜️','⚖️','🦯','🔗','⛓️','🧰','🧲','🧪','🧫','🧬','🔬','🔭','📡','💉','🩸','💊','🩹','🩺','🌡️','🚽','🚰','🚿','🛁','🛀','🧴','🧷','🧹','🧺','🧻','🧼','🧽','🧯','🛒','🚬','⚰️','⚱️','🗿','🚂','🚃','🚄','🚅','🚆','🚇','🚈','🚉','🚊','🚝','🚞','🚋','🚌','🚍','🚎','🚐','🚑','🚒','🚓','🚔','🚕','🚖','🚗','🚘','🚙','🚚','🚛','🚜','🏎️','🏍️','🛵','🦽','🦼','🛺','🚲','🛴','🛹','🛼','🚏','🛣️','🛤️','🛢️','⛽','🚨','🚥','🚦','🛑','🚧','⚓','⛵','🛶','🚤','🛳️','⛴️','🚢','✈️','🛩️','🛫','🛬','🪂','💺','🚁','🚟','🚠','🚡','🛰️','🚀','🛸','🛎️','🧳','⌛','⏳','⌚','⏰','⏱️','⏲️','🕰️','🕛','🕧','🕐','🕜','🕑','🕝','🕒','🕞','🕓','🕟','🕔','🕠','🕕','🕡','🕖','🕢','🕗','🕣','🕘','🕤','🕙','🕥','🕚','🕦','🌑','🌒','🌓','🌔','🌕','🌖','🌗','🌘','🌙','🌚','🌛','🌜','🌡️','☀️','🌝','🌞','🪐','⭐','🌟','🌠','🌌','☁️','⛅','⛈️','🌤️','🌥️','🌦️','🌧️','🌨️','🌩️','🌪️','🌫️','🌬️','🌀','🌈','🌂','☂️','☔','⛱️','⚡','❄️','☃️','⛄','☄️','🔥','💧','🌊']
 };
 
-// Check for saved user
-if (localStorage.getItem('chatUser')) {
-    currentUser = localStorage.getItem('chatUser');
-    document.getElementById('userModal').classList.add('hidden');
-    initializeChat();
-}
+// Initialize everything after DOM is ready
+document.addEventListener('DOMContentLoaded', function() {
+    // Check for saved user
+    if (localStorage.getItem('chatUser')) {
+        currentUser = localStorage.getItem('chatUser');
+        const modal = document.getElementById('userModal');
+        if (modal) modal.classList.add('hidden');
+        initializeChat();
+    } else {
+        const modal = document.getElementById('userModal');
+        if (modal) modal.classList.remove('hidden');
+    }
+});
+
+// All other functions below...
 
 function selectUser(username) {
     currentUser = username;
     localStorage.setItem('chatUser', username);
-    document.getElementById('userModal').classList.add('hidden');
-    document.getElementById('currentUsername').textContent = username;
-    document.getElementById('currentAvatar').textContent = username[0];
+    const modal = document.getElementById('userModal');
+    if (modal) modal.classList.add('hidden');
+    
+    const usernameEl = document.getElementById('currentUsername');
+    const avatarEl = document.getElementById('currentAvatar');
+    if (usernameEl) usernameEl.textContent = username;
+    if (avatarEl) avatarEl.textContent = username[0];
+    
     initializeChat();
 }
 
 function initializeChat() {
-    // Initialize Socket.IO
     socket = io();
     
     socket.on('connect', function() {
@@ -43,7 +56,6 @@ function initializeChat() {
         addMessage(data);
         scrollToBottom();
         
-        // Add to shared media if image
         if (data.type === 'image' || (data.file && data.file.mime_type && data.file.mime_type.startsWith('image/'))) {
             addToSharedMedia(data.file.url);
         }
@@ -53,7 +65,6 @@ function initializeChat() {
         updateReaction(data.message_id, data.emoji, data.user);
     });
     
-    // Load existing messages
     fetch('/api/messages')
         .then(r => r.json())
         .then(messages => {
@@ -61,39 +72,46 @@ function initializeChat() {
             scrollToBottom();
         });
     
-    // Load custom emojis
     fetch('/api/emojis')
         .then(r => r.json())
         .then(emojis => {
             customEmojis = emojis;
         });
     
-    // Setup input
     const input = document.getElementById('messageInput');
-    input.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            sendMessageClick();
-        }
-    });
+    if (input) {
+        input.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessageClick();
+            }
+        });
+    }
     
-    // Channel switching
     document.querySelectorAll('.channel').forEach(ch => {
         ch.addEventListener('click', function() {
             document.querySelectorAll('.channel').forEach(c => c.classList.remove('active'));
             this.classList.add('active');
             currentChannel = this.dataset.channel;
-            document.getElementById('currentChannel').textContent = currentChannel;
-            document.getElementById('welcomeChannel').textContent = currentChannel;
-            document.getElementById('messageInput').placeholder = `Message #${currentChannel}`;
             
-            // Clear and reload messages
-            document.getElementById('messagesContainer').innerHTML = `
-                <div class="welcome-message">
-                    <h1>Welcome to #${currentChannel}!</h1>
-                    <p>Stay connected with your family 👨‍👩‍👧‍👦</p>
-                </div>
-            `;
+            const channelEl = document.getElementById('currentChannel');
+            const welcomeEl = document.getElementById('welcomeChannel');
+            const inputEl = document.getElementById('messageInput');
+            
+            if (channelEl) channelEl.textContent = currentChannel;
+            if (welcomeEl) welcomeEl.textContent = currentChannel;
+            if (inputEl) inputEl.placeholder = `Message #${currentChannel}`;
+            
+            const container = document.getElementById('messagesContainer');
+            if (container) {
+                container.innerHTML = `
+                    <div class="welcome-message">
+                        <h1>Welcome to #${currentChannel}!</h1>
+                        <p>Stay connected with your family 👨‍👩‍👧‍👦</p>
+                    </div>
+                `;
+            }
+            
             socket.emit('join', {room: currentChannel});
             
             fetch(`/api/messages?channel=${currentChannel}`)
@@ -105,12 +123,13 @@ function initializeChat() {
         });
     });
     
-    // Initialize emoji picker
     loadEmojiCategory('people');
 }
 
 function sendMessageClick() {
     const input = document.getElementById('messageInput');
+    if (!input) return;
+    
     const content = input.value.trim();
     
     if (content || selectedFile) {
@@ -140,6 +159,7 @@ function sendMessage(content) {
 
 function addMessage(data) {
     const container = document.getElementById('messagesContainer');
+    if (!container) return;
     
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message';
@@ -150,15 +170,8 @@ function addMessage(data) {
         minute: '2-digit'
     });
     
-    // Determine avatar color based on sender
-    const isUser1 = data.sender === document.querySelector('.user-option:first-child span')?.textContent;
-    const avatarStyle = isUser1 ? 
-        'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);' : 
-        'background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);';
-    
     let contentHtml = `<div class="message-text">${escapeHtml(data.content || '')}</div>`;
     
-    // Handle file attachments
     if (data.file || data.file_url) {
         const fileUrl = data.file?.url || data.file_url;
         const fileName = data.file?.filename || data.file_name;
@@ -195,7 +208,6 @@ function addMessage(data) {
         }
     }
     
-    // Reactions
     let reactionsHtml = '';
     if (data.reactions && Object.keys(data.reactions).length > 0) {
         reactionsHtml = '<div class="message-reactions">';
@@ -211,7 +223,7 @@ function addMessage(data) {
     }
     
     messageDiv.innerHTML = `
-        <div class="message-avatar" style="${avatarStyle}">${data.sender[0]}</div>
+        <div class="message-avatar">${data.sender[0]}</div>
         <div class="message-content">
             <div class="message-header">
                 <span class="message-author">${escapeHtml(data.sender)}</span>
@@ -222,8 +234,6 @@ function addMessage(data) {
         </div>
         <div class="message-actions">
             <button class="action-btn" onclick="addReaction(${data.id})" title="Add reaction">😊</button>
-            <button class="action-btn" title="Reply">↩️</button>
-            <button class="action-btn" title="More">⋯</button>
         </div>
     `;
     
@@ -232,7 +242,7 @@ function addMessage(data) {
 
 function scrollToBottom() {
     const container = document.getElementById('messagesContainer');
-    container.scrollTop = container.scrollHeight;
+    if (container) container.scrollTop = container.scrollHeight;
 }
 
 function escapeHtml(text) {
@@ -258,7 +268,6 @@ function getFileIcon(mimeType) {
     return '📎';
 }
 
-// File Upload
 function handleFileSelect(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -290,15 +299,12 @@ function handleFileSelect(event) {
 function showFilePreview(data, file) {
     const modal = document.getElementById('fileModal');
     const content = document.getElementById('filePreviewContent');
+    if (!modal || !content) return;
     
     if (data.mime_type.startsWith('image/')) {
         content.innerHTML = `<img src="${data.url}" alt="${data.filename}">`;
     } else if (data.mime_type.startsWith('video/')) {
-        content.innerHTML = `
-            <video controls>
-                <source src="${data.url}" type="${data.mime_type}">
-            </video>
-        `;
+        content.innerHTML = `<video controls><source src="${data.url}" type="${data.mime_type}"></video>`;
     } else {
         content.innerHTML = `
             <div class="file-attachment" style="padding: 32px;">
@@ -315,36 +321,37 @@ function showFilePreview(data, file) {
 }
 
 function closeFileModal() {
-    document.getElementById('fileModal').classList.add('hidden');
+    const modal = document.getElementById('fileModal');
+    if (modal) modal.classList.add('hidden');
     selectedFile = null;
 }
 
 function sendFile() {
-    const caption = document.getElementById('fileCaption').value;
+    const captionInput = document.getElementById('fileCaption');
+    const caption = captionInput ? captionInput.value : '';
     sendMessage(caption);
 }
 
-// Emoji Picker
 function toggleEmojiPicker() {
     const picker = document.getElementById('emojiPicker');
-    picker.classList.toggle('hidden');
+    if (picker) picker.classList.toggle('hidden');
 }
 
 function switchEmojiTab(category) {
     document.querySelectorAll('.emoji-tab').forEach(t => t.classList.remove('active'));
-    event.target.classList.add('active');
+    if (event && event.target) event.target.classList.add('active');
     loadEmojiCategory(category);
 }
 
 function loadEmojiCategory(category) {
     const grid = document.getElementById('emojiGrid');
+    if (!grid) return;
     grid.innerHTML = '';
     
     let emojis = [];
     if (category === 'recent') {
         emojis = recentEmojis;
     } else if (category === 'custom') {
-        // Load custom emojis
         Object.entries(customEmojis).forEach(([name, url]) => {
             const item = document.createElement('div');
             item.className = 'emoji-item';
@@ -368,10 +375,8 @@ function loadEmojiCategory(category) {
 
 function insertEmoji(emoji) {
     const input = document.getElementById('messageInput');
-    input.value += emoji;
-    input.focus();
+    if (input) input.value += emoji;
     
-    // Add to recent
     if (!recentEmojis.includes(emoji)) {
         recentEmojis.unshift(emoji);
         if (recentEmojis.length > 32) recentEmojis.pop();
@@ -379,18 +384,20 @@ function insertEmoji(emoji) {
     }
 }
 
-// Custom Emoji Manager
 function openEmojiManager() {
-    document.getElementById('emojiModal').classList.remove('hidden');
+    const modal = document.getElementById('emojiModal');
+    if (modal) modal.classList.remove('hidden');
     loadCustomEmojiList();
 }
 
 function closeEmojiManager() {
-    document.getElementById('emojiModal').classList.add('hidden');
+    const modal = document.getElementById('emojiModal');
+    if (modal) modal.classList.add('hidden');
 }
 
 function loadCustomEmojiList() {
     const list = document.getElementById('customEmojiList');
+    if (!list) return;
     list.innerHTML = '';
     
     Object.entries(customEmojis).forEach(([name, url]) => {
@@ -405,9 +412,12 @@ function loadCustomEmojiList() {
 }
 
 function uploadEmoji() {
-    const name = document.getElementById('newEmojiName').value.trim();
+    const nameInput = document.getElementById('newEmojiName');
     const fileInput = document.getElementById('emojiFileInput');
     
+    if (!nameInput || !fileInput) return;
+    
+    const name = nameInput.value.trim();
     if (!name || !fileInput.files[0]) {
         alert('Please provide a name and image');
         return;
@@ -416,7 +426,7 @@ function uploadEmoji() {
     const formData = new FormData();
     formData.append('name', name.replace(/:/g, ''));
     formData.append('file', fileInput.files[0]);
-    formData.append('created_by', currentUser);
+    formData.append('created_by', currentUser || 'unknown');
     
     fetch('/api/emoji/upload', {
         method: 'POST',
@@ -427,7 +437,7 @@ function uploadEmoji() {
         if (data.success) {
             customEmojis[data.name] = `/uploads/emoji_${name}_${Date.now()}.png`;
             loadCustomEmojiList();
-            document.getElementById('newEmojiName').value = '';
+            nameInput.value = '';
             fileInput.value = '';
         } else {
             alert(data.error);
@@ -435,7 +445,6 @@ function uploadEmoji() {
     });
 }
 
-// Reactions
 function addReaction(messageId) {
     const emoji = prompt('Enter emoji:');
     if (emoji) {
@@ -452,25 +461,27 @@ function toggleReaction(messageId, emoji) {
 }
 
 function updateReaction(messageId, emoji, user) {
-    // Refresh messages to show updated reactions
-    // In a real app, you'd update just the reaction element
+    // Refresh messages
 }
 
-// Image Viewer
 function openImageViewer(url) {
     const viewer = document.getElementById('imageViewer');
     const img = document.getElementById('viewerImage');
-    img.src = url;
-    viewer.classList.remove('hidden');
+    if (viewer && img) {
+        img.src = url;
+        viewer.classList.remove('hidden');
+    }
 }
 
 function closeImageViewer() {
-    document.getElementById('imageViewer').classList.add('hidden');
+    const viewer = document.getElementById('imageViewer');
+    if (viewer) viewer.classList.add('hidden');
 }
 
-// Shared Media
 function addToSharedMedia(url) {
     const grid = document.getElementById('sharedMedia');
+    if (!grid) return;
+    
     const item = document.createElement('div');
     item.className = 'media-item';
     item.innerHTML = `<img src="${url}" onclick="openImageViewer('${url}')" loading="lazy">`;
@@ -481,8 +492,7 @@ function addToSharedMedia(url) {
 document.addEventListener('click', (e) => {
     const picker = document.getElementById('emojiPicker');
     const emojiBtn = document.querySelector('.emoji-btn');
-    if (!picker.contains(e.target) && e.target !== emojiBtn && !picker.classList.contains('hidden')) {
+    if (picker && emojiBtn && !picker.contains(e.target) && e.target !== emojiBtn && !picker.classList.contains('hidden')) {
         picker.classList.add('hidden');
     }
 });
-```
