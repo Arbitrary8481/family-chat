@@ -211,11 +211,26 @@ def save_custom_emoji(name, file_path, created_by):
         conn.close()
         return False
 
+def ingress_redirect(path):
+    """Home Assistant ingress serves this add-on under a dynamic prefix
+    (e.g. /api/hassio_ingress/<token>) that's stripped before the request
+    reaches this container. A plain redirect() to a root-relative path like
+    "/admin" loses that prefix, so the browser ends up requesting "/admin"
+    at the Home Assistant domain root instead -> 404. Ingress forwards the
+    original prefix via the X-Ingress-Path header so we can rebuild the
+    correct absolute URL. If the header is missing (e.g. direct, non-ingress
+    access) or looks malformed, fall back to the plain path.
+    """
+    prefix = request.headers.get('X-Ingress-Path', '')
+    if not prefix.startswith('/') or ':' in prefix:
+        prefix = ''
+    return redirect(prefix + path)
+
 def require_admin(view):
     @functools.wraps(view)
     def wrapped(*args, **kwargs):
         if not session.get('is_admin'):
-            return redirect(url_for('admin_panel'))
+            return ingress_redirect(url_for('admin_panel'))
         return view(*args, **kwargs)
     return wrapped
 
@@ -241,13 +256,13 @@ def admin_login():
     # Constant-time-safe comparison via check_password_hash (hmac.compare_digest internally)
     if check_password_hash(ADMIN_PASSWORD_HASH, password):
         session['is_admin'] = True
-        return redirect(url_for('admin_panel'))
-    return redirect(url_for('admin_panel', error='Incorrect password'))
+        return ingress_redirect(url_for('admin_panel'))
+    return ingress_redirect(url_for('admin_panel', error='Incorrect password'))
 
 @app.route('/admin/logout', methods=['POST'])
 def admin_logout():
     session.pop('is_admin', None)
-    return redirect(url_for('admin_panel'))
+    return ingress_redirect(url_for('admin_panel'))
 
 @app.route('/admin/usernames', methods=['POST'])
 @require_admin
@@ -256,7 +271,7 @@ def admin_update_usernames():
     name2 = request.form.get('username2', '').strip()
 
     if not name1 or not name2:
-        return redirect(url_for('admin_panel', saved='error'))
+        return ingress_redirect(url_for('admin_panel', saved='error'))
     # Keep names short — they're rendered as avatar initials and channel
     # member labels, and long values would break that UI.
     name1 = name1[:30]
@@ -264,7 +279,7 @@ def admin_update_usernames():
 
     set_setting('username1', name1)
     set_setting('username2', name2)
-    return redirect(url_for('admin_panel', saved='1'))
+    return ingress_redirect(url_for('admin_panel', saved='1'))
 
 @app.route('/api/messages')
 def get_messages_api():
@@ -329,7 +344,7 @@ def upload_emoji():
     file.save(file_path)
     
     if save_custom_emoji(f':{name}:', f'/uploads/{filename}', created_by):
-        return jsonify({'success': True, 'name': f':{name}:'})
+        return jsonify({'success': True, 'name': f':{name}:', 'url': f'/uploads/{filename}'})
     else:
         os.remove(file_path)
         return jsonify({'error': 'Emoji name already exists'}), 400

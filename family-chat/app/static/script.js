@@ -83,6 +83,21 @@ function getIngressBasePath() {
     return path.endsWith('/') ? path : path.substring(0, path.lastIndexOf('/') + 1);
 }
 
+// The server returns root-relative API paths ("/api/messages") and file
+// URLs ("/uploads/x.png"). A root-relative path resolves from the domain
+// root in the browser, not from the current ingress-prefixed page, so
+// under Home Assistant ingress every fetch() and every <img>/<video>/<a>
+// pointed at one of these would silently 404. These two helpers rewrite
+// them to be relative to the current (possibly ingress-prefixed) page.
+function apiUrl(path) {
+    return getIngressBasePath() + path.replace(/^\//, '');
+}
+
+function resolveUrl(url) {
+    if (!url || !url.startsWith('/')) return url;
+    return getIngressBasePath() + url.slice(1);
+}
+
 function initializeChat() {
     const basePath = getIngressBasePath();
     socket = io(window.location.origin, {
@@ -99,7 +114,7 @@ function initializeChat() {
         scrollToBottom();
         
         if (data.type === 'image' || (data.file && data.file.mime_type && data.file.mime_type.startsWith('image/'))) {
-            addToSharedMedia(data.file.url);
+            addToSharedMedia(resolveUrl(data.file.url));
         }
     });
     
@@ -107,14 +122,14 @@ function initializeChat() {
         updateReaction(data.message_id, data.emoji, data.user);
     });
     
-    fetch('/api/messages')
+    fetch(apiUrl('/api/messages'))
         .then(r => r.json())
         .then(messages => {
             messages.forEach(msg => addMessage(msg));
             scrollToBottom();
         });
     
-    fetch('/api/emojis')
+    fetch(apiUrl('/api/emojis'))
         .then(r => r.json())
         .then(emojis => {
             customEmojis = emojis;
@@ -156,7 +171,7 @@ function initializeChat() {
             
             socket.emit('join', {room: currentChannel});
             
-            fetch(`/api/messages?channel=${currentChannel}`)
+            fetch(apiUrl(`/api/messages?channel=${currentChannel}`))
                 .then(r => r.json())
                 .then(messages => {
                     messages.forEach(msg => addMessage(msg));
@@ -215,7 +230,7 @@ function addMessage(data) {
     let contentHtml = `<div class="message-text">${escapeHtml(data.content || '')}</div>`;
     
     if (data.file || data.file_url) {
-        const fileUrl = data.file?.url || data.file_url;
+        const fileUrl = resolveUrl(data.file?.url || data.file_url);
         const fileName = data.file?.filename || data.file_name;
         const mimeType = data.file?.mime_type || data.mime_type;
         
@@ -317,7 +332,7 @@ function handleFileSelect(event) {
     const formData = new FormData();
     formData.append('file', file);
     
-    fetch('/api/upload', {
+    fetch(apiUrl('/api/upload'), {
         method: 'POST',
         body: formData
     })
@@ -344,9 +359,9 @@ function showFilePreview(data, file) {
     if (!modal || !content) return;
     
     if (data.mime_type.startsWith('image/')) {
-        content.innerHTML = `<img src="${data.url}" alt="${data.filename}">`;
+        content.innerHTML = `<img src="${resolveUrl(data.url)}" alt="${data.filename}">`;
     } else if (data.mime_type.startsWith('video/')) {
-        content.innerHTML = `<video controls><source src="${data.url}" type="${data.mime_type}"></video>`;
+        content.innerHTML = `<video controls><source src="${resolveUrl(data.url)}" type="${data.mime_type}"></video>`;
     } else {
         content.innerHTML = `
             <div class="file-attachment" style="padding: 32px;">
@@ -397,7 +412,7 @@ function loadEmojiCategory(category) {
         Object.entries(customEmojis).forEach(([name, url]) => {
             const item = document.createElement('div');
             item.className = 'emoji-item';
-            item.innerHTML = `<img src="${url}" alt="${name}" style="width: 28px; height: 28px;">`;
+            item.innerHTML = `<img src="${resolveUrl(url)}" alt="${name}" style="width: 28px; height: 28px;">`;
             item.onclick = () => insertEmoji(name);
             grid.appendChild(item);
         });
@@ -446,7 +461,7 @@ function loadCustomEmojiList() {
         const item = document.createElement('div');
         item.className = 'custom-emoji-item';
         item.innerHTML = `
-            <img src="${url}" alt="${name}">
+            <img src="${resolveUrl(url)}" alt="${name}">
             <span>${name}</span>
         `;
         list.appendChild(item);
@@ -470,14 +485,14 @@ function uploadEmoji() {
     formData.append('file', fileInput.files[0]);
     formData.append('created_by', currentUser || 'unknown');
     
-    fetch('/api/emoji/upload', {
+    fetch(apiUrl('/api/emoji/upload'), {
         method: 'POST',
         body: formData
     })
     .then(r => r.json())
     .then(data => {
         if (data.success) {
-            customEmojis[data.name] = `/uploads/emoji_${name}_${Date.now()}.png`;
+            customEmojis[data.name] = data.url;
             loadCustomEmojiList();
             nameInput.value = '';
             fileInput.value = '';
