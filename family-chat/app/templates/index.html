@@ -6,10 +6,10 @@
     <title>Family Chat</title>
     
     <!-- Socket.IO (required for chat) -->
-    <script src="./static/socket.io.min.js"></script>
+    <script src="./static/socket.io.min.js?v={{ asset_version }}"></script>
     
     <!-- Your CSS -->
-    <link rel="stylesheet" href="./static/style.css">
+    <link rel="stylesheet" href="./static/style.css?v={{ asset_version }}">
 </head>
 <body>
     <div class="app-container">
@@ -227,6 +227,6 @@
         <button class="viewer-close">×</button>
     </div>
 
-    <script src="./static/script.js"></script>
+    <script src="./static/script.js?v={{ asset_version }}"></script>
 </body>
 </html>

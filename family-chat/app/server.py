@@ -66,6 +66,14 @@ if ADMIN_PASSWORD == 'changeme':
     print('WARNING: admin_password is still set to the default "changeme". '
           'Set it in the add-on configuration.')
 
+# Cache-busting token for static assets (CSS/JS). Home Assistant's ingress
+# "soft" panel navigation (clicking the sidebar entry again) can reuse a
+# browser-cached copy of style.css instead of always fetching fresh, which
+# shows up as "styling doesn't apply until I hit refresh". Appending this
+# to asset URLs (?v=...) and disabling caching on the static route below
+# means every container start serves guaranteed-fresh assets.
+ASSET_VERSION = str(int(datetime.now().timestamp()))
+
 # Upload directory
 UPLOAD_FOLDER = Path('/data/uploads')
 UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
@@ -226,6 +234,17 @@ def ingress_redirect(path):
         prefix = ''
     return redirect(prefix + path)
 
+@app.after_request
+def set_static_cache_headers(response):
+    if request.path.startswith('/static/'):
+        # "no-cache" still lets the browser cache the file, but forces it
+        # to revalidate with the server (a cheap conditional GET) instead
+        # of silently reusing a stale copy — which is what was causing
+        # stale CSS to stick around across Home Assistant's ingress "soft"
+        # panel reloads until a manual refresh.
+        response.headers['Cache-Control'] = 'no-cache'
+    return response
+
 def require_admin(view):
     @functools.wraps(view)
     def wrapped(*args, **kwargs):
@@ -239,7 +258,8 @@ def index():
     return render_template('index.html',
                           username1=get_setting('username1', USERNAME1_DEFAULT),
                           username2=get_setting('username2', USERNAME2_DEFAULT),
-                          theme=THEME)
+                          theme=THEME,
+                          asset_version=ASSET_VERSION)
 
 @app.route('/admin')
 def admin_panel():
