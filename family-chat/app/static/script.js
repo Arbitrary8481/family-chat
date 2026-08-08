@@ -196,9 +196,9 @@ function addMessage(data) {
     let contentHtml = `<div class="message-text">${escapeHtml(data.content || '')}</div>`;
     
     if (data.file || data.file_url) {
-        const fileUrl = resolveUrl(data.file?.url || data.file_url);
-        const fileName = data.file?.filename || data.file_name;
-        const mimeType = data.file?.mime_type || data.mime_type;
+        const fileUrl = safeUrl(resolveUrl(data.file?.url || data.file_url));
+        const fileName = escapeHtml(data.file?.filename || data.file_name);
+        const mimeType = escapeHtml(data.file?.mime_type || data.mime_type);
         
         if (mimeType && mimeType.startsWith('image/')) {
             contentHtml += `
@@ -222,7 +222,7 @@ function addMessage(data) {
                     <a href="${fileUrl}" target="_blank" class="file-attachment">
                         <div class="file-icon">${fileIcon}</div>
                         <div class="file-info">
-                            <div class="file-name">${escapeHtml(fileName)}</div>
+                            <div class="file-name">${fileName}</div>
                             <div class="file-size">${fileSize}</div>
                         </div>
                     </a>
@@ -236,9 +236,10 @@ function addMessage(data) {
         reactionsHtml = '<div class="message-reactions">';
         for (const [emoji, users] of Object.entries(data.reactions)) {
             const isActive = users.includes(currentUser);
+            const safeEmoji = escapeHtml(emoji);
             reactionsHtml += `
-                <div class="reaction ${isActive ? 'active' : ''}" onclick="toggleReaction(${data.id}, '${emoji}')">
-                    ${emoji} <span class="reaction-count">${users.length}</span>
+                <div class="reaction ${isActive ? 'active' : ''}" onclick="toggleReaction(${data.id}, '${safeEmoji}')">
+                    ${safeEmoji} <span class="reaction-count">${users.length}</span>
                 </div>
             `;
         }
@@ -269,10 +270,30 @@ function scrollToBottom() {
 }
 
 function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    if (text === null || text === undefined) return '';
+    // Escaping quotes too (not just <, >, &) matters because this value
+    // often gets dropped into an HTML *attribute* (onclick="...", alt="..."),
+    // not just text content — a bare quote character there breaks out of
+    // the attribute and enables injecting arbitrary attributes/handlers.
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function safeUrl(url) {
+    // Only allow relative paths or http(s) URLs into src/href attributes.
+    // Without this, a spoofed file/emoji URL (these can still be
+    // client-supplied in the socket payload) could use a "javascript:" or
+    // "data:" scheme to run script when clicked/rendered.
+    if (!url) return '#';
+    const s = String(url);
+    if (s.startsWith('/') || s.startsWith('./') || s.startsWith('http://') || s.startsWith('https://')) {
+        return escapeHtml(s);
+    }
+    return '#';
 }
 
 function formatFileSize(bytes) {
@@ -325,9 +346,9 @@ function showFilePreview(data, file) {
     if (!modal || !content) return;
     
     if (data.mime_type.startsWith('image/')) {
-        content.innerHTML = `<img src="${resolveUrl(data.url)}" alt="${data.filename}">`;
+        content.innerHTML = `<img src="${safeUrl(resolveUrl(data.url))}" alt="${escapeHtml(data.filename)}">`;
     } else if (data.mime_type.startsWith('video/')) {
-        content.innerHTML = `<video controls><source src="${resolveUrl(data.url)}" type="${data.mime_type}"></video>`;
+        content.innerHTML = `<video controls><source src="${safeUrl(resolveUrl(data.url))}" type="${escapeHtml(data.mime_type)}"></video>`;
     } else {
         content.innerHTML = `
             <div class="file-attachment" style="padding: 32px;">
@@ -378,7 +399,7 @@ function loadEmojiCategory(category) {
         Object.entries(customEmojis).forEach(([name, url]) => {
             const item = document.createElement('div');
             item.className = 'emoji-item';
-            item.innerHTML = `<img src="${resolveUrl(url)}" alt="${name}" style="width: 28px; height: 28px;">`;
+            item.innerHTML = `<img src="${safeUrl(resolveUrl(url))}" alt="${escapeHtml(name)}" style="width: 28px; height: 28px;">`;
             item.onclick = () => insertEmoji(name);
             grid.appendChild(item);
         });
@@ -427,8 +448,8 @@ function loadCustomEmojiList() {
         const item = document.createElement('div');
         item.className = 'custom-emoji-item';
         item.innerHTML = `
-            <img src="${resolveUrl(url)}" alt="${name}">
-            <span>${name}</span>
+            <img src="${safeUrl(resolveUrl(url))}" alt="${escapeHtml(name)}">
+            <span>${escapeHtml(name)}</span>
         `;
         list.appendChild(item);
     });
@@ -505,9 +526,10 @@ function addToSharedMedia(url) {
     const grid = document.getElementById('sharedMedia');
     if (!grid) return;
     
+    const safe = safeUrl(url);
     const item = document.createElement('div');
     item.className = 'media-item';
-    item.innerHTML = `<img src="${url}" onclick="openImageViewer('${url}')" loading="lazy">`;
+    item.innerHTML = `<img src="${safe}" onclick="openImageViewer('${safe}')" loading="lazy">`;
     grid.insertBefore(item, grid.firstChild);
 }
 
