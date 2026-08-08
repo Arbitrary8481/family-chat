@@ -44,8 +44,22 @@ function selectUser(username) {
     initializeChat();
 }
 
+// Home Assistant ingress serves this app under a dynamic prefix like
+// /api/hassio_ingress/<token>/ instead of the domain root. socket.io's
+// default path option ("/socket.io/") ignores that prefix, so the
+// WebSocket handshake gets routed wrong and never reaches the server.
+// Deriving the path from the current URL fixes it for both ingress and
+// plain (non-ingress) access.
+function getIngressBasePath() {
+    const path = window.location.pathname;
+    return path.endsWith('/') ? path : path.substring(0, path.lastIndexOf('/') + 1);
+}
+
 function initializeChat() {
-    socket = io();
+    const basePath = getIngressBasePath();
+    socket = io(window.location.origin, {
+        path: basePath + 'socket.io/'
+    });
     
     socket.on('connect', function() {
         console.log('Connected to server');
