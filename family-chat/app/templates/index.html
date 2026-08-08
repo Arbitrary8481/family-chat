@@ -8,9 +8,6 @@
     <!-- Socket.IO (required for chat) -->
     <script src="./static/socket.io.min.js?v={{ asset_version }}"></script>
 
-    <!-- Resolved from the Home Assistant ingress user mapping, if configured -->
-    <script>window.AUTO_CHAT_USER = {{ auto_user|tojson }};</script>
-
     <!-- Your CSS -->
     <link rel="stylesheet" href="./static/style.css?v={{ asset_version }}">
 </head>
@@ -57,7 +54,6 @@
                         <span class="user-status">🏠 At Home</span>
                     </div>
                 </div>
-                <button class="header-btn" onclick="logoutUser()" title="Log out">🚪</button>
             </div>
         </div>
 
@@ -202,25 +198,24 @@
         </div>
     </div>
 
-    <!-- User Selection Modal -->
-    <div class="modal" id="userModal">
+    <!-- Identity Gate: shown only if Home Assistant auto sign-in hasn't
+         resolved a name yet. There is no manual picker anymore — identity
+         comes entirely from who's logged into Home Assistant. -->
+    <div class="modal{% if auto_user %} hidden{% endif %}" id="identityGate">
         <div class="modal-content user-select">
             <div class="family-header">
                 <span class="family-icon">🏠</span>
-                <h2>Welcome to Family Chat</h2>
-                <p>Who's using the chat?</p>
+                {% if ha_identified %}
+                <h2>Almost there!</h2>
+                <p>Your Home Assistant account isn't linked to a family chat name yet.<br>Ask an admin to finish setup in the admin panel (⚙️ in the header), then try again.</p>
+                {% else %}
+                <h2>Open from Home Assistant</h2>
+                <p>Family Chat signs you in automatically using your Home Assistant login.<br>Please open it from the Home Assistant sidebar rather than this address directly.</p>
+                {% endif %}
             </div>
-            <div class="user-options">
-                <button class="user-option" onclick="selectUser('{{ username1 }}')" style="--accent: #667eea;">
-                    <div class="avatar-large">{{ username1[0] }}</div>
-                    <span>{{ username1 }}</span>
-                </button>
-                <div class="or-divider">or</div>
-                <button class="user-option" onclick="selectUser('{{ username2 }}')" style="--accent: #f5576c;">
-                    <div class="avatar-large">{{ username2[0] }}</div>
-                    <span>{{ username2 }}</span>
-                </button>
-            </div>
+            <button class="user-option" onclick="location.reload()" style="--accent: #667eea; margin: 24px auto 0;">
+                <span>↻ Try Again</span>
+            </button>
         </div>
     </div>
 
@@ -230,6 +225,11 @@
         <button class="viewer-close">×</button>
     </div>
 
+    <!-- Resolved from the Home Assistant ingress user mapping, if configured -->
+    <script>
+        window.AUTO_CHAT_USER = {{ auto_user|tojson }};
+        window.HA_IDENTIFIED = {{ ha_identified|tojson }};
+    </script>
     <script src="./static/script.js?v={{ asset_version }}"></script>
 </body>
 </html>

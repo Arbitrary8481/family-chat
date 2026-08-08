@@ -14,68 +14,29 @@ const emojiCategories = {
     activities: ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🪀','🏓','🏸','🏒','🏑','🥍','🏏','🥅','⛳','🪁','🏹','🎣','🤿','🥊','🥋','🎽','🛹','🛷','⛸️','🥌','🎿','⛷️','🏂','🏋️','🤼','🤽','🤾','🤺','🏇','⛷️','🏂','🏌️','🏄','🚣','🏊','⛹️','🏋️','🚴','🚵','🎽','🎿','🛷','🥅','⛳','🎣','🎽','🎿','🎯','🎱','🔮','🧿','🎮','🕹️','🎰','🎲','🧩','🧸','🪅','🪆','♠️','♥️','♦️','♣️','♟️','🃏','🀄','🎴','🎭','🖼️','🎨','🧵','🧶','🥼','🥽','🥾','🥿','👟','👞','🥾','🥿','👠','👡','👢','👑','👒','🎩','🎓','🧢','⛑️','📿','💄','💍','💎','🔇','🔈','🔉','🔊','📢','📣','📯','🔔','🔕','🎼','🎵','🎶','🎙️','🎚️','🎛️','🎤','🎧','📻','🎷','🎸','🎹','🎺','🎻','🪕','🥁','📱','📲','☎️','📞','📟','📠','🔋','🔌','💻','🖥️','🖨️','⌨️','🖱️','🖲️','💽','💾','💿','📀','🧮','🎥','🎞️','📽️','🎬','📺','📷','📸','📹','📼','🔍','🔎','🕯️','💡','🔦','🏮','🪔','📔','📕','📖','📗','📘','📙','📚','📓','📒','📃','📜','📄','📰','🗞️','📑','🔖','🏷️','💰','🪙','💴','💵','💶','💷','💸','💳','🧾','💹','✉️','📧','📨','📩','📤','📥','📦','📫','📪','📬','📭','📮','🗳️','✏️','✒️','🖋️','🖊️','🖌️','🖍️','📝','💼','📁','📂','🗂️','📅','📆','🗒️','🗓️','📇','📈','📉','📊','📋','📌','📍','📎','🖇️','📏','📐','✂️','🗃️','🗄️','🗑️','🔒','🔓','🔏','🔐','🔑','🗝️','🔨','🪓','⛏️','⚒️','🛠️','🗡️','⚔️','🔫','🏹','🛡️','🔧','🔩','⚙️','🗜️','⚖️','🦯','🔗','⛓️','🧰','🧲','🧪','🧫','🧬','🔬','🔭','📡','💉','🩸','💊','🩹','🩺','🌡️','🚽','🚰','🚿','🛁','🛀','🧴','🧷','🧹','🧺','🧻','🧼','🧽','🧯','🛒','🚬','⚰️','⚱️','🗿','🚂','🚃','🚄','🚅','🚆','🚇','🚈','🚉','🚊','🚝','🚞','🚋','🚌','🚍','🚎','🚐','🚑','🚒','🚓','🚔','🚕','🚖','🚗','🚘','🚙','🚚','🚛','🚜','🏎️','🏍️','🛵','🦽','🦼','🛺','🚲','🛴','🛹','🛼','🚏','🛣️','🛤️','🛢️','⛽','🚨','🚥','🚦','🛑','🚧','⚓','⛵','🛶','🚤','🛳️','⛴️','🚢','✈️','🛩️','🛫','🛬','🪂','💺','🚁','🚟','🚠','🚡','🛰️','🚀','🛸','🛎️','🧳','⌛','⏳','⌚','⏰','⏱️','⏲️','🕰️','🕛','🕧','🕐','🕜','🕑','🕝','🕒','🕞','🕓','🕟','🕔','🕠','🕕','🕡','🕖','🕢','🕗','🕣','🕘','🕤','🕙','🕥','🕚','🕦','🌑','🌒','🌓','🌔','🌕','🌖','🌗','🌘','🌙','🌚','🌛','🌜','🌡️','☀️','🌝','🌞','🪐','⭐','🌟','🌠','🌌','☁️','⛅','⛈️','🌤️','🌥️','🌦️','🌧️','🌨️','🌩️','🌪️','🌫️','🌬️','🌀','🌈','🌂','☂️','☔','⛱️','⚡','❄️','☃️','⛄','☄️','🔥','💧','🌊']
 };
 
-// Initialize everything after DOM is ready
+// Initialize everything after DOM is ready.
+// Identity is resolved entirely by the server from the Home Assistant
+// ingress login (see the /admin HA-mapping section) — there's no manual
+// picker anymore. If Home Assistant couldn't resolve a name, the
+// identityGate stays visible with instructions instead of the chat.
 document.addEventListener('DOMContentLoaded', function() {
-    // A previously-made manual choice on this browser always wins (lets
-    // someone override the HA-based auto sign-in, e.g. a shared tablet).
-    if (localStorage.getItem('chatUser')) {
-        currentUser = localStorage.getItem('chatUser');
-        const modal = document.getElementById('userModal');
-        if (modal) modal.classList.add('hidden');
+    if (window.AUTO_CHAT_USER) {
+        currentUser = window.AUTO_CHAT_USER;
+        const gate = document.getElementById('identityGate');
+        if (gate) gate.classList.add('hidden');
+
+        const usernameEl = document.getElementById('currentUsername');
+        const avatarEl = document.getElementById('currentAvatar');
+        if (usernameEl) usernameEl.textContent = currentUser;
+        if (avatarEl) avatarEl.textContent = currentUser[0];
+
         initializeChat();
-    } else if (window.AUTO_CHAT_USER) {
-        // No manual choice yet — auto sign in as whoever the admin mapped
-        // the currently logged-in Home Assistant user to.
-        selectUser(window.AUTO_CHAT_USER);
-    } else {
-        const modal = document.getElementById('userModal');
-        if (modal) modal.classList.remove('hidden');
     }
+    // else: leave identityGate visible (server already rendered the right
+    // message — "ask an admin" vs "open via Home Assistant").
 });
 
 // All other functions below...
-
-function selectUser(username) {
-    currentUser = username;
-    localStorage.setItem('chatUser', username);
-    const modal = document.getElementById('userModal');
-    if (modal) modal.classList.add('hidden');
-    
-    const usernameEl = document.getElementById('currentUsername');
-    const avatarEl = document.getElementById('currentAvatar');
-    if (usernameEl) usernameEl.textContent = username;
-    if (avatarEl) avatarEl.textContent = username[0];
-    
-    initializeChat();
-}
-
-function logoutUser() {
-    localStorage.removeItem('chatUser');
-    currentUser = null;
-
-    if (socket) {
-        socket.disconnect();
-        socket = null;
-    }
-
-    const usernameEl = document.getElementById('currentUsername');
-    const avatarEl = document.getElementById('currentAvatar');
-    if (usernameEl) usernameEl.textContent = 'Select User';
-    if (avatarEl) avatarEl.textContent = '';
-
-    const messagesContainer = document.getElementById('messagesContainer');
-    if (messagesContainer) {
-        messagesContainer.innerHTML = `
-            <div class="welcome-message">
-                <h1>Welcome to #<span id="welcomeChannel">${currentChannel}</span>!</h1>
-                <p>Stay connected with your family 👨‍👩‍👧‍👦</p>
-            </div>
-        `;
-    }
-
-    const modal = document.getElementById('userModal');
-    if (modal) modal.classList.remove('hidden');
-}
 
 // Home Assistant ingress serves this app under a dynamic prefix like
 // /api/hassio_ingress/<token>/ instead of the domain root. socket.io's

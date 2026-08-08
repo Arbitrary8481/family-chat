@@ -285,6 +285,16 @@ def set_static_cache_headers(response):
         response.headers['Cache-Control'] = 'no-cache'
     return response
 
+def resolve_ha_identity():
+    """Look up the chat display name for whoever is logged into Home
+    Assistant on this request, via the ingress auth headers. Returns
+    (ha_user_id, chat_name) — chat_name is None if the account hasn't
+    been mapped to a family member yet."""
+    ha_user_id = request.headers.get('X-Remote-User-Id')
+    if not ha_user_id:
+        return None, None
+    return ha_user_id, get_ha_user_map().get(ha_user_id)
+
 def require_admin(view):
     @functools.wraps(view)
     def wrapped(*args, **kwargs):
@@ -302,19 +312,19 @@ def index():
     # key off the more reliable X-Remote-User-Id and treat everything as
     # optional.
     ha_user_id = request.headers.get('X-Remote-User-Id')
-    auto_user = None
     if ha_user_id:
         ha_username = request.headers.get('X-Remote-User-Name', '')
         ha_display_name = request.headers.get('X-Remote-User-Display-Name', '')
         record_ha_user(ha_user_id, ha_username, ha_display_name)
-        auto_user = get_ha_user_map().get(ha_user_id)
+    _, auto_user = resolve_ha_identity()
 
     return render_template('index.html',
                           username1=get_setting('username1', USERNAME1_DEFAULT),
                           username2=get_setting('username2', USERNAME2_DEFAULT),
                           theme=THEME,
                           asset_version=ASSET_VERSION,
-                          auto_user=auto_user)
+                          auto_user=auto_user,
+                          ha_identified=bool(ha_user_id))
 
 @app.route('/admin')
 def admin_panel():
@@ -420,7 +430,8 @@ def upload_emoji():
     
     file = request.files['file']
     name = request.form['name'].strip().replace(':', '')
-    created_by = request.form.get('created_by', 'unknown')
+    _, created_by = resolve_ha_identity()
+    created_by = created_by or 'unknown'
     
     if not name or file.filename == '':
         return jsonify({'error': 'Invalid name or file'}), 400
@@ -456,7 +467,11 @@ def on_join(data):
 
 @socketio.on('send_message')
 def handle_message(data):
-    sender = data.get('sender')
+    # Identity is resolved server-side from the Home Assistant ingress
+    # headers, not taken from the client payload — otherwise anyone could
+    # still claim to be a different family member by editing the socket
+    # message, defeating the point of removing the manual picker.
+    _, sender = resolve_ha_identity()
     content = data.get('content')
     channel = data.get('channel', 'general')
     msg_type = data.get('type', 'text')
@@ -486,7 +501,7 @@ def handle_message(data):
 def handle_reaction(data):
     message_id = data.get('message_id')
     emoji = data.get('emoji')
-    user = data.get('user')
+    _, user = resolve_ha_identity()
     
     if message_id and emoji and user:
         conn = sqlite3.connect('/data/chat.db')
