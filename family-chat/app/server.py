@@ -129,6 +129,15 @@ def init_db():
     c.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)',
               ('username2', USERNAME2_DEFAULT))
 
+    # Home Assistant users seen via ingress auth headers, so the admin
+    # panel can offer "when this HA account is logged in, auto-sign-in as
+    # <family member>" without the add-on needing to talk to HA's auth API.
+    c.execute('''CREATE TABLE IF NOT EXISTS ha_users
+                 (user_id TEXT PRIMARY KEY,
+                  username TEXT,
+                  display_name TEXT,
+                  last_seen TEXT)''')
+
     conn.commit()
     conn.close()
 
@@ -147,6 +156,37 @@ def set_setting(key, value):
               'ON CONFLICT(key) DO UPDATE SET value = excluded.value', (key, value))
     conn.commit()
     conn.close()
+
+def record_ha_user(user_id, username, display_name):
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('''INSERT INTO ha_users (user_id, username, display_name, last_seen)
+                 VALUES (?, ?, ?, ?)
+                 ON CONFLICT(user_id) DO UPDATE SET
+                    username = excluded.username,
+                    display_name = excluded.display_name,
+                    last_seen = excluded.last_seen''',
+              (user_id, username, display_name, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+
+def get_ha_users():
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('SELECT user_id, username, display_name, last_seen FROM ha_users ORDER BY last_seen DESC')
+    rows = c.fetchall()
+    conn.close()
+    return [{'user_id': r[0], 'username': r[1], 'display_name': r[2], 'last_seen': r[3]} for r in rows]
+
+def get_ha_user_map():
+    raw = get_setting('ha_user_map', '{}')
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+def set_ha_user_map(mapping):
+    set_setting('ha_user_map', json.dumps(mapping))
 
 def get_messages(limit=100, channel='general'):
     conn = sqlite3.connect('/data/chat.db')
@@ -255,11 +295,26 @@ def require_admin(view):
 
 @app.route('/')
 def index():
+    # Home Assistant's ingress proxy adds these headers identifying the
+    # logged-in HA user. They're only present when accessed through
+    # ingress (sidebar/panel), and X-Remote-User-Name specifically isn't
+    # guaranteed for every auth provider (e.g. command-line/OIDC) — so we
+    # key off the more reliable X-Remote-User-Id and treat everything as
+    # optional.
+    ha_user_id = request.headers.get('X-Remote-User-Id')
+    auto_user = None
+    if ha_user_id:
+        ha_username = request.headers.get('X-Remote-User-Name', '')
+        ha_display_name = request.headers.get('X-Remote-User-Display-Name', '')
+        record_ha_user(ha_user_id, ha_username, ha_display_name)
+        auto_user = get_ha_user_map().get(ha_user_id)
+
     return render_template('index.html',
                           username1=get_setting('username1', USERNAME1_DEFAULT),
                           username2=get_setting('username2', USERNAME2_DEFAULT),
                           theme=THEME,
-                          asset_version=ASSET_VERSION)
+                          asset_version=ASSET_VERSION,
+                          auto_user=auto_user)
 
 @app.route('/admin')
 def admin_panel():
@@ -268,7 +323,9 @@ def admin_panel():
     return render_template('admin.html', logged_in=True,
                           username1=get_setting('username1', USERNAME1_DEFAULT),
                           username2=get_setting('username2', USERNAME2_DEFAULT),
-                          saved=request.args.get('saved'))
+                          saved=request.args.get('saved'),
+                          ha_users=get_ha_users(),
+                          ha_user_map=get_ha_user_map())
 
 @app.route('/admin/login', methods=['POST'])
 def admin_login():
@@ -299,6 +356,20 @@ def admin_update_usernames():
 
     set_setting('username1', name1)
     set_setting('username2', name2)
+    return ingress_redirect(url_for('admin_panel', saved='1'))
+
+@app.route('/admin/ha-mapping', methods=['POST'])
+@require_admin
+def admin_update_ha_mapping():
+    mapping = {}
+    for user_id, choice in request.form.items():
+        if not user_id.startswith('map_'):
+            continue
+        user_id = user_id[len('map_'):]
+        choice = choice.strip()
+        if choice:  # empty selection = no auto sign-in for this HA user
+            mapping[user_id] = choice[:30]
+    set_ha_user_map(mapping)
     return ingress_redirect(url_for('admin_panel', saved='1'))
 
 @app.route('/api/messages')

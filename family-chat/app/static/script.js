@@ -16,12 +16,17 @@ const emojiCategories = {
 
 // Initialize everything after DOM is ready
 document.addEventListener('DOMContentLoaded', function() {
-    // Check for saved user
+    // A previously-made manual choice on this browser always wins (lets
+    // someone override the HA-based auto sign-in, e.g. a shared tablet).
     if (localStorage.getItem('chatUser')) {
         currentUser = localStorage.getItem('chatUser');
         const modal = document.getElementById('userModal');
         if (modal) modal.classList.add('hidden');
         initializeChat();
+    } else if (window.AUTO_CHAT_USER) {
+        // No manual choice yet — auto sign in as whoever the admin mapped
+        // the currently logged-in Home Assistant user to.
+        selectUser(window.AUTO_CHAT_USER);
     } else {
         const modal = document.getElementById('userModal');
         if (modal) modal.classList.remove('hidden');

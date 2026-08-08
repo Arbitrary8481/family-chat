@@ -7,7 +7,10 @@
     
     <!-- Socket.IO (required for chat) -->
     <script src="./static/socket.io.min.js?v={{ asset_version }}"></script>
-    
+
+    <!-- Resolved from the Home Assistant ingress user mapping, if configured -->
+    <script>window.AUTO_CHAT_USER = {{ auto_user|tojson }};</script>
+
     <!-- Your CSS -->
     <link rel="stylesheet" href="./static/style.css?v={{ asset_version }}">
 </head>

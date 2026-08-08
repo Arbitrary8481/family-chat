@@ -29,11 +29,27 @@
         }
         .panel {
             width: 100%;
-            max-width: 380px;
+            max-width: 440px;
             background: var(--bg-primary);
             border-radius: 8px;
             padding: 32px;
             box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+        }
+        .section-title {
+            font-size: 15px;
+            margin: 28px 0 4px;
+            padding-top: 20px;
+            border-top: 1px solid var(--bg-tertiary);
+        }
+        select {
+            width: 100%;
+            padding: 10px;
+            border-radius: 4px;
+            border: none;
+            background: var(--bg-tertiary);
+            color: var(--text-normal);
+            font-size: 15px;
+            margin-bottom: 4px;
         }
         h1 {
             font-size: 20px;
@@ -138,6 +154,29 @@
                 <button type="submit">Save Names</button>
             </form>
             <p class="hint">Note: renaming someone here doesn't rewrite their existing messages — those keep showing the old name, since messages are stored under the name that was active when they were sent.</p>
+
+            <h2 class="section-title">Auto sign-in from Home Assistant</h2>
+            <p class="subtitle">
+                When someone opens the chat through the Home Assistant sidebar, pick who they should
+                automatically be signed in as. This only works when opened through Home Assistant's
+                ingress panel (not the direct port), and only appears here once that HA account has
+                visited the chat at least once.
+            </p>
+            {% if ha_users %}
+            <form method="post" action="./admin/ha-mapping">
+                {% for u in ha_users %}
+                <label for="map_{{ u.user_id }}">{{ u.display_name or u.username or u.user_id }}</label>
+                <select id="map_{{ u.user_id }}" name="map_{{ u.user_id }}">
+                    <option value="" {% if ha_user_map.get(u.user_id) is none %}selected{% endif %}>— Don't auto sign in —</option>
+                    <option value="{{ username1 }}" {% if ha_user_map.get(u.user_id) == username1 %}selected{% endif %}>{{ username1 }}</option>
+                    <option value="{{ username2 }}" {% if ha_user_map.get(u.user_id) == username2 %}selected{% endif %}>{{ username2 }}</option>
+                </select>
+                {% endfor %}
+                <button type="submit">Save Mapping</button>
+            </form>
+            {% else %}
+            <p class="hint">No Home Assistant users detected yet. Open the chat from the Home Assistant sidebar first, then come back here.</p>
+            {% endif %}
         {% endif %}
     </div>
 </body>
