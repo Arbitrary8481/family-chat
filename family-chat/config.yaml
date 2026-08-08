@@ -24,6 +24,7 @@ options:
   username2: "Family Member 2"
   theme: "dark"
   max_file_size: 25
+  admin_password: "changeme"
   allowed_file_types:
     - image/*
     - video/*
@@ -35,5 +36,6 @@ schema:
   username2: str
   theme: list(dark|light)
   max_file_size: int(1,100)
+  admin_password: password
   allowed_file_types:
     - str

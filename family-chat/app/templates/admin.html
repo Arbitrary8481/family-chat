@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Family Chat — Admin</title>
+    <style>
+        :root {
+            --bg-primary: #36393f;
+            --bg-secondary: #2f3136;
+            --bg-tertiary: #202225;
+            --bg-accent: #5865f2;
+            --bg-accent-hover: #4752c4;
+            --text-normal: #dcddde;
+            --text-muted: #96989d;
+            --danger: #ed4245;
+            --success: #3ba55d;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg-tertiary);
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            color: var(--text-normal);
+        }
+        .panel {
+            width: 100%;
+            max-width: 380px;
+            background: var(--bg-primary);
+            border-radius: 8px;
+            padding: 32px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+        }
+        h1 {
+            font-size: 20px;
+            margin: 0 0 4px;
+        }
+        p.subtitle {
+            color: var(--text-muted);
+            margin: 0 0 24px;
+            font-size: 14px;
+        }
+        label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            margin-top: 16px;
+        }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 10px;
+            border-radius: 4px;
+            border: none;
+            background: var(--bg-tertiary);
+            color: var(--text-normal);
+            font-size: 15px;
+        }
+        input:focus { outline: 2px solid var(--bg-accent); }
+        button {
+            width: 100%;
+            margin-top: 24px;
+            padding: 11px;
+            border: none;
+            border-radius: 4px;
+            background: var(--bg-accent);
+            color: white;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        button:hover { background: var(--bg-accent-hover); }
+        .message {
+            border-radius: 4px;
+            padding: 10px 12px;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+        .message.error { background: rgba(237,66,69,0.15); color: var(--danger); }
+        .message.success { background: rgba(59,165,93,0.15); color: var(--success); }
+        .logout-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .logout-row form { margin: 0; width: auto; }
+        .logout-row button {
+            width: auto;
+            margin-top: 0;
+            padding: 6px 12px;
+            font-size: 13px;
+            background: transparent;
+            border: 1px solid var(--text-muted);
+            color: var(--text-muted);
+        }
+        .logout-row button:hover { color: var(--text-normal); border-color: var(--text-normal); background: transparent; }
+        .hint {
+            color: var(--text-muted);
+            font-size: 12px;
+            margin-top: 20px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="panel">
+        {% if not logged_in %}
+            <h1>🔒 Admin Login</h1>
+            <p class="subtitle">Enter the admin password to manage Family Chat settings.</p>
+            {% if error %}<div class="message error">{{ error }}</div>{% endif %}
+            <form method="post" action="./admin/login">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" autofocus required>
+                <button type="submit">Log In</button>
+            </form>
+        {% else %}
+            <div class="logout-row">
+                <h1 style="margin:0;">⚙️ Admin</h1>
+                <form method="post" action="./admin/logout">
+                    <button type="submit">Log Out</button>
+                </form>
+            </div>
+            <p class="subtitle">Manage the two family member names.</p>
+            {% if saved == '1' %}<div class="message success">Saved. Reload the chat to see the new names.</div>{% endif %}
+            {% if saved == 'error' %}<div class="message error">Both names are required.</div>{% endif %}
+            <form method="post" action="./admin/usernames">
+                <label for="username1">Family Member 1</label>
+                <input type="text" id="username1" name="username1" maxlength="30" value="{{ username1 }}" required>
+                <label for="username2">Family Member 2</label>
+                <input type="text" id="username2" name="username2" maxlength="30" value="{{ username2 }}" required>
+                <button type="submit">Save Names</button>
+            </form>
+            <p class="hint">Note: renaming someone here doesn't rewrite their existing messages — those keep showing the old name, since messages are stored under the name that was active when they were sent.</p>
+        {% endif %}
+    </div>
+</body>
+</html>

@@ -44,6 +44,34 @@ function selectUser(username) {
     initializeChat();
 }
 
+function logoutUser() {
+    localStorage.removeItem('chatUser');
+    currentUser = null;
+
+    if (socket) {
+        socket.disconnect();
+        socket = null;
+    }
+
+    const usernameEl = document.getElementById('currentUsername');
+    const avatarEl = document.getElementById('currentAvatar');
+    if (usernameEl) usernameEl.textContent = 'Select User';
+    if (avatarEl) avatarEl.textContent = '';
+
+    const messagesContainer = document.getElementById('messagesContainer');
+    if (messagesContainer) {
+        messagesContainer.innerHTML = `
+            <div class="welcome-message">
+                <h1>Welcome to #<span id="welcomeChannel">${currentChannel}</span>!</h1>
+                <p>Stay connected with your family 👨‍👩‍👧‍👦</p>
+            </div>
+        `;
+    }
+
+    const modal = document.getElementById('userModal');
+    if (modal) modal.classList.remove('hidden');
+}
+
 // Home Assistant ingress serves this app under a dynamic prefix like
 // /api/hassio_ingress/<token>/ instead of the domain root. socket.io's
 // default path option ("/socket.io/") ignores that prefix, so the

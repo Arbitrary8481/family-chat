@@ -1,27 +1,70 @@
 #!/usr/bin/env python3
 import asyncio
+import functools
+import hmac
 import json
 import os
+import secrets
 import sqlite3
 import base64
 import hashlib
 from datetime import datetime
 from pathlib import Path
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, session, redirect, url_for
 from flask_socketio import SocketIO, emit, join_room
+from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import eventlet
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
-app.config['SECRET_KEY'] = 'your-secret-key-here'
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
+# Home Assistant writes add-on options to /data/options.json regardless of
+# base image. This app never read it (run.sh just hardcoded env vars
+# instead), so config.yaml options were silently ignored. Reading the file
+# directly here makes username1/username2/theme/admin_password actually
+# take effect, and still falls back to env vars for local/non-HA runs.
+def _load_ha_options():
+    options_file = Path('/data/options.json')
+    if options_file.exists():
+        try:
+            with open(options_file) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+_ha_options = _load_ha_options()
+
+def get_option(key, env_key, default):
+    if key in _ha_options and _ha_options[key] not in (None, ''):
+        return _ha_options[key]
+    return os.environ.get(env_key, default)
+
+# Persist a random Flask session secret across restarts instead of using a
+# hardcoded one (a hardcoded SECRET_KEY breaks session/cookie integrity,
+# which matters now that the admin panel relies on signed session cookies).
+_SECRET_KEY_FILE = Path('/data/secret_key')
+if _SECRET_KEY_FILE.exists():
+    app.config['SECRET_KEY'] = _SECRET_KEY_FILE.read_text().strip()
+else:
+    new_secret = secrets.token_hex(32)
+    _SECRET_KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _SECRET_KEY_FILE.write_text(new_secret)
+    app.config['SECRET_KEY'] = new_secret
+
 # Configuration
-USERNAME1 = os.environ.get('USERNAME1', 'Family Member 1')
-USERNAME2 = os.environ.get('USERNAME2', 'Family Member 2')
-THEME = os.environ.get('THEME', 'dark')
+USERNAME1_DEFAULT = get_option('username1', 'USERNAME1', 'Family Member 1')
+USERNAME2_DEFAULT = get_option('username2', 'USERNAME2', 'Family Member 2')
+THEME = get_option('theme', 'THEME', 'dark')
 MAX_FILE_SIZE = int(os.environ.get('MAX_FILE_SIZE', '25')) * 1024 * 1024
+
+ADMIN_PASSWORD = get_option('admin_password', 'ADMIN_PASSWORD', 'changeme')
+ADMIN_PASSWORD_HASH = generate_password_hash(ADMIN_PASSWORD)
+if ADMIN_PASSWORD == 'changeme':
+    print('WARNING: admin_password is still set to the default "changeme". '
+          'Set it in the add-on configuration.')
 
 # Upload directory
 UPLOAD_FOLDER = Path('/data/uploads')
@@ -67,7 +110,33 @@ def init_db():
                   emoji TEXT,
                   user TEXT,
                   FOREIGN KEY (message_id) REFERENCES messages(id))''')
-    
+
+    # Settings table (currently: display names for the two family members).
+    # Seeded once from add-on options/env vars, then editable from /admin
+    # without needing a container restart.
+    c.execute('''CREATE TABLE IF NOT EXISTS settings
+                 (key TEXT PRIMARY KEY, value TEXT NOT NULL)''')
+    c.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)',
+              ('username1', USERNAME1_DEFAULT))
+    c.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)',
+              ('username2', USERNAME2_DEFAULT))
+
+    conn.commit()
+    conn.close()
+
+def get_setting(key, default=None):
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('SELECT value FROM settings WHERE key = ?', (key,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else default
+
+def set_setting(key, value):
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('INSERT INTO settings (key, value) VALUES (?, ?) '
+              'ON CONFLICT(key) DO UPDATE SET value = excluded.value', (key, value))
     conn.commit()
     conn.close()
 
@@ -142,12 +211,60 @@ def save_custom_emoji(name, file_path, created_by):
         conn.close()
         return False
 
+def require_admin(view):
+    @functools.wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get('is_admin'):
+            return redirect(url_for('admin_panel'))
+        return view(*args, **kwargs)
+    return wrapped
+
 @app.route('/')
 def index():
-    return render_template('index.html', 
-                          username1=USERNAME1, 
-                          username2=USERNAME2,
+    return render_template('index.html',
+                          username1=get_setting('username1', USERNAME1_DEFAULT),
+                          username2=get_setting('username2', USERNAME2_DEFAULT),
                           theme=THEME)
+
+@app.route('/admin')
+def admin_panel():
+    if not session.get('is_admin'):
+        return render_template('admin.html', logged_in=False, error=request.args.get('error'))
+    return render_template('admin.html', logged_in=True,
+                          username1=get_setting('username1', USERNAME1_DEFAULT),
+                          username2=get_setting('username2', USERNAME2_DEFAULT),
+                          saved=request.args.get('saved'))
+
+@app.route('/admin/login', methods=['POST'])
+def admin_login():
+    password = request.form.get('password', '')
+    # Constant-time-safe comparison via check_password_hash (hmac.compare_digest internally)
+    if check_password_hash(ADMIN_PASSWORD_HASH, password):
+        session['is_admin'] = True
+        return redirect(url_for('admin_panel'))
+    return redirect(url_for('admin_panel', error='Incorrect password'))
+
+@app.route('/admin/logout', methods=['POST'])
+def admin_logout():
+    session.pop('is_admin', None)
+    return redirect(url_for('admin_panel'))
+
+@app.route('/admin/usernames', methods=['POST'])
+@require_admin
+def admin_update_usernames():
+    name1 = request.form.get('username1', '').strip()
+    name2 = request.form.get('username2', '').strip()
+
+    if not name1 or not name2:
+        return redirect(url_for('admin_panel', saved='error'))
+    # Keep names short — they're rendered as avatar initials and channel
+    # member labels, and long values would break that UI.
+    name1 = name1[:30]
+    name2 = name2[:30]
+
+    set_setting('username1', name1)
+    set_setting('username2', name2)
+    return redirect(url_for('admin_panel', saved='1'))
 
 @app.route('/api/messages')
 def get_messages_api():
