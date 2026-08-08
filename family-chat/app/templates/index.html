@@ -8,8 +8,9 @@
     <!-- Socket.IO (required for chat) -->
     <script src="./static/socket.io.min.js?v={{ asset_version }}"></script>
 
-    <!-- Your CSS -->
-    <link rel="stylesheet" href="./static/style.css?v={{ asset_version }}">
+    <!-- Inlined (not a separate request) so styling can never race against
+         Home Assistant's ingress session being established on reload -->
+    <style>{{ inline_css|safe }}</style>
 </head>
 <body>
     <div class="app-container">

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.1
+
+### Fixed
+- **Styling occasionally still didn't apply on reload**, even after the 2.1.0 cache-busting fix. The remaining cause looks like a timing race in Home Assistant's ingress "soft" panel reload: sub-resource requests (like the CSS file) can occasionally fire before the ingress session is fully established and fail silently, while a manual refresh happens later and succeeds. The stylesheet is now inlined directly into the page's HTML instead of loaded as a separate request, so it can no longer race against anything — if the page loaded, the styling is already in it.
+
 ## 2.1.0
 
 ### Fixed

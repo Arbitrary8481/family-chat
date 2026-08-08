@@ -74,6 +74,16 @@ if ADMIN_PASSWORD == 'changeme':
 # means every container start serves guaranteed-fresh assets.
 ASSET_VERSION = str(int(datetime.now().timestamp()))
 
+# Inlined directly into index.html (see below) instead of served as a
+# separate <link rel="stylesheet"> request. Home Assistant's ingress
+# "soft" panel reload occasionally lets sub-resource requests (like the
+# CSS file) race against the ingress session still being established,
+# which can make the stylesheet fail to load until a manual refresh.
+# Inlining it removes that race entirely — if the HTML document loaded at
+# all, the styles are already in it, no second request required.
+_STYLE_CSS_PATH = Path(__file__).parent / 'static' / 'style.css'
+INLINE_CSS = _STYLE_CSS_PATH.read_text() if _STYLE_CSS_PATH.exists() else ''
+
 # Upload directory
 UPLOAD_FOLDER = Path('/data/uploads')
 UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
@@ -323,6 +333,7 @@ def index():
                           username2=get_setting('username2', USERNAME2_DEFAULT),
                           theme=THEME,
                           asset_version=ASSET_VERSION,
+                          inline_css=INLINE_CSS,
                           auto_user=auto_user,
                           ha_identified=bool(ha_user_id))
 
