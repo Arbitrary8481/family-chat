@@ -1074,12 +1074,14 @@ body {
 .emoji-upload {
     padding: 16px;
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     border-bottom: 1px solid var(--bg-tertiary);
 }
 
 .emoji-upload input[type="text"] {
-    flex: 1;
+    flex: 1 1 140px;
+    min-width: 0;
     background: var(--bg-tertiary);
     border: none;
     border-radius: 4px;
@@ -1088,8 +1090,13 @@ body {
 }
 
 .emoji-upload input[type="file"] {
-    flex: 1;
+    flex: 1 1 140px;
+    min-width: 0;
     color: var(--text-muted);
+}
+
+.emoji-upload button {
+    flex: 1 1 100%;
 }
 
 .custom-emoji-list {

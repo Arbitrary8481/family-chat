@@ -1,7 +1,20 @@
 // Global state
 let socket;
 let currentUser = null;
-let currentChannel = window.DEFAULT_CHANNEL || 'general';
+
+function getStoredChannel() {
+    // Only trust a stored channel if it still actually exists — an admin
+    // may have deleted it since it was last saved.
+    try {
+        const stored = localStorage.getItem('lastChannel');
+        if (stored && document.querySelector(`.channel[data-channel="${CSS.escape(stored)}"]`)) {
+            return stored;
+        }
+    } catch (e) {}
+    return null;
+}
+
+let currentChannel = getStoredChannel() || window.DEFAULT_CHANNEL || 'general';
 let selectedFile = null;
 let customEmojis = {};
 let recentEmojis = JSON.parse(localStorage.getItem('recentEmojis') || '[]');
@@ -69,6 +82,21 @@ function initializeChat() {
     socket = io(window.location.origin, {
         path: basePath + 'socket.io/'
     });
+
+    // The server always renders the first channel as "active" in the
+    // initial HTML. If a different channel was restored from storage,
+    // fix the sidebar/header to match it before anything loads — 
+    // otherwise the highlighted channel and the messages shown for it
+    // disagree with each other.
+    document.querySelectorAll('.channel').forEach(ch => {
+        ch.classList.toggle('active', ch.dataset.channel === currentChannel);
+    });
+    const initialChannelEl = document.getElementById('currentChannel');
+    const initialWelcomeEl = document.getElementById('welcomeChannel');
+    const initialInputEl = document.getElementById('messageInput');
+    if (initialChannelEl) initialChannelEl.textContent = currentChannel;
+    if (initialWelcomeEl) initialWelcomeEl.textContent = currentChannel;
+    if (initialInputEl) initialInputEl.placeholder = `Message #${currentChannel}`;
     
     socket.on('connect', function() {
         console.log('Connected to server');
@@ -95,7 +123,7 @@ function initializeChat() {
         alert(data.message || 'Something went wrong. Check the add-on log for details.');
     });
     
-    fetch(apiUrl('/api/messages'))
+    fetch(apiUrl(`/api/messages?channel=${currentChannel}`))
         .then(r => r.json())
         .then(messages => {
             messages.forEach(msg => addMessage(msg));
@@ -123,6 +151,7 @@ function initializeChat() {
             document.querySelectorAll('.channel').forEach(c => c.classList.remove('active'));
             this.classList.add('active');
             currentChannel = this.dataset.channel;
+            try { localStorage.setItem('lastChannel', currentChannel); } catch (e) {}
             
             const channelEl = document.getElementById('currentChannel');
             const welcomeEl = document.getElementById('welcomeChannel');

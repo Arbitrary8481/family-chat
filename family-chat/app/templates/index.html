@@ -19,8 +19,6 @@
             <div class="server-icon active" title="Home">
                 <span class="server-initial">H</span>
             </div>
-            <div class="server-divider"></div>
-            <div class="server-icon add-server" onclick="openEmojiManager()" title="Manage Emojis">😀</div>
         </div>
 
         <!-- Channel List -->
@@ -198,17 +196,22 @@
                 <h3>Settings</h3>
                 <button class="close-btn" onclick="closeMySettings()">×</button>
             </div>
-            <div class="emoji-upload">
+            <div style="padding: 16px; border-bottom: 1px solid var(--bg-tertiary);">
                 <label for="myAliasInput" style="display:block; font-size: 13px; color: var(--text-muted); margin-bottom: 6px;">
                     Display name <span id="myHaNameHint"></span>
                 </label>
-                <input type="text" id="myAliasInput" maxlength="30" placeholder="Your display name">
-                <button class="btn btn-primary" onclick="saveMyAlias()">Save</button>
+                <div class="emoji-upload" style="padding: 0; border-bottom: none;">
+                    <input type="text" id="myAliasInput" maxlength="30" placeholder="Your display name">
+                    <button class="btn btn-primary" onclick="saveMyAlias()">Save</button>
+                </div>
+                <p style="font-size: 12px; color: var(--text-muted); margin-top: 12px;">
+                    This changes how your name appears everywhere, including messages you've already sent.
+                    Leave it blank and save to go back to your Home Assistant name.
+                </p>
             </div>
-            <p style="font-size: 12px; color: var(--text-muted); margin-top: 12px;">
-                This changes how your name appears everywhere, including messages you've already sent.
-                Leave it blank and save to go back to your Home Assistant name.
-            </p>
+            <div style="padding: 16px;">
+                <button class="btn btn-secondary" style="width: 100%;" onclick="closeMySettings(); openEmojiManager();">😀 Manage Custom Emojis</button>
+            </div>
         </div>
     </div>
 

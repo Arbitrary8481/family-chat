@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.5.3
+
+### Fixed
+- The custom emoji upload form (text field, file picker, Upload button) could overflow and get clipped on narrower screens — it had no wrap behavior, so all three controls were forced onto one row regardless of available width. It now wraps properly, with the Upload button taking its own row.
+
+### Changed
+- "Manage Custom Emojis" moved out of the sidebar and into the Settings menu (✏️), alongside display name — one place for personal preferences instead of two separate entry points.
+
+## 2.5.2
+
+### Fixed
+- **"My messages disappeared" after changing a display name.** Nothing was actually deleted — saving a display name reloads the page so the new name applies everywhere at once, but the page had no memory of which channel you'd been viewing, so a reload always landed you back on the first channel. If your messages were in a different channel, they were still there, just out of view. On top of that, the very first message load on any page open was hardcoded to always fetch the `general` channel specifically, regardless of which channel was actually selected. Both are fixed: the channel you're viewing is now remembered across reloads, and the initial message load always requests the channel that's actually showing.
+
 ## 2.5.1
 
 ### Fixed
