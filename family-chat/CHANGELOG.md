@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.8.3
+
+### Fixed
+- **Reacting to a message with a custom emoji showed a bare count with no emoji (e.g. just "1").** Reactions were packed into a single string as `emoji:user` and unpacked by splitting on `:` — but a custom emoji reaction is stored as `:name:`, which already contains colons, so the split landed in the wrong place and corrupted both the emoji and the username. Reactions are now assembled from a separate query instead of a delimited string, so this can't happen regardless of what characters end up in an emoji name or username.
+- **Reactions didn't appear until you reloaded the page.** The client's handler for incoming reaction updates was an empty stub, so reacting (or having someone else react) never updated what was on screen in real time.
+- **Clicking a reaction you'd already placed didn't remove it.** It just added a duplicate row, inflating the count — even though the pill was already visually styled as "active" to suggest it was a toggle. Reacting a second time now actually un-reacts.
+
 ## 2.8.2
 
 ### Added

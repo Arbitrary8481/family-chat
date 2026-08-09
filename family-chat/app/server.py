@@ -342,19 +342,17 @@ def delete_channel(slug):
 def get_messages(limit=100, channel='general'):
     conn = sqlite3.connect('/data/chat.db')
     c = conn.cursor()
-    c.execute('''SELECT m.*, GROUP_CONCAT(r.emoji || ':' || r.user) as reactions,
-                        ua.alias as current_alias
+    c.execute('''SELECT m.*, ua.alias as current_alias
                  FROM messages m
-                 LEFT JOIN reactions r ON m.id = r.message_id
                  LEFT JOIN user_aliases ua ON ua.user_id = m.sender_id
                  WHERE m.channel = ?
-                 GROUP BY m.id
                  ORDER BY m.timestamp DESC LIMIT ?''', (channel, limit))
     messages = c.fetchall()
-    
+
     # Get columns
     columns = [description[0] for description in c.description]
     result = []
+    message_ids = []
     for row in messages:
         msg = dict(zip(columns, row))
         # If the sender has since set (or been given) an alias, show that
@@ -363,20 +361,30 @@ def get_messages(limit=100, channel='general'):
         if msg.get('current_alias'):
             msg['sender'] = msg['current_alias']
         del msg['current_alias']
-        # Parse reactions
-        if msg['reactions']:
-            reactions = {}
-            for r in msg['reactions'].split(','):
-                if ':' in r:
-                    emoji, user = r.split(':', 1)
-                    if emoji not in reactions:
-                        reactions[emoji] = []
-                    reactions[emoji].append(user)
-            msg['reactions'] = reactions
-        else:
-            msg['reactions'] = {}
+        msg['reactions'] = {}
         result.append(msg)
-    
+        message_ids.append(msg['id'])
+
+    # Reactions used to be folded into the message query with
+    # GROUP_CONCAT(r.emoji || ':' || r.user), then unpacked client-side by
+    # splitting on ':' and ','. That broke as soon as either value could
+    # contain those characters — a reaction using a *custom* emoji is
+    # stored as ":name:", which already contains colons, so splitting on
+    # ':' produced an empty emoji and a mangled username (visible as a
+    # reaction pill showing just a bare count with no emoji). Fetching
+    # reactions as a separate, plain query and assembling them here in
+    # Python sidesteps the whole class of delimiter-collision bugs,
+    # regardless of what characters end up in an emoji name or username.
+    if message_ids:
+        placeholders = ','.join('?' * len(message_ids))
+        c.execute(f'SELECT message_id, emoji, user FROM reactions WHERE message_id IN ({placeholders})',
+                  message_ids)
+        reactions_by_message = {}
+        for message_id, emoji, user in c.fetchall():
+            reactions_by_message.setdefault(message_id, {}).setdefault(emoji, []).append(user)
+        for msg in result:
+            msg['reactions'] = reactions_by_message.get(msg['id'], {})
+
     conn.close()
     return list(reversed(result))
 
@@ -876,20 +884,36 @@ def handle_reaction(data):
     message_id = data.get('message_id')
     emoji = data.get('emoji')
     _, user = resolve_ha_identity()
-    
-    if message_id and emoji and user:
-        conn = sqlite3.connect('/data/chat.db')
-        c = conn.cursor()
+
+    if not (message_id and emoji and user):
+        return
+
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    # A reaction click is a toggle: clicking the same emoji you've
+    # already placed on this message removes it again — this is what the
+    # "active"/highlighted pill styling in the UI has always implied, but
+    # the server previously just inserted a new row every time, so a
+    # second click silently added a duplicate instead of un-reacting.
+    c.execute('SELECT id FROM reactions WHERE message_id = ? AND emoji = ? AND user = ?',
+              (message_id, emoji, user))
+    existing = c.fetchone()
+    if existing:
+        c.execute('DELETE FROM reactions WHERE id = ?', (existing[0],))
+        added = False
+    else:
         c.execute('INSERT INTO reactions (message_id, emoji, user) VALUES (?, ?, ?)',
                   (message_id, emoji, user))
-        conn.commit()
-        conn.close()
-        
-        emit('reaction_added', {
-            'message_id': message_id,
-            'emoji': emoji,
-            'user': user
-        }, broadcast=True)
+        added = True
+    conn.commit()
+    conn.close()
+
+    emit('reaction_updated', {
+        'message_id': message_id,
+        'emoji': emoji,
+        'user': user,
+        'added': added
+    }, broadcast=True)
 
 if __name__ == '__main__':
     init_db()

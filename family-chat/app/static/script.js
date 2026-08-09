@@ -205,8 +205,8 @@ function initializeChat() {
         }
     });
     
-    socket.on('reaction_added', function(data) {
-        updateReaction(data.message_id, data.emoji, data.user);
+    socket.on('reaction_updated', function(data) {
+        updateReaction(data.message_id, data.emoji, data.user, data.added);
     });
 
     // If something goes wrong server-side while handling an event (a
@@ -336,21 +336,9 @@ function addMessage(data) {
         }
     }
     
-    let reactionsHtml = '';
-    if (data.reactions && Object.keys(data.reactions).length > 0) {
-        reactionsHtml = '<div class="message-reactions">';
-        for (const [emoji, users] of Object.entries(data.reactions)) {
-            const isActive = users.includes(currentUser);
-            const safeEmoji = escapeHtml(emoji);
-            reactionsHtml += `
-                <div class="reaction ${isActive ? 'active' : ''}" onclick="toggleReaction(${data.id}, '${safeEmoji}')">
-                    ${safeEmoji} <span class="reaction-count">${users.length}</span>
-                </div>
-            `;
-        }
-        reactionsHtml += '</div>';
-    }
-    
+    const reactionsHtml = buildReactionsHtml(data.id, data.reactions || {});
+    messageReactions[data.id] = data.reactions || {};
+
     messageDiv.innerHTML = `
         <div class="message-avatar">${data.sender[0]}</div>
         <div class="message-content">
@@ -368,6 +356,63 @@ function addMessage(data) {
     
     container.appendChild(messageDiv);
 }
+
+// Reaction pills for every message currently rendered, keyed by message
+// id: { emoji: [usernames who reacted with it] }. Kept in memory so a
+// live 'reaction_updated' event can patch just the one message's pills
+// back into the DOM without needing to reload the whole channel.
+const messageReactions = {};
+
+function buildReactionsHtml(messageId, reactions) {
+    if (!reactions || Object.keys(reactions).length === 0) return '';
+    let html = '<div class="message-reactions">';
+    for (const [emoji, users] of Object.entries(reactions)) {
+        if (!users || users.length === 0) continue;
+        const isActive = users.includes(currentUser);
+        // The emoji goes in a data-attribute (browser-decoded on read via
+        // .dataset) rather than interpolated into an onclick="..." string
+        // — a custom emoji name or username with a quote in it would
+        // otherwise be able to break out of the attribute.
+        html += `
+            <div class="reaction ${isActive ? 'active' : ''}" data-message-id="${messageId}" data-emoji="${escapeHtml(emoji)}">
+                ${escapeHtml(emoji)} <span class="reaction-count">${users.length}</span>
+            </div>
+        `;
+    }
+    html += '</div>';
+    return html;
+}
+
+function renderMessageReactions(messageId) {
+    const messageDiv = document.querySelector(`.message[data-id="${messageId}"]`);
+    if (!messageDiv) return;
+    const content = messageDiv.querySelector('.message-content');
+    if (!content) return;
+
+    const existing = content.querySelector('.message-reactions');
+    const html = buildReactionsHtml(messageId, messageReactions[messageId]);
+
+    if (!html) {
+        if (existing) existing.remove();
+        return;
+    }
+    if (existing) {
+        existing.outerHTML = html;
+    } else {
+        content.insertAdjacentHTML('beforeend', html);
+    }
+}
+
+// Clicking any reaction pill toggles it — handled here via delegation
+// (rather than a per-pill onclick) since pills are re-created often as
+// reactions come and go.
+document.addEventListener('click', (e) => {
+    const pill = e.target.closest('.reaction');
+    if (!pill) return;
+    const messageId = pill.dataset.messageId;
+    const emoji = pill.dataset.emoji;
+    if (messageId && emoji) toggleReaction(Number(messageId), emoji);
+});
 
 function scrollToBottom() {
     const container = document.getElementById('messagesContainer');
@@ -991,8 +1036,19 @@ function toggleReaction(messageId, emoji) {
     });
 }
 
-function updateReaction(messageId, emoji, user) {
-    // Refresh messages
+function updateReaction(messageId, emoji, user, added) {
+    if (!messageReactions[messageId]) messageReactions[messageId] = {};
+    const bucket = messageReactions[messageId];
+
+    if (added) {
+        if (!bucket[emoji]) bucket[emoji] = [];
+        if (!bucket[emoji].includes(user)) bucket[emoji].push(user);
+    } else if (bucket[emoji]) {
+        bucket[emoji] = bucket[emoji].filter(u => u !== user);
+        if (bucket[emoji].length === 0) delete bucket[emoji];
+    }
+
+    renderMessageReactions(messageId);
 }
 
 function openImageViewer(url) {
