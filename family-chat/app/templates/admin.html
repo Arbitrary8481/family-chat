@@ -70,32 +70,6 @@
             width: auto;
             margin: 0;
         }
-        .member-row {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 4px 0;
-            margin-bottom: 6px;
-        }
-        .member-row input[type="text"] {
-            flex: 1;
-            margin: 0;
-        }
-        .member-row button {
-            width: auto;
-            margin: 0;
-            padding: 8px 12px;
-            font-size: 13px;
-            white-space: nowrap;
-        }
-        .save-btn {
-            background: var(--bg-accent);
-            color: white;
-            border: none;
-        }
-        .save-btn:hover {
-            background: var(--bg-accent-hover);
-        }
         .delete-btn {
             width: auto;
             margin-top: 0;
@@ -228,29 +202,10 @@
                     <button type="submit">Log Out</button>
                 </form>
             </div>
-            <p class="subtitle">Manage who can use the chat.</p>
+            <p class="subtitle">Manage channels. Who can chat is entirely automatic — anyone who opens this from the Home Assistant sidebar signs in as themselves, using their own Home Assistant name.</p>
             {% if saved == '1' %}<div class="message success">Saved. Reload the chat to see changes.</div>{% endif %}
-            {% if member_error %}<div class="message error">{{ member_error }}</div>{% endif %}
 
-            <h2 class="section-title" style="margin-top:0; padding-top:0; border-top:none;">Family Members</h2>
-            <div class="channel-manage-list">
-                {% for m in members %}
-                <form method="post" class="member-row">
-                    <input type="hidden" name="id" value="{{ m.id }}">
-                    <input type="text" name="name" value="{{ m.name }}" maxlength="30" required>
-                    <button type="submit" formaction="./admin/members/rename" class="save-btn">Save</button>
-                    <button type="submit" formaction="./admin/members/delete" class="delete-btn" title="Remove"{% if members|length <= 1 %} disabled{% endif %}>✕</button>
-                </form>
-                {% endfor %}
-            </div>
-            <form method="post" action="./admin/members/add" class="channel-add-form">
-                <label for="member_name">Name</label>
-                <input type="text" id="member_name" name="name" maxlength="30" placeholder="e.g. Sarah" required>
-                <button type="submit">Add Member</button>
-            </form>
-            <p class="hint">Renaming or removing someone doesn't rewrite their existing messages — those keep showing the name that was active when sent.</p>
-
-            <h2 class="section-title">Channels</h2>
+            <h2 class="section-title" style="margin-top:0; padding-top:0; border-top:none;">Channels</h2>
             {% if channel_error %}<div class="message error">{{ channel_error }}</div>{% endif %}
             <div class="channel-manage-list">
                 {% for ch in channels %}
@@ -271,30 +226,6 @@
                 <button type="submit">Add Channel</button>
             </form>
             <p class="hint">Deleting a channel just hides it from the sidebar — its messages aren't deleted, and reappear if you add a channel with the same name later. At least one channel must always exist.</p>
-
-            <h2 class="section-title">Auto sign-in from Home Assistant</h2>
-            <p class="subtitle">
-                When someone opens the chat through the Home Assistant sidebar, pick who they should
-                automatically be signed in as. This only works when opened through Home Assistant's
-                ingress panel (not the direct port), and only appears here once that HA account has
-                visited the chat at least once.
-            </p>
-            {% if ha_users %}
-            <form method="post" action="./admin/ha-mapping">
-                {% for u in ha_users %}
-                <label for="map_{{ u.user_id }}">{{ u.display_name or u.username or u.user_id }}</label>
-                <select id="map_{{ u.user_id }}" name="map_{{ u.user_id }}">
-                    <option value="" {% if ha_user_map.get(u.user_id) is none %}selected{% endif %}>— Don't auto sign in —</option>
-                    {% for m in members %}
-                    <option value="{{ m.name }}" {% if ha_user_map.get(u.user_id) == m.name %}selected{% endif %}>{{ m.name }}</option>
-                    {% endfor %}
-                </select>
-                {% endfor %}
-                <button type="submit">Save Mapping</button>
-            </form>
-            {% else %}
-            <p class="hint">No Home Assistant users detected yet. Open the chat from the Home Assistant sidebar first, then come back here.</p>
-            {% endif %}
         {% endif %}
     </div>
 </body>

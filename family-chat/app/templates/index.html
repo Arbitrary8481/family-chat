@@ -196,13 +196,8 @@
         <div class="modal-content user-select">
             <div class="family-header">
                 <span class="family-icon">🏠</span>
-                {% if ha_identified %}
-                <h2>Almost there!</h2>
-                <p>Your Home Assistant account isn't linked to a family chat name yet.<br>Ask an admin to finish setup in the admin panel (⚙️ in the header), then try again.</p>
-                {% else %}
                 <h2>Open from Home Assistant</h2>
                 <p>Family Chat signs you in automatically using your Home Assistant login.<br>Please open it from the Home Assistant sidebar rather than this address directly.</p>
-                {% endif %}
             </div>
             <button class="user-option" onclick="location.reload()" style="--accent: #667eea; margin: 24px auto 0;">
                 <span>↻ Try Again</span>
@@ -216,10 +211,9 @@
         <button class="viewer-close">×</button>
     </div>
 
-    <!-- Resolved from the Home Assistant ingress user mapping, if configured -->
+    <!-- Resolved automatically from the Home Assistant login -->
     <script>
         window.AUTO_CHAT_USER = {{ auto_user|tojson }};
-        window.HA_IDENTIFIED = {{ ha_identified|tojson }};
         window.DEFAULT_CHANNEL = {{ (channels[0].slug if channels else 'general')|tojson }};
     </script>
     <script src="./static/script.js?v={{ asset_version }}"></script>

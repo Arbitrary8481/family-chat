@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.4.0
+
+### Changed
+- **Identity is now fully automatic — no admin mapping step at all.** Anyone who opens the chat from the Home Assistant sidebar is signed in as themselves, using their own Home Assistant display name (or login username if no display name is set). The admin panel's "Family Members" roster and "Auto sign-in" mapping section are gone entirely — there's nothing to configure. Sign-in works the moment someone with a Home Assistant account opens the chat for the first time.
+- The member sidebar now shows everyone who's actually opened the chat, most recent first, instead of a manually maintained list.
+- **The add-on is no longer reachable via its port directly** — only through the Home Assistant sidebar/ingress. The direct port mapping (`8099/tcp`) has been removed from the add-on configuration entirely; ingress doesn't need a published port to work, so removing it means the app simply isn't reachable from your LAN at all outside of Home Assistant. (If you're upgrading, the add-on needs to fully restart/recreate for this to take effect — check that the old port is no longer reachable after updating.)
+
+### Removed
+- The `username1`/`username2` add-on configuration options, the Family Members roster, and the HA-user mapping feature (superseded by fully automatic identity above).
+
 ## 2.3.0
 
 ### Added

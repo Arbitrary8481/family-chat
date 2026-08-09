@@ -56,8 +56,6 @@ else:
     app.config['SECRET_KEY'] = new_secret
 
 # Configuration
-USERNAME1_DEFAULT = get_option('username1', 'USERNAME1', 'Family Member 1')
-USERNAME2_DEFAULT = get_option('username2', 'USERNAME2', 'Family Member 2')
 THEME = get_option('theme', 'THEME', 'dark')
 MAX_FILE_SIZE = int(os.environ.get('MAX_FILE_SIZE', '25')) * 1024 * 1024
 
@@ -135,28 +133,6 @@ def init_db():
     # without needing a container restart.
     c.execute('''CREATE TABLE IF NOT EXISTS settings
                  (key TEXT PRIMARY KEY, value TEXT NOT NULL)''')
-    c.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)',
-              ('username1', USERNAME1_DEFAULT))
-    c.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)',
-              ('username2', USERNAME2_DEFAULT))
-
-    # Family members — this used to be a fixed pair (username1/username2
-    # above). It's now an open-ended roster so more than two people can
-    # use the chat. On first run, migrate whatever the old two names were
-    # (or their defaults) into the roster so existing installs don't lose
-    # their configured names when upgrading; from then on this table is
-    # the source of truth and the roster is managed from /admin.
-    c.execute('''CREATE TABLE IF NOT EXISTS family_members
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  name TEXT UNIQUE NOT NULL)''')
-    c.execute('SELECT COUNT(*) FROM family_members')
-    if c.fetchone()[0] == 0:
-        for key, fallback in (('username1', USERNAME1_DEFAULT), ('username2', USERNAME2_DEFAULT)):
-            c.execute('SELECT value FROM settings WHERE key = ?', (key,))
-            row = c.fetchone()
-            name = (row[0] if row else fallback).strip()
-            if name:
-                c.execute('INSERT OR IGNORE INTO family_members (name) VALUES (?)', (name,))
 
     # Home Assistant users seen via ingress auth headers, so the admin
     # panel can offer "when this HA account is logged in, auto-sign-in as
@@ -219,23 +195,24 @@ def record_ha_user(user_id, username, display_name):
     conn.commit()
     conn.close()
 
-def get_ha_users():
+def get_known_people():
+    """Everyone who's ever opened the chat through Home Assistant, most
+    recently seen first. Used for the member sidebar. There's no admin
+    roster to maintain — this is just who's actually shown up, using
+    each person's own HA display name (or username as a fallback)."""
     conn = sqlite3.connect('/data/chat.db')
     c = conn.cursor()
-    c.execute('SELECT user_id, username, display_name, last_seen FROM ha_users ORDER BY last_seen DESC')
+    c.execute('SELECT display_name, username FROM ha_users ORDER BY last_seen DESC')
     rows = c.fetchall()
     conn.close()
-    return [{'user_id': r[0], 'username': r[1], 'display_name': r[2], 'last_seen': r[3]} for r in rows]
-
-def get_ha_user_map():
-    raw = get_setting('ha_user_map', '{}')
-    try:
-        return json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
-        return {}
-
-def set_ha_user_map(mapping):
-    set_setting('ha_user_map', json.dumps(mapping))
+    seen = set()
+    people = []
+    for display_name, username in rows:
+        name = (display_name or '').strip() or (username or '').strip()
+        if name and name not in seen:
+            seen.add(name)
+            people.append(name)
+    return people
 
 def slugify(text):
     slug = re.sub(r'[^a-z0-9]+', '-', text.strip().lower()).strip('-')
@@ -280,59 +257,6 @@ def delete_channel(slug):
     # Messages already posted in this channel are left in place (just no
     # longer reachable from the channel list) rather than deleted, so
     # re-creating a channel with the same slug would bring them back.
-    return True, None
-
-def get_family_members():
-    conn = sqlite3.connect('/data/chat.db')
-    c = conn.cursor()
-    c.execute('SELECT id, name FROM family_members ORDER BY id ASC')
-    rows = c.fetchall()
-    conn.close()
-    return [{'id': r[0], 'name': r[1]} for r in rows]
-
-def add_family_member(name):
-    name = name.strip()[:30]
-    if not name:
-        return None, 'Name is required.'
-    conn = sqlite3.connect('/data/chat.db')
-    c = conn.cursor()
-    c.execute('SELECT 1 FROM family_members WHERE name = ?', (name,))
-    if c.fetchone():
-        conn.close()
-        return None, 'That name is already in use.'
-    c.execute('INSERT INTO family_members (name) VALUES (?)', (name,))
-    conn.commit()
-    member_id = c.lastrowid
-    conn.close()
-    return member_id, None
-
-def rename_family_member(member_id, new_name):
-    new_name = new_name.strip()[:30]
-    if not new_name:
-        return False, 'Name is required.'
-    conn = sqlite3.connect('/data/chat.db')
-    c = conn.cursor()
-    c.execute('SELECT 1 FROM family_members WHERE name = ? AND id != ?', (new_name, member_id))
-    if c.fetchone():
-        conn.close()
-        return False, 'That name is already in use.'
-    c.execute('UPDATE family_members SET name = ? WHERE id = ?', (new_name, member_id))
-    conn.commit()
-    conn.close()
-    return True, None
-
-def delete_family_member(member_id):
-    conn = sqlite3.connect('/data/chat.db')
-    c = conn.cursor()
-    c.execute('SELECT COUNT(*) FROM family_members')
-    if c.fetchone()[0] <= 1:
-        conn.close()
-        return False, "Can't remove the last remaining family member."
-    c.execute('DELETE FROM family_members WHERE id = ?', (member_id,))
-    conn.commit()
-    conn.close()
-    # Same principle as messages/channels: existing messages keep whatever
-    # name was active when they were sent, rather than being rewritten.
     return True, None
 
 def get_messages(limit=100, channel='general'):
@@ -433,14 +357,19 @@ def set_static_cache_headers(response):
     return response
 
 def resolve_ha_identity():
-    """Look up the chat display name for whoever is logged into Home
-    Assistant on this request, via the ingress auth headers. Returns
-    (ha_user_id, chat_name) — chat_name is None if the account hasn't
-    been mapped to a family member yet."""
+    """The chat name is always the logged-in Home Assistant user's own
+    name — there's no admin mapping step. Prefers the display name set on
+    their HA profile (what HA itself shows for them); falls back to their
+    login username if that's blank. Returns (ha_user_id, chat_name);
+    chat_name is None only if there's no HA identity at all (e.g. accessed
+    outside ingress)."""
     ha_user_id = request.headers.get('X-Remote-User-Id')
     if not ha_user_id:
         return None, None
-    return ha_user_id, get_ha_user_map().get(ha_user_id)
+    display_name = request.headers.get('X-Remote-User-Display-Name', '').strip()
+    username = request.headers.get('X-Remote-User-Name', '').strip()
+    chat_name = (display_name or username or 'HA User')[:30]
+    return ha_user_id, chat_name
 
 def require_admin(view):
     @functools.wraps(view)
@@ -466,13 +395,12 @@ def index():
     _, auto_user = resolve_ha_identity()
 
     return render_template('index.html',
-                          members=get_family_members(),
+                          members=[{'name': n} for n in get_known_people()],
                           theme=THEME,
                           asset_version=ASSET_VERSION,
                           inline_css=INLINE_CSS,
                           channels=get_channels(),
-                          auto_user=auto_user,
-                          ha_identified=bool(ha_user_id))
+                          auto_user=auto_user)
 
 @app.route('/api/channels')
 def api_channels():
@@ -483,11 +411,7 @@ def admin_panel():
     if not session.get('is_admin'):
         return render_template('admin.html', logged_in=False, error=request.args.get('error'))
     return render_template('admin.html', logged_in=True,
-                          members=get_family_members(),
-                          member_error=request.args.get('member_error'),
                           saved=request.args.get('saved'),
-                          ha_users=get_ha_users(),
-                          ha_user_map=get_ha_user_map(),
                           channels=get_channels(),
                           channel_error=request.args.get('channel_error'))
 
@@ -504,53 +428,6 @@ def admin_login():
 def admin_logout():
     session.pop('is_admin', None)
     return ingress_redirect(url_for('admin_panel'))
-
-@app.route('/admin/members/add', methods=['POST'])
-@require_admin
-def admin_add_member():
-    member_id, error = add_family_member(request.form.get('name', ''))
-    if error:
-        return ingress_redirect(url_for('admin_panel', member_error=error))
-    return ingress_redirect(url_for('admin_panel', saved='1'))
-
-@app.route('/admin/members/rename', methods=['POST'])
-@require_admin
-def admin_rename_member():
-    try:
-        member_id = int(request.form.get('id', ''))
-    except ValueError:
-        return ingress_redirect(url_for('admin_panel', member_error='Invalid member.'))
-    ok, error = rename_family_member(member_id, request.form.get('name', ''))
-    if error:
-        return ingress_redirect(url_for('admin_panel', member_error=error))
-    return ingress_redirect(url_for('admin_panel', saved='1'))
-
-@app.route('/admin/members/delete', methods=['POST'])
-@require_admin
-def admin_delete_member():
-    try:
-        member_id = int(request.form.get('id', ''))
-    except ValueError:
-        return ingress_redirect(url_for('admin_panel', member_error='Invalid member.'))
-    ok, error = delete_family_member(member_id)
-    if error:
-        return ingress_redirect(url_for('admin_panel', member_error=error))
-    return ingress_redirect(url_for('admin_panel', saved='1'))
-
-@app.route('/admin/ha-mapping', methods=['POST'])
-@require_admin
-def admin_update_ha_mapping():
-    valid_names = {m['name'] for m in get_family_members()}
-    mapping = {}
-    for user_id, choice in request.form.items():
-        if not user_id.startswith('map_'):
-            continue
-        user_id = user_id[len('map_'):]
-        choice = choice.strip()
-        if choice and choice in valid_names:  # empty selection = no auto sign-in for this HA user
-            mapping[user_id] = choice
-    set_ha_user_map(mapping)
-    return ingress_redirect(url_for('admin_panel', saved='1'))
 
 @app.route('/admin/channels/add', methods=['POST'])
 @require_admin
