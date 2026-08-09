@@ -107,7 +107,7 @@ function initializeChat() {
         addMessage(data);
         scrollToBottom();
         
-        if (data.type === 'image' || (data.file && data.file.mime_type && data.file.mime_type.startsWith('image/'))) {
+        if (data.type === 'image' || data.type === 'gif' || (data.file && data.file.mime_type && data.file.mime_type.startsWith('image/'))) {
             addToSharedMedia(resolveUrl(data.file.url));
         }
     });
@@ -402,7 +402,10 @@ function sendFile() {
 
 function toggleEmojiPicker() {
     const picker = document.getElementById('emojiPicker');
-    if (picker) picker.classList.toggle('hidden');
+    if (!picker) return;
+    const gifPicker = document.getElementById('gifPicker');
+    if (gifPicker) gifPicker.classList.add('hidden');
+    picker.classList.toggle('hidden');
 }
 
 function switchEmojiTab(category) {
@@ -754,6 +757,123 @@ document.addEventListener('click', (e) => {
     const picker = document.getElementById('emojiPicker');
     const emojiBtn = document.querySelector('.emoji-btn');
     if (picker && emojiBtn && !picker.contains(e.target) && e.target !== emojiBtn && !picker.classList.contains('hidden')) {
+        picker.classList.add('hidden');
+    }
+});
+
+// --- GIF picker (GIPHY) ---
+// The picker loads trending GIFs on first open, then re-queries as the
+// person types (debounced). A monotonically increasing request id guards
+// against an older, slower response overwriting a newer one if replies
+// arrive out of order.
+let gifSearchTimeout = null;
+let gifRequestSeq = 0;
+
+function toggleGifPicker() {
+    const picker = document.getElementById('gifPicker');
+    if (!picker) return;
+
+    const emojiPicker = document.getElementById('emojiPicker');
+    if (emojiPicker) emojiPicker.classList.add('hidden');
+
+    const opening = picker.classList.contains('hidden');
+    picker.classList.toggle('hidden');
+    if (!opening) return;
+
+    const input = document.getElementById('gifSearchInput');
+    if (input && !input.dataset.bound) {
+        input.dataset.bound = '1';
+        input.addEventListener('input', onGifSearchInput);
+        input.focus();
+    }
+    if (!picker.dataset.loaded) {
+        picker.dataset.loaded = '1';
+        fetchGifs('');
+    }
+}
+
+function onGifSearchInput() {
+    const input = document.getElementById('gifSearchInput');
+    if (!input) return;
+    clearTimeout(gifSearchTimeout);
+    gifSearchTimeout = setTimeout(() => fetchGifs(input.value.trim()), 350);
+}
+
+function fetchGifs(query) {
+    const grid = document.getElementById('gifGrid');
+    if (!grid) return;
+    const seq = ++gifRequestSeq;
+    grid.innerHTML = '<div class="gif-picker-message">Loading…</div>';
+
+    const endpoint = query ? `/api/giphy/search?q=${encodeURIComponent(query)}` : '/api/giphy/trending';
+    fetch(apiUrl(endpoint))
+        .then(r => r.json())
+        .then(data => {
+            if (seq !== gifRequestSeq) return; // superseded by a newer search
+            if (data.error) {
+                grid.innerHTML = `<div class="gif-picker-message">${escapeHtml(data.error)}</div>`;
+                return;
+            }
+            renderGifGrid(data.gifs || []);
+        })
+        .catch(err => {
+            if (seq !== gifRequestSeq) return;
+            console.error('GIPHY fetch error:', err);
+            grid.innerHTML = '<div class="gif-picker-message">Could not load GIFs.</div>';
+        });
+}
+
+function renderGifGrid(gifs) {
+    const grid = document.getElementById('gifGrid');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    if (gifs.length === 0) {
+        grid.innerHTML = '<div class="gif-picker-message">No GIFs found.</div>';
+        return;
+    }
+
+    gifs.forEach(gif => {
+        const item = document.createElement('div');
+        item.className = 'gif-item';
+        const img = document.createElement('img');
+        img.src = safeUrl(gif.preview_url);
+        img.alt = gif.title || 'GIF';
+        img.loading = 'lazy';
+        item.appendChild(img);
+        item.onclick = () => sendGif(gif);
+        grid.appendChild(item);
+    });
+}
+
+function sendGif(gif) {
+    const picker = document.getElementById('gifPicker');
+    if (picker) picker.classList.add('hidden');
+
+    // Sent straight over the socket, same as any other message — GIFs
+    // reuse the existing file-message pipeline (image/gif mime type is
+    // enough for the message list and shared-media panel to render it
+    // like any other image), just with an external GIPHY URL instead of
+    // an uploaded file.
+    socket.emit('send_message', {
+        sender: currentUser,
+        content: '',
+        channel: currentChannel,
+        type: 'gif',
+        file: {
+            url: gif.url,
+            filename: `${(gif.title || 'giphy').slice(0, 60)}.gif`,
+            size: 0,
+            mime_type: 'image/gif'
+        }
+    });
+}
+
+// Close GIF picker when clicking outside
+document.addEventListener('click', (e) => {
+    const picker = document.getElementById('gifPicker');
+    const gifBtn = document.querySelector('.gif-btn');
+    if (picker && gifBtn && !picker.contains(e.target) && e.target !== gifBtn && !picker.classList.contains('hidden')) {
         picker.classList.add('hidden');
     }
 });

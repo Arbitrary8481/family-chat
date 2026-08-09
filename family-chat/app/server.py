@@ -11,6 +11,9 @@ import sqlite3
 import base64
 import hashlib
 import traceback
+import urllib.request
+import urllib.parse
+import urllib.error
 from datetime import datetime
 from pathlib import Path
 from flask import Flask, render_template, request, jsonify, send_from_directory, session, redirect, url_for
@@ -75,6 +78,14 @@ ADMIN_PASSWORD_HASH = generate_password_hash(ADMIN_PASSWORD)
 if ADMIN_PASSWORD == 'changeme':
     logger.warning('admin_password is still set to the default "changeme". '
                     'Set it in the add-on configuration.')
+
+# GIPHY API key, kept server-side only — the browser talks to /api/giphy/*
+# on this server, which forwards to GIPHY with the key attached. The key
+# never appears in any response sent to the client.
+GIPHY_API_KEY = get_option('giphy_api_key', 'GIPHY_API_KEY', '')
+if not GIPHY_API_KEY:
+    logger.warning('giphy_api_key is not set — the GIF picker will be disabled '
+                    'until one is added in the add-on configuration.')
 
 # Cache-busting token for static assets (CSS/JS). Home Assistant's ingress
 # "soft" panel navigation (clicking the sidebar entry again) can reuse a
@@ -487,7 +498,8 @@ def index():
                           asset_version=ASSET_VERSION,
                           inline_css=INLINE_CSS,
                           channels=get_channels(),
-                          auto_user=auto_user)
+                          auto_user=auto_user,
+                          giphy_enabled=bool(GIPHY_API_KEY))
 
 @app.route('/api/channels')
 def api_channels():
@@ -712,6 +724,81 @@ def upload_emoji():
 @app.route('/uploads/<path:filename>')
 def serve_file(filename):
     return send_from_directory(UPLOAD_FOLDER, filename)
+
+GIPHY_API_BASE = 'https://api.giphy.com/v1/gifs'
+
+def _clamp_int(value, default, minimum, maximum):
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(maximum, n))
+
+def giphy_get(path, params):
+    """Proxy a request to the GIPHY API and shape the result down to what
+    the picker needs. The API key is attached here, server-side, so it's
+    never exposed to the browser — the client only ever calls our own
+    /api/giphy/* routes."""
+    if not GIPHY_API_KEY:
+        return None, 'GIPHY is not configured. Add a GIPHY API key in the add-on configuration.'
+
+    query = dict(params)
+    query['api_key'] = GIPHY_API_KEY
+    url = f'{GIPHY_API_BASE}/{path}?{urllib.parse.urlencode(query)}'
+
+    try:
+        req = urllib.request.Request(url, headers={'Accept': 'application/json'})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            payload = json.loads(resp.read().decode('utf-8'))
+    except urllib.error.HTTPError as e:
+        logger.warning('GIPHY API returned HTTP %s for %s', e.code, path)
+        if e.code in (401, 403):
+            return None, 'GIPHY rejected the configured API key.'
+        return None, 'GIPHY request failed.'
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        logger.warning('GIPHY API unreachable: %s', e)
+        return None, 'Could not reach GIPHY — try again in a moment.'
+    except json.JSONDecodeError as e:
+        logger.warning('GIPHY API returned unparseable data: %s', e)
+        return None, 'GIPHY returned an unexpected response.'
+
+    gifs = []
+    for item in payload.get('data', []):
+        images = item.get('images', {})
+        original = images.get('original', {})
+        preview = images.get('fixed_width_small') or images.get('preview_gif') or original
+        if not original.get('url'):
+            continue
+        gifs.append({
+            'id': item.get('id'),
+            'title': (item.get('title') or 'GIF')[:100],
+            'url': original.get('url'),
+            'preview_url': preview.get('url') or original.get('url'),
+            'width': _clamp_int(original.get('width'), 0, 0, 10000),
+            'height': _clamp_int(original.get('height'), 0, 0, 10000),
+        })
+    return gifs, None
+
+@app.route('/api/giphy/trending')
+def giphy_trending():
+    limit = _clamp_int(request.args.get('limit'), 24, 1, 50)
+    offset = _clamp_int(request.args.get('offset'), 0, 0, 4999)
+    gifs, error = giphy_get('trending', {'limit': limit, 'offset': offset, 'rating': 'pg-13'})
+    if error:
+        return jsonify({'error': error}), 503
+    return jsonify({'gifs': gifs})
+
+@app.route('/api/giphy/search')
+def giphy_search():
+    q = request.args.get('q', '').strip()
+    if not q:
+        return giphy_trending()
+    limit = _clamp_int(request.args.get('limit'), 24, 1, 50)
+    offset = _clamp_int(request.args.get('offset'), 0, 0, 4999)
+    gifs, error = giphy_get('search', {'q': q, 'limit': limit, 'offset': offset, 'rating': 'pg-13'})
+    if error:
+        return jsonify({'error': error}), 503
+    return jsonify({'gifs': gifs})
 
 def log_socket_errors(handler):
     """Socket.IO event handlers don't go through Flask's normal error

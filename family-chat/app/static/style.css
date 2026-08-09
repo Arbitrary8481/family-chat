@@ -568,7 +568,7 @@ body {
     min-height: 44px;
 }
 
-.attach-btn, .emoji-btn, .send-btn {
+.attach-btn, .emoji-btn, .gif-btn, .send-btn {
     background: transparent;
     border: none;
     color: var(--text-muted);
@@ -582,9 +582,18 @@ body {
     flex-shrink: 0;
 }
 
-.attach-btn:hover, .emoji-btn:hover {
+.attach-btn:hover, .emoji-btn:hover, .gif-btn:hover {
     color: var(--interactive-hover);
     background: var(--bg-modifier-hover);
+}
+
+.gif-btn {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    border-radius: 6px;
+    padding: 6px 8px;
+    border: 1.5px solid currentColor;
 }
 
 .send-btn {
@@ -701,6 +710,90 @@ body {
 .emoji-item:hover {
     background: var(--bg-modifier-hover);
     transform: scale(1.2);
+}
+
+/* GIF Picker */
+.gif-picker {
+    position: absolute;
+    bottom: 64px;
+    right: 16px;
+    width: 380px;
+    height: 420px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    display: flex;
+    flex-direction: column;
+    z-index: 100;
+    border: 1px solid var(--bg-tertiary);
+}
+
+.gif-search {
+    padding: 8px;
+    border-bottom: 1px solid var(--bg-tertiary);
+}
+
+.gif-search input {
+    width: 100%;
+    background: var(--bg-tertiary);
+    border: none;
+    border-radius: 4px;
+    padding: 8px 12px;
+    color: var(--text-normal);
+    font-size: 14px;
+    outline: none;
+}
+
+.gif-search input::placeholder {
+    color: var(--text-muted);
+}
+
+.gif-grid {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+    align-content: start;
+}
+
+.gif-item {
+    cursor: pointer;
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--bg-tertiary);
+    aspect-ratio: 1.4;
+    transition: transform 0.1s;
+}
+
+.gif-item:hover {
+    transform: scale(1.03);
+    outline: 2px solid var(--bg-accent);
+}
+
+.gif-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.gif-picker-message {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+    padding: 24px 12px;
+}
+
+.gif-attribution {
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 6px;
+    border-top: 1px solid var(--bg-tertiary);
+    letter-spacing: 0.3px;
 }
 
 /* Members Sidebar */
@@ -1242,7 +1335,7 @@ body {
     .channel-sidebar.open {
         left: 60px;
     }
-    .emoji-picker {
+    .emoji-picker, .gif-picker {
         width: calc(100vw - 32px);
         right: 16px;
         left: 16px;

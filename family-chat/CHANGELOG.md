@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.7.0
+
+### Added
+- **GIF picker.** Click the new GIF button next to the emoji picker to search GIPHY (or browse what's trending) and post a GIF straight to the chat, no file upload needed. Requires a GIPHY API key set in the add-on configuration — the button is hidden until one is configured. The key is only ever used server-side; the browser talks to `/api/giphy/search` and `/api/giphy/trending` on this add-on, which proxies the request to GIPHY.
+
 ## 2.6.1
 
 ### Fixed

@@ -1,5 +1,5 @@
 name: "Family Chat"
-version: "2.6.1"
+version: "2.7.0"
 slug: "family_chat"
 description: "Private Discord-like chat for your family with file sharing and emojis"
 arch:
@@ -19,6 +19,7 @@ options:
   theme: "dark"
   max_file_size: 25
   admin_password: "changeme"
+  giphy_api_key: ""
   allowed_file_types:
     - image/*
     - video/*
@@ -29,5 +30,6 @@ schema:
   theme: list(dark|light)
   max_file_size: int(1,100)
   admin_password: password
+  giphy_api_key: "password?"
   allowed_file_types:
     - str

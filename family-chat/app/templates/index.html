@@ -90,6 +90,12 @@
                                autocomplete="off">
                     </div>
                     
+                    {% if giphy_enabled %}
+                    <button class="gif-btn" onclick="toggleGifPicker()" title="Send a GIF">
+                        GIF
+                    </button>
+                    {% endif %}
+
                     <button class="emoji-btn" onclick="toggleEmojiPicker()" title="Add emoji">
                         😊
                     </button>
@@ -118,6 +124,19 @@
                         <!-- Emojis loaded here -->
                     </div>
                 </div>
+
+                {% if giphy_enabled %}
+                <!-- GIF Picker -->
+                <div class="gif-picker hidden" id="gifPicker">
+                    <div class="gif-search">
+                        <input type="text" placeholder="Search GIPHY..." id="gifSearchInput" autocomplete="off">
+                    </div>
+                    <div class="gif-grid" id="gifGrid">
+                        <!-- GIFs loaded here -->
+                    </div>
+                    <div class="gif-attribution">Powered by GIPHY</div>
+                </div>
+                {% endif %}
             </div>
         </div>
 
