@@ -18,15 +18,6 @@ let currentChannel = getStoredChannel() || window.DEFAULT_CHANNEL || 'general';
 let selectedFile = null;
 let customEmojis = {};
 let recentEmojis = JSON.parse(localStorage.getItem('recentEmojis') || '[]');
-// Which emoji tab is currently selected — restored when a search is
-// cleared, since a search temporarily takes over the grid regardless of
-// which tab is active.
-let currentEmojiCategory = 'recent';
-// Which message (if any) the emoji picker is currently choosing a
-// reaction for. null means it's in its normal "insert into the
-// composer" mode. Set by openReactionPicker(), cleared whenever the
-// picker closes.
-let emojiPickerContext = null;
 
 // Standard emoji categories
 const emojiCategories = {
@@ -36,53 +27,12 @@ const emojiCategories = {
     activities: ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🪀','🏓','🏸','🏒','🏑','🥍','🏏','🥅','⛳','🪁','🏹','🎣','🤿','🥊','🥋','🎽','🛹','🛷','⛸️','🥌','🎿','⛷️','🏂','🏋️','🤼','🤽','🤾','🤺','🏇','⛷️','🏂','🏌️','🏄','🚣','🏊','⛹️','🏋️','🚴','🚵','🎽','🎿','🛷','🥅','⛳','🎣','🎽','🎿','🎯','🎱','🔮','🧿','🎮','🕹️','🎰','🎲','🧩','🧸','🪅','🪆','♠️','♥️','♦️','♣️','♟️','🃏','🀄','🎴','🎭','🖼️','🎨','🧵','🧶','🥼','🥽','🥾','🥿','👟','👞','🥾','🥿','👠','👡','👢','👑','👒','🎩','🎓','🧢','⛑️','📿','💄','💍','💎','🔇','🔈','🔉','🔊','📢','📣','📯','🔔','🔕','🎼','🎵','🎶','🎙️','🎚️','🎛️','🎤','🎧','📻','🎷','🎸','🎹','🎺','🎻','🪕','🥁','📱','📲','☎️','📞','📟','📠','🔋','🔌','💻','🖥️','🖨️','⌨️','🖱️','🖲️','💽','💾','💿','📀','🧮','🎥','🎞️','📽️','🎬','📺','📷','📸','📹','📼','🔍','🔎','🕯️','💡','🔦','🏮','🪔','📔','📕','📖','📗','📘','📙','📚','📓','📒','📃','📜','📄','📰','🗞️','📑','🔖','🏷️','💰','🪙','💴','💵','💶','💷','💸','💳','🧾','💹','✉️','📧','📨','📩','📤','📥','📦','📫','📪','📬','📭','📮','🗳️','✏️','✒️','🖋️','🖊️','🖌️','🖍️','📝','💼','📁','📂','🗂️','📅','📆','🗒️','🗓️','📇','📈','📉','📊','📋','📌','📍','📎','🖇️','📏','📐','✂️','🗃️','🗄️','🗑️','🔒','🔓','🔏','🔐','🔑','🗝️','🔨','🪓','⛏️','⚒️','🛠️','🗡️','⚔️','🔫','🏹','🛡️','🔧','🔩','⚙️','🗜️','⚖️','🦯','🔗','⛓️','🧰','🧲','🧪','🧫','🧬','🔬','🔭','📡','💉','🩸','💊','🩹','🩺','🌡️','🚽','🚰','🚿','🛁','🛀','🧴','🧷','🧹','🧺','🧻','🧼','🧽','🧯','🛒','🚬','⚰️','⚱️','🗿','🚂','🚃','🚄','🚅','🚆','🚇','🚈','🚉','🚊','🚝','🚞','🚋','🚌','🚍','🚎','🚐','🚑','🚒','🚓','🚔','🚕','🚖','🚗','🚘','🚙','🚚','🚛','🚜','🏎️','🏍️','🛵','🦽','🦼','🛺','🚲','🛴','🛹','🛼','🚏','🛣️','🛤️','🛢️','⛽','🚨','🚥','🚦','🛑','🚧','⚓','⛵','🛶','🚤','🛳️','⛴️','🚢','✈️','🛩️','🛫','🛬','🪂','💺','🚁','🚟','🚠','🚡','🛰️','🚀','🛸','🛎️','🧳','⌛','⏳','⌚','⏰','⏱️','⏲️','🕰️','🕛','🕧','🕐','🕜','🕑','🕝','🕒','🕞','🕓','🕟','🕔','🕠','🕕','🕡','🕖','🕢','🕗','🕣','🕘','🕤','🕙','🕥','🕚','🕦','🌑','🌒','🌓','🌔','🌕','🌖','🌗','🌘','🌙','🌚','🌛','🌜','🌡️','☀️','🌝','🌞','🪐','⭐','🌟','🌠','🌌','☁️','⛅','⛈️','🌤️','🌥️','🌦️','🌧️','🌨️','🌩️','🌪️','🌫️','🌬️','🌀','🌈','🌂','☂️','☔','⛱️','⚡','❄️','☃️','⛄','☄️','🔥','💧','🌊']
 };
 
-// Searchable names for the unicode emoji above (generated from the
-// `emoji` Python package's canonical CLDR short names), so the search
-// box has something meaningful to match against — the raw characters
-// themselves obviously aren't searchable text.
-const emojiNames = {
-'😀':'grinning face','😃':'grinning face with big eyes','😄':'grinning face with smiling eyes','😁':'beaming face with smiling eyes','😅':'grinning face with sweat','😂':'face with tears of joy','🤣':'rolling on the floor laughing','😊':'smiling face with smiling eyes','😇':'smiling face with halo','🙂':'slightly smiling face','🙃':'upside-down face','😉':'winking face','😌':'relieved face','😍':'smiling face with heart-eyes','🥰':'smiling face with hearts','😘':'face blowing a kiss','😗':'kissing face',
-'😙':'kissing face with smiling eyes','😚':'kissing face with closed eyes','😋':'face savoring food','😛':'face with tongue','😝':'squinting face with tongue','😜':'winking face with tongue','🤪':'zany face','🤨':'face with raised eyebrow','🧐':'face with monocle','🤓':'nerd face','😎':'smiling face with sunglasses','🥸':'disguised face','🤩':'star-struck','🥳':'partying face','😏':'smirking face','😒':'unamused face','😞':'disappointed face','😔':'pensive face','😟':'worried face','😕':'confused face',
-'🙁':'slightly frowning face','☹️':'frowning face','😣':'persevering face','😖':'confounded face','😫':'tired face','😩':'weary face','🥺':'pleading face','😢':'crying face','😭':'loudly crying face','😤':'face with steam from nose','😠':'angry face','😡':'enraged face','🤬':'face with symbols on mouth','🤯':'exploding head','😳':'flushed face','🥵':'hot face','🥶':'cold face','😱':'face screaming in fear','😨':'fearful face','😰':'anxious face with sweat','😥':'sad but relieved face','😓':'downcast face with sweat',
-'🤗':'smiling face with open hands','🤔':'thinking face','🤭':'face with hand over mouth','🤫':'shushing face','🤥':'lying face','😶':'face without mouth','😐':'neutral face','😑':'expressionless face','😬':'grimacing face','🙄':'face with rolling eyes','😯':'hushed face','😦':'frowning face with open mouth','😧':'anguished face','😮':'face with open mouth','😲':'astonished face','🥱':'yawning face','😴':'sleeping face','🤤':'drooling face','😪':'sleepy face','😵':'face with crossed-out eyes','🤐':'zipper-mouth face',
-'🥴':'woozy face','🤢':'nauseated face','🤮':'face vomiting','🤧':'sneezing face','😷':'face with medical mask','🤒':'face with thermometer','🤕':'face with head-bandage','🤑':'money-mouth face','🤠':'cowboy hat face','😈':'smiling face with horns','👿':'angry face with horns','👹':'ogre','👺':'goblin','🤡':'clown face','💩':'pile of poo','👻':'ghost','💀':'skull','☠️':'skull and crossbones','👽':'alien','👾':'alien monster','🤖':'robot','🎃':'jack-o-lantern','😺':'grinning cat','😸':'grinning cat with smiling eyes',
-'😹':'cat with tears of joy','😻':'smiling cat with heart-eyes','😼':'cat with wry smile','😽':'kissing cat','🙀':'weary cat','😿':'crying cat','😾':'pouting cat','🤲':'palms up together','👐':'open hands','🙌':'raising hands','👏':'clapping hands','🤝':'handshake','👍':'thumbs up','👎':'thumbs down','👊':'oncoming fist','✊':'raised fist','🤛':'left-facing fist','🤜':'right-facing fist','🤞':'crossed fingers','✌️':'victory hand','🤟':'love-you gesture','🤘':'sign of the horns','👌':'OK hand','🤏':'pinching hand',
-'👈':'backhand index pointing left','👉':'backhand index pointing right','👆':'backhand index pointing up','👇':'backhand index pointing down','☝️':'index pointing up','✋':'raised hand','🤚':'raised back of hand','🖐️':'hand with fingers splayed','🖖':'vulcan salute','👋':'waving hand','🤙':'call me hand','💪':'flexed biceps','🦾':'mechanical arm','🖕':'middle finger','✍️':'writing hand','🙏':'folded hands','🦶':'foot','🦵':'leg','🦿':'mechanical leg','💄':'lipstick','💋':'kiss mark','👄':'mouth',
-'🦷':'tooth','👅':'tongue','👂':'ear','🦻':'ear with hearing aid','👃':'nose','👣':'footprints','👁️':'eye','👀':'eyes','🧠':'brain','🫀':'anatomical heart','🫁':'lungs','🦴':'bone','🐶':'dog face','🐱':'cat face','🐭':'mouse face','🐹':'hamster','🐰':'rabbit face','🦊':'fox','🐻':'bear','🐼':'panda','🐨':'koala','🐯':'tiger face','🦁':'lion','🐮':'cow face','🐷':'pig face','🐽':'pig nose','🐸':'frog','🐵':'monkey face','🙈':'see-no-evil monkey','🙉':'hear-no-evil monkey','🙊':'speak-no-evil monkey',
-'🐒':'monkey','🐔':'chicken','🐧':'penguin','🐦':'bird','🐤':'baby chick','🐣':'hatching chick','🐥':'front-facing baby chick','🦆':'duck','🦅':'eagle','🦉':'owl','🦇':'bat','🐺':'wolf','🐗':'boar','🐴':'horse face','🦄':'unicorn','🐝':'honeybee','🐛':'bug','🦋':'butterfly','🐌':'snail','🐞':'lady beetle','🐜':'ant','🦟':'mosquito','🦗':'cricket','🕷️':'spider','🕸️':'spider web','🦂':'scorpion','🐢':'turtle','🐍':'snake','🦎':'lizard','🦖':'T-Rex','🦕':'sauropod','🐙':'octopus','🦑':'squid','🦐':'shrimp',
-'🦞':'lobster','🦀':'crab','🐡':'blowfish','🐠':'tropical fish','🐟':'fish','🐬':'dolphin','🐳':'spouting whale','🐋':'whale','🦈':'shark','🐊':'crocodile','🐅':'tiger','🐆':'leopard','🦓':'zebra','🦍':'gorilla','🦧':'orangutan','🐘':'elephant','🦛':'hippopotamus','🦏':'rhinoceros','🐪':'camel','🐫':'two-hump camel','🦒':'giraffe','🦘':'kangaroo','🐃':'water buffalo','🐂':'ox','🐄':'cow','🐎':'horse','🐖':'pig','🐏':'ram','🐑':'ewe','🦙':'llama','🐐':'goat','🦌':'deer','🐕':'dog','🐩':'poodle','🦮':'guide dog',
-'🐕‍🦺':'service dog','🐈':'cat','🐈‍⬛':'black cat','🐓':'rooster','🦃':'turkey','🦚':'peacock','🦜':'parrot','🦢':'swan','🦩':'flamingo','🕊️':'dove','🐇':'rabbit','🦝':'raccoon','🦨':'skunk','🦡':'badger','🦦':'otter','🦥':'sloth','🐁':'mouse','🐀':'rat','🐿️':'chipmunk','🦔':'hedgehog','🐾':'paw prints','🐉':'dragon','🐲':'dragon face','🌵':'cactus','🎄':'Christmas tree','🌲':'evergreen tree','🌳':'deciduous tree','🌴':'palm tree','🌱':'seedling','🌿':'herb','☘️':'shamrock','🍀':'four leaf clover',
-'🎍':'pine decoration','🎋':'tanabata tree','🍃':'leaf fluttering in wind','🍂':'fallen leaf','🍁':'maple leaf','🍄':'mushroom','🐚':'spiral shell','🌾':'sheaf of rice','💐':'bouquet','🌷':'tulip','🌹':'rose','🥀':'wilted flower','🌺':'hibiscus','🌸':'cherry blossom','🌼':'blossom','🌻':'sunflower','🌞':'sun with face','🌝':'full moon face','🌛':'first quarter moon face','🌜':'last quarter moon face','🌚':'new moon face','🌕':'full moon','🌖':'waning gibbous moon','🌗':'last quarter moon','🌘':'waning crescent moon',
-'🌑':'new moon','🌒':'waxing crescent moon','🌓':'first quarter moon','🌔':'waxing gibbous moon','🌙':'crescent moon','🌎':'globe showing Americas','🌍':'globe showing Europe-Africa','🌏':'globe showing Asia-Australia','🪐':'ringed planet','💫':'dizzy','⭐':'star','🌟':'glowing star','✨':'sparkles','⚡':'high voltage','🔥':'fire','💥':'collision','☄️':'comet','☀️':'sun','🌤️':'sun behind small cloud','⛅':'sun behind cloud','🌥️':'sun behind large cloud','🌦️':'sun behind rain cloud','🌈':'rainbow',
-'☁️':'cloud','🌧️':'cloud with rain','⛈️':'cloud with lightning and rain','🌩️':'cloud with lightning','🌨️':'cloud with snow','❄️':'snowflake','☃️':'snowman','⛄':'snowman without snow','🌬️':'wind face','💨':'dashing away','💧':'droplet','💦':'sweat droplets','☔':'umbrella with rain drops','☂️':'umbrella','🌊':'water wave','🌫️':'fog','🍏':'green apple','🍎':'red apple','🍐':'pear','🍊':'tangerine','🍋':'lemon','🍌':'banana','🍉':'watermelon','🍇':'grapes','🍓':'strawberry','🍈':'melon','🍒':'cherries',
-'🍑':'peach','🍍':'pineapple','🥝':'kiwi fruit','🥥':'coconut','🥑':'avocado','🍆':'eggplant','🍅':'tomato','🌶️':'hot pepper','🥒':'cucumber','🥬':'leafy green','🥦':'broccoli','🧄':'garlic','🧅':'onion','🥜':'peanuts','🌰':'chestnut','🍞':'bread','🥐':'croissant','🥖':'baguette bread','🥨':'pretzel','🥯':'bagel','🥞':'pancakes','🧇':'waffle','🧀':'cheese wedge','🍖':'meat on bone','🍗':'poultry leg','🥩':'cut of meat','🥓':'bacon','🍔':'hamburger','🍟':'french fries','🍕':'pizza','🌭':'hot dog',
-'🥪':'sandwich','🌮':'taco','🌯':'burrito','🥙':'stuffed flatbread','🧆':'falafel','🥚':'egg','🍳':'cooking','🥘':'shallow pan of food','🍲':'pot of food','🥣':'bowl with spoon','🥗':'green salad','🍿':'popcorn','🧈':'butter','🧂':'salt','🥫':'canned food','🍱':'bento box','🍘':'rice cracker','🍙':'rice ball','🍚':'cooked rice','🍛':'curry rice','🍜':'steaming bowl','🍝':'spaghetti','🍠':'roasted sweet potato','🍢':'oden','🍣':'sushi','🍤':'fried shrimp','🍥':'fish cake with swirl','🍡':'dango','🍦':'soft ice cream',
-'🍧':'shaved ice','🍨':'ice cream','🍩':'doughnut','🍪':'cookie','🎂':'birthday cake','🍰':'shortcake','🧁':'cupcake','🥧':'pie','🍫':'chocolate bar','🍬':'candy','🍭':'lollipop','🍮':'custard','🍯':'honey pot','🍼':'baby bottle','🥛':'glass of milk','☕':'hot beverage','🍵':'teacup without handle','🧃':'beverage box','🥤':'cup with straw','🍶':'sake','🍺':'beer mug','🍻':'clinking beer mugs','🥂':'clinking glasses','🍷':'wine glass','🥃':'tumbler glass','🍸':'cocktail glass','🍹':'tropical drink',
-'🧉':'mate','🍾':'bottle with popping cork','🧊':'ice','🥄':'spoon','🍴':'fork and knife','🍽️':'fork and knife with plate','🥡':'takeout box','🥢':'chopsticks','⚽':'soccer ball','🏀':'basketball','🏈':'american football','⚾':'baseball','🥎':'softball','🎾':'tennis','🏐':'volleyball','🏉':'rugby football','🥏':'flying disc','🎱':'pool 8 ball','🪀':'yo-yo','🏓':'ping pong','🏸':'badminton','🏒':'ice hockey','🏑':'field hockey','🥍':'lacrosse','🏏':'cricket game','🥅':'goal net','⛳':'flag in hole',
-'🪁':'kite','🏹':'bow and arrow','🎣':'fishing pole','🤿':'diving mask','🥊':'boxing glove','🥋':'martial arts uniform','🎽':'running shirt','🛹':'skateboard','🛷':'sled','⛸️':'ice skate','🥌':'curling stone','🎿':'skis','⛷️':'skier','🏂':'snowboarder','🏋️':'person lifting weights','🤼':'people wrestling','🤽':'person playing water polo','🤾':'person playing handball','🤺':'person fencing','🏇':'horse racing','🏌️':'person golfing','🏄':'person surfing','🚣':'person rowing boat','🏊':'person swimming',
-'⛹️':'person bouncing ball','🚴':'person biking','🚵':'person mountain biking','🎯':'bullseye','🔮':'crystal ball','🧿':'nazar amulet','🎮':'video game','🕹️':'joystick','🎰':'slot machine','🎲':'game die','🧩':'puzzle piece','🧸':'teddy bear','🪅':'piñata','🪆':'nesting dolls','♠️':'spade suit','♥️':'heart suit','♦️':'diamond suit','♣️':'club suit','♟️':'chess pawn','🃏':'joker','🀄':'mahjong red dragon','🎴':'flower playing cards','🎭':'performing arts','🖼️':'framed picture','🎨':'artist palette',
-'🧵':'thread','🧶':'yarn','🥼':'lab coat','🥽':'goggles','🥾':'hiking boot','🥿':'flat shoe','👟':'running shoe','👞':'man’s shoe','👠':'high-heeled shoe','👡':'woman’s sandal','👢':'woman’s boot','👑':'crown','👒':'woman’s hat','🎩':'top hat','🎓':'graduation cap','🧢':'billed cap','⛑️':'rescue worker’s helmet','📿':'prayer beads','💍':'ring','💎':'gem stone','🔇':'muted speaker','🔈':'speaker low volume','🔉':'speaker medium volume','🔊':'speaker high volume','📢':'loudspeaker','📣':'megaphone',
-'📯':'postal horn','🔔':'bell','🔕':'bell with slash','🎼':'musical score','🎵':'musical note','🎶':'musical notes','🎙️':'studio microphone','🎚️':'level slider','🎛️':'control knobs','🎤':'microphone','🎧':'headphone','📻':'radio','🎷':'saxophone','🎸':'guitar','🎹':'musical keyboard','🎺':'trumpet','🎻':'violin','🪕':'banjo','🥁':'drum','📱':'mobile phone','📲':'mobile phone with arrow','☎️':'telephone','📞':'telephone receiver','📟':'pager','📠':'fax machine','🔋':'battery','🔌':'electric plug',
-'💻':'laptop','🖥️':'desktop computer','🖨️':'printer','⌨️':'keyboard','🖱️':'computer mouse','🖲️':'trackball','💽':'computer disk','💾':'floppy disk','💿':'optical disk','📀':'dvd','🧮':'abacus','🎥':'movie camera','🎞️':'film frames','📽️':'film projector','🎬':'clapper board','📺':'television','📷':'camera','📸':'camera with flash','📹':'video camera','📼':'videocassette','🔍':'magnifying glass tilted left','🔎':'magnifying glass tilted right','🕯️':'candle','💡':'light bulb','🔦':'flashlight',
-'🏮':'red paper lantern','🪔':'diya lamp','📔':'notebook with decorative cover','📕':'closed book','📖':'open book','📗':'green book','📘':'blue book','📙':'orange book','📚':'books','📓':'notebook','📒':'ledger','📃':'page with curl','📜':'scroll','📄':'page facing up','📰':'newspaper','🗞️':'rolled-up newspaper','📑':'bookmark tabs','🔖':'bookmark','🏷️':'label','💰':'money bag','🪙':'coin','💴':'yen banknote','💵':'dollar banknote','💶':'euro banknote','💷':'pound banknote','💸':'money with wings',
-'💳':'credit card','🧾':'receipt','💹':'chart increasing with yen','✉️':'envelope','📧':'e-mail','📨':'incoming envelope','📩':'envelope with arrow','📤':'outbox tray','📥':'inbox tray','📦':'package','📫':'closed mailbox with raised flag','📪':'closed mailbox with lowered flag','📬':'open mailbox with raised flag','📭':'open mailbox with lowered flag','📮':'postbox','🗳️':'ballot box with ballot','✏️':'pencil','✒️':'black nib','🖋️':'fountain pen','🖊️':'pen','🖌️':'paintbrush','🖍️':'crayon',
-'📝':'memo','💼':'briefcase','📁':'file folder','📂':'open file folder','🗂️':'card index dividers','📅':'calendar','📆':'tear-off calendar','🗒️':'spiral notepad','🗓️':'spiral calendar','📇':'card index','📈':'chart increasing','📉':'chart decreasing','📊':'bar chart','📋':'clipboard','📌':'pushpin','📍':'round pushpin','📎':'paperclip','🖇️':'linked paperclips','📏':'straight ruler','📐':'triangular ruler','✂️':'scissors','🗃️':'card file box','🗄️':'file cabinet','🗑️':'wastebasket','🔒':'locked',
-'🔓':'unlocked','🔏':'locked with pen','🔐':'locked with key','🔑':'key','🗝️':'old key','🔨':'hammer','🪓':'axe','⛏️':'pick','⚒️':'hammer and pick','🛠️':'hammer and wrench','🗡️':'dagger','⚔️':'crossed swords','🔫':'water pistol','🛡️':'shield','🔧':'wrench','🔩':'nut and bolt','⚙️':'gear','🗜️':'clamp','⚖️':'balance scale','🦯':'white cane','🔗':'link','⛓️':'chains','🧰':'toolbox','🧲':'magnet','🧪':'test tube','🧫':'petri dish','🧬':'dna','🔬':'microscope','🔭':'telescope','📡':'satellite antenna',
-'💉':'syringe','🩸':'drop of blood','💊':'pill','🩹':'adhesive bandage','🩺':'stethoscope','🌡️':'thermometer','🚽':'toilet','🚰':'potable water','🚿':'shower','🛁':'bathtub','🛀':'person taking bath','🧴':'lotion bottle','🧷':'safety pin','🧹':'broom','🧺':'basket','🧻':'roll of paper','🧼':'soap','🧽':'sponge','🧯':'fire extinguisher','🛒':'shopping cart','🚬':'cigarette','⚰️':'coffin','⚱️':'funeral urn','🗿':'moai','🚂':'locomotive','🚃':'railway car','🚄':'high-speed train','🚅':'bullet train',
-'🚆':'train','🚇':'metro','🚈':'light rail','🚉':'station','🚊':'tram','🚝':'monorail','🚞':'mountain railway','🚋':'tram car','🚌':'bus','🚍':'oncoming bus','🚎':'trolleybus','🚐':'minibus','🚑':'ambulance','🚒':'fire engine','🚓':'police car','🚔':'oncoming police car','🚕':'taxi','🚖':'oncoming taxi','🚗':'automobile','🚘':'oncoming automobile','🚙':'sport utility vehicle','🚚':'delivery truck','🚛':'articulated lorry','🚜':'tractor','🏎️':'racing car','🏍️':'motorcycle','🛵':'motor scooter','🦽':'manual wheelchair',
-'🦼':'motorized wheelchair','🛺':'auto rickshaw','🚲':'bicycle','🛴':'kick scooter','🛼':'roller skate','🚏':'bus stop','🛣️':'motorway','🛤️':'railway track','🛢️':'oil drum','⛽':'fuel pump','🚨':'police car light','🚥':'horizontal traffic light','🚦':'vertical traffic light','🛑':'stop sign','🚧':'construction','⚓':'anchor','⛵':'sailboat','🛶':'canoe','🚤':'speedboat','🛳️':'passenger ship','⛴️':'ferry','🚢':'ship','✈️':'airplane','🛩️':'small airplane','🛫':'airplane departure','🛬':'airplane arrival',
-'🪂':'parachute','💺':'seat','🚁':'helicopter','🚟':'suspension railway','🚠':'mountain cableway','🚡':'aerial tramway','🛰️':'satellite','🚀':'rocket','🛸':'flying saucer','🛎️':'bellhop bell','🧳':'luggage','⌛':'hourglass done','⏳':'hourglass not done','⌚':'watch','⏰':'alarm clock','⏱️':'stopwatch','⏲️':'timer clock','🕰️':'mantelpiece clock','🕛':'twelve o’clock','🕧':'twelve-thirty','🕐':'one o’clock','🕜':'one-thirty','🕑':'two o’clock','🕝':'two-thirty','🕒':'three o’clock','🕞':'three-thirty',
-'🕓':'four o’clock','🕟':'four-thirty','🕔':'five o’clock','🕠':'five-thirty','🕕':'six o’clock','🕡':'six-thirty','🕖':'seven o’clock','🕢':'seven-thirty','🕗':'eight o’clock','🕣':'eight-thirty','🕘':'nine o’clock','🕤':'nine-thirty','🕙':'ten o’clock','🕥':'ten-thirty','🕚':'eleven o’clock','🕦':'eleven-thirty','🌠':'shooting star','🌌':'milky way','🌪️':'tornado','🌀':'cyclone','🌂':'closed umbrella','⛱️':'umbrella on ground'
-};
-
 // Initialize everything after DOM is ready.
 // Identity is resolved entirely by the server from the Home Assistant
 // ingress login (see the /admin HA-mapping section) — there's no manual
 // picker anymore. If Home Assistant couldn't resolve a name, the
 // identityGate stays visible with instructions instead of the chat.
 document.addEventListener('DOMContentLoaded', function() {
-    restoreSidebarState();
-
     if (window.AUTO_CHAT_USER) {
         currentUser = window.AUTO_CHAT_USER;
         const gate = document.getElementById('identityGate');
@@ -127,49 +77,6 @@ function resolveUrl(url) {
     return getIngressBasePath() + url.slice(1);
 }
 
-// --- Sidebar collapse/expand ---
-// Each sidebar's collapsed state is remembered independently in
-// localStorage, so reloading (or reopening the ingress panel) doesn't
-// snap it back open.
-const SIDEBAR_CONFIG = {
-    channel: { id: 'channelSidebar', toggleId: 'channelSidebarToggle', storageKey: 'channelSidebarCollapsed' },
-    members: { id: 'membersSidebar', toggleId: 'membersSidebarToggle', storageKey: 'membersSidebarCollapsed' }
-};
-
-function setSidebarCollapsed(which, collapsed) {
-    const cfg = SIDEBAR_CONFIG[which];
-    if (!cfg) return;
-    const el = document.getElementById(cfg.id);
-    const btn = document.getElementById(cfg.toggleId);
-    if (el) el.classList.toggle('collapsed', collapsed);
-    if (btn) {
-        btn.classList.toggle('active', collapsed);
-        btn.setAttribute('aria-pressed', String(!collapsed));
-    }
-    try { localStorage.setItem(cfg.storageKey, collapsed ? '1' : '0'); } catch (e) {}
-}
-
-function restoreSidebarState() {
-    Object.keys(SIDEBAR_CONFIG).forEach(which => {
-        const cfg = SIDEBAR_CONFIG[which];
-        let collapsed = false;
-        try { collapsed = localStorage.getItem(cfg.storageKey) === '1'; } catch (e) {}
-        setSidebarCollapsed(which, collapsed);
-    });
-}
-
-function toggleChannelSidebar() {
-    const el = document.getElementById(SIDEBAR_CONFIG.channel.id);
-    if (!el) return;
-    setSidebarCollapsed('channel', !el.classList.contains('collapsed'));
-}
-
-function toggleMembersSidebar() {
-    const el = document.getElementById(SIDEBAR_CONFIG.members.id);
-    if (!el) return;
-    setSidebarCollapsed('members', !el.classList.contains('collapsed'));
-}
-
 function initializeChat() {
     const basePath = getIngressBasePath();
     socket = io(window.location.origin, {
@@ -205,8 +112,8 @@ function initializeChat() {
         }
     });
     
-    socket.on('reaction_updated', function(data) {
-        updateReaction(data.message_id, data.emoji, data.user, data.added);
+    socket.on('reaction_added', function(data) {
+        updateReaction(data.message_id, data.emoji, data.user);
     });
 
     // If something goes wrong server-side while handling an event (a
@@ -245,13 +152,7 @@ function initializeChat() {
         });
     });
     
-    currentEmojiCategory = 'people';
     loadEmojiCategory('people');
-
-    const emojiSearchInput = document.getElementById('emojiSearch');
-    if (emojiSearchInput) {
-        emojiSearchInput.addEventListener('input', () => searchEmojis(emojiSearchInput.value));
-    }
 }
 
 function sendMessageClick() {
@@ -336,9 +237,21 @@ function addMessage(data) {
         }
     }
     
-    const reactionsHtml = buildReactionsHtml(data.id, data.reactions || {});
-    messageReactions[data.id] = data.reactions || {};
-
+    let reactionsHtml = '';
+    if (data.reactions && Object.keys(data.reactions).length > 0) {
+        reactionsHtml = '<div class="message-reactions">';
+        for (const [emoji, users] of Object.entries(data.reactions)) {
+            const isActive = users.includes(currentUser);
+            const safeEmoji = escapeHtml(emoji);
+            reactionsHtml += `
+                <div class="reaction ${isActive ? 'active' : ''}" onclick="toggleReaction(${data.id}, '${safeEmoji}')">
+                    ${safeEmoji} <span class="reaction-count">${users.length}</span>
+                </div>
+            `;
+        }
+        reactionsHtml += '</div>';
+    }
+    
     messageDiv.innerHTML = `
         <div class="message-avatar">${data.sender[0]}</div>
         <div class="message-content">
@@ -350,69 +263,12 @@ function addMessage(data) {
             ${reactionsHtml}
         </div>
         <div class="message-actions">
-            <button class="action-btn" onclick="openReactionPicker(${data.id}, this)" title="Add reaction">😊</button>
+            <button class="action-btn" onclick="addReaction(${data.id})" title="Add reaction">😊</button>
         </div>
     `;
     
     container.appendChild(messageDiv);
 }
-
-// Reaction pills for every message currently rendered, keyed by message
-// id: { emoji: [usernames who reacted with it] }. Kept in memory so a
-// live 'reaction_updated' event can patch just the one message's pills
-// back into the DOM without needing to reload the whole channel.
-const messageReactions = {};
-
-function buildReactionsHtml(messageId, reactions) {
-    if (!reactions || Object.keys(reactions).length === 0) return '';
-    let html = '<div class="message-reactions">';
-    for (const [emoji, users] of Object.entries(reactions)) {
-        if (!users || users.length === 0) continue;
-        const isActive = users.includes(currentUser);
-        // The emoji goes in a data-attribute (browser-decoded on read via
-        // .dataset) rather than interpolated into an onclick="..." string
-        // — a custom emoji name or username with a quote in it would
-        // otherwise be able to break out of the attribute.
-        html += `
-            <div class="reaction ${isActive ? 'active' : ''}" data-message-id="${messageId}" data-emoji="${escapeHtml(emoji)}">
-                ${escapeHtml(emoji)} <span class="reaction-count">${users.length}</span>
-            </div>
-        `;
-    }
-    html += '</div>';
-    return html;
-}
-
-function renderMessageReactions(messageId) {
-    const messageDiv = document.querySelector(`.message[data-id="${messageId}"]`);
-    if (!messageDiv) return;
-    const content = messageDiv.querySelector('.message-content');
-    if (!content) return;
-
-    const existing = content.querySelector('.message-reactions');
-    const html = buildReactionsHtml(messageId, messageReactions[messageId]);
-
-    if (!html) {
-        if (existing) existing.remove();
-        return;
-    }
-    if (existing) {
-        existing.outerHTML = html;
-    } else {
-        content.insertAdjacentHTML('beforeend', html);
-    }
-}
-
-// Clicking any reaction pill toggles it — handled here via delegation
-// (rather than a per-pill onclick) since pills are re-created often as
-// reactions come and go.
-document.addEventListener('click', (e) => {
-    const pill = e.target.closest('.reaction');
-    if (!pill) return;
-    const messageId = pill.dataset.messageId;
-    const emoji = pill.dataset.emoji;
-    if (messageId && emoji) toggleReaction(Number(messageId), emoji);
-});
 
 function scrollToBottom() {
     const container = document.getElementById('messagesContainer');
@@ -549,48 +405,12 @@ function toggleEmojiPicker() {
     if (!picker) return;
     const gifPicker = document.getElementById('gifPicker');
     if (gifPicker) gifPicker.classList.add('hidden');
-
-    // If it's already open for composing (no reaction context), this
-    // click closes it. Otherwise (closed, or open for a reaction) this
-    // click (re)opens it anchored to the composer as normal.
-    const isOpenForCompose = !picker.classList.contains('hidden') && !emojiPickerContext;
-    if (isOpenForCompose) {
-        hideEmojiPicker();
-        return;
-    }
-    resetEmojiPickerPosition();
-    emojiPickerContext = null;
-    picker.classList.remove('hidden');
-    // Clears any leftover search text/results from a previous open (e.g.
-    // if it was last used as a reaction picker) so it comes back showing
-    // whichever tab was last selected.
-    clearEmojiSearchInput();
-    switchEmojiTabProgrammatic(currentEmojiCategory);
-}
-
-function resetEmojiPickerPosition() {
-    const picker = document.getElementById('emojiPicker');
-    if (!picker) return;
-    picker.style.position = '';
-    picker.style.top = '';
-    picker.style.left = '';
-    picker.style.right = '';
-    picker.style.bottom = '';
-}
-
-function hideEmojiPicker() {
-    const picker = document.getElementById('emojiPicker');
-    if (!picker) return;
-    picker.classList.add('hidden');
-    resetEmojiPickerPosition();
-    emojiPickerContext = null;
+    picker.classList.toggle('hidden');
 }
 
 function switchEmojiTab(category) {
     document.querySelectorAll('.emoji-tab').forEach(t => t.classList.remove('active'));
     if (event && event.target) event.target.classList.add('active');
-    currentEmojiCategory = category;
-    clearEmojiSearchInput();
     loadEmojiCategory(category);
 }
 
@@ -602,19 +422,10 @@ function loadEmojiCategory(category) {
     let emojis = [];
     if (category === 'recent') {
         emojis = recentEmojis;
-        if (emojis.length === 0) {
-            grid.innerHTML = '<div class="emoji-empty">No recent emoji yet</div>';
-            return;
-        }
     } else if (category === 'custom') {
-        if (Object.keys(customEmojis).length === 0) {
-            grid.innerHTML = '<div class="emoji-empty">No custom emojis yet</div>';
-            return;
-        }
         Object.entries(customEmojis).forEach(([name, url]) => {
             const item = document.createElement('div');
             item.className = 'emoji-item';
-            item.title = name;
             item.innerHTML = `<img src="${safeUrl(resolveUrl(url))}" alt="${escapeHtml(name)}" style="width: 28px; height: 28px;">`;
             item.onclick = () => insertEmoji(name);
             grid.appendChild(item);
@@ -628,95 +439,20 @@ function loadEmojiCategory(category) {
         const item = document.createElement('div');
         item.className = 'emoji-item';
         item.textContent = emoji;
-        item.title = emojiNames[emoji] || '';
         item.onclick = () => insertEmoji(emoji);
         grid.appendChild(item);
     });
 }
 
-function clearEmojiSearchInput() {
-    const searchInput = document.getElementById('emojiSearch');
-    if (searchInput) searchInput.value = '';
-}
-
-// Live filter as the person types. Unicode emoji are matched against the
-// generated `emojiNames` labels (the characters themselves aren't
-// searchable text); custom emojis are matched against their :name:.
-// Matches are pooled across every category at once rather than just
-// whichever tab happens to be selected — that's what makes typing
-// "cat" find 🐱 even while the Food tab is showing.
-function searchEmojis(query) {
-    const grid = document.getElementById('emojiGrid');
-    if (!grid) return;
-    const q = query.trim().toLowerCase();
-
-    if (!q) {
-        document.querySelectorAll('.emoji-tab').forEach(t => t.classList.remove('active'));
-        const activeTab = document.querySelector(`.emoji-tab[onclick="switchEmojiTab('${currentEmojiCategory}')"]`);
-        if (activeTab) activeTab.classList.add('active');
-        loadEmojiCategory(currentEmojiCategory);
-        return;
-    }
-
-    document.querySelectorAll('.emoji-tab').forEach(t => t.classList.remove('active'));
-    grid.innerHTML = '';
-
-    const seen = new Set();
-    const matches = [];
-    Object.values(emojiCategories).forEach(list => {
-        list.forEach(emoji => {
-            if (seen.has(emoji)) return;
-            const name = emojiNames[emoji];
-            if (name && name.includes(q)) {
-                seen.add(emoji);
-                matches.push({ type: 'unicode', emoji, name });
-            }
-        });
-    });
-    Object.entries(customEmojis).forEach(([name, url]) => {
-        if (name.replace(/:/g, '').toLowerCase().includes(q)) {
-            matches.push({ type: 'custom', name, url });
-        }
-    });
-
-    if (matches.length === 0) {
-        grid.innerHTML = '<div class="emoji-empty">No emoji found</div>';
-        return;
-    }
-
-    // Cap results so an extremely broad query (e.g. a single common
-    // letter) doesn't render hundreds of grid items at once.
-    matches.slice(0, 200).forEach(match => {
-        const item = document.createElement('div');
-        item.className = 'emoji-item';
-        if (match.type === 'unicode') {
-            item.textContent = match.emoji;
-            item.title = match.name;
-            item.onclick = () => insertEmoji(match.emoji);
-        } else {
-            item.title = match.name;
-            item.innerHTML = `<img src="${safeUrl(resolveUrl(match.url))}" alt="${escapeHtml(match.name)}" style="width: 28px; height: 28px;">`;
-            item.onclick = () => insertEmoji(match.name);
-        }
-        grid.appendChild(item);
-    });
-}
-
 function insertEmoji(emoji) {
+    const input = document.getElementById('messageInput');
+    if (input) input.value += emoji;
+    
     if (!recentEmojis.includes(emoji)) {
         recentEmojis.unshift(emoji);
         if (recentEmojis.length > 32) recentEmojis.pop();
-        try { localStorage.setItem('recentEmojis', JSON.stringify(recentEmojis)); } catch (e) {}
+        localStorage.setItem('recentEmojis', JSON.stringify(recentEmojis));
     }
-
-    if (emojiPickerContext && emojiPickerContext.messageId) {
-        toggleReaction(emojiPickerContext.messageId, emoji);
-        hideEmojiPicker();
-        return;
-    }
-
-    const input = document.getElementById('messageInput');
-    if (input) input.value += emoji;
 }
 
 function switchChannel(slug, onLoaded) {
@@ -895,90 +631,6 @@ function openMySettings() {
             if (hint) hint.textContent = `(your Home Assistant name is "${me.ha_name}")`;
         })
         .catch(() => {});
-
-    loadNotifySettings();
-}
-
-function loadNotifySettings() {
-    const select = document.getElementById('notifyServiceSelect');
-    const checkbox = document.getElementById('notifyEnabledInput');
-    if (!select || !checkbox) return;
-
-    select.innerHTML = '<option value="">Loading devices…</option>';
-
-    Promise.all([
-        fetch(apiUrl('/api/notify/services')).then(r => r.json()),
-        fetch(apiUrl('/api/notify/prefs')).then(r => r.json())
-    ])
-        .then(([servicesData, prefs]) => {
-            const services = servicesData.services || [];
-
-            if (servicesData.error) {
-                select.innerHTML = `<option value="">${escapeHtml(servicesData.error)}</option>`;
-            } else if (services.length === 0) {
-                select.innerHTML = '<option value="">No devices found — open the Home Assistant Companion App on your phone first</option>';
-            } else {
-                select.innerHTML = '<option value="">Choose a device…</option>' +
-                    services.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
-                if (prefs.notify_service) select.value = prefs.notify_service;
-            }
-
-            checkbox.checked = !!prefs.enabled;
-        })
-        .catch(() => {
-            select.innerHTML = '<option value="">Couldn\'t load devices — try again</option>';
-        });
-}
-
-function saveNotifyPrefs() {
-    const checkbox = document.getElementById('notifyEnabledInput');
-    const select = document.getElementById('notifyServiceSelect');
-    const enabled = checkbox ? checkbox.checked : false;
-    const notify_service = select ? select.value : '';
-
-    if (enabled && !notify_service) {
-        alert('Choose a device before turning notifications on.');
-        return;
-    }
-
-    fetch(apiUrl('/api/notify/prefs'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled, notify_service })
-    })
-        .then(r => r.json())
-        .then(data => {
-            if (data.error) {
-                alert(data.error);
-                return;
-            }
-            closeMySettings();
-        })
-        .catch(() => alert("Couldn't save notification settings. Please try again."));
-}
-
-function sendTestNotification() {
-    const select = document.getElementById('notifyServiceSelect');
-    const notify_service = select ? select.value : '';
-    if (!notify_service) {
-        alert('Choose a device first.');
-        return;
-    }
-
-    fetch(apiUrl('/api/notify/test'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notify_service })
-    })
-        .then(r => r.json())
-        .then(data => {
-            if (data.error) {
-                alert(data.error);
-            } else {
-                alert('Test notification sent — check your phone.');
-            }
-        })
-        .catch(() => alert("Couldn't send a test notification."));
 }
 
 function closeMySettings() {
@@ -1056,60 +708,11 @@ function uploadEmoji() {
     });
 }
 
-function openReactionPicker(messageId, btnEl) {
-    const picker = document.getElementById('emojiPicker');
-    if (!picker) return;
-    const gifPicker = document.getElementById('gifPicker');
-    if (gifPicker) gifPicker.classList.add('hidden');
-
-    // Clicking the same message's reaction button again closes the
-    // picker, same toggle behavior as the composer's emoji button.
-    const alreadyOpenForThis = !picker.classList.contains('hidden') &&
-        emojiPickerContext && emojiPickerContext.messageId === messageId;
-    if (alreadyOpenForThis) {
-        hideEmojiPicker();
-        return;
+function addReaction(messageId) {
+    const emoji = prompt('Enter emoji:');
+    if (emoji) {
+        toggleReaction(messageId, emoji);
     }
-
-    emojiPickerContext = { messageId };
-    picker.classList.remove('hidden');
-
-    // Anchor it near the button that was clicked instead of the
-    // composer's fixed bottom-right spot, clamped to the viewport so it
-    // doesn't get cut off for messages near the top or edges of the
-    // screen.
-    picker.style.position = 'fixed';
-    const rect = btnEl.getBoundingClientRect();
-    const margin = 8;
-    const width = picker.offsetWidth || 380;
-    const height = picker.offsetHeight || 420;
-
-    let left = rect.right - width;
-    if (left < margin) left = margin;
-    if (left + width > window.innerWidth - margin) left = window.innerWidth - width - margin;
-
-    let top = rect.bottom + margin;
-    if (top + height > window.innerHeight - margin) top = rect.top - height - margin;
-    if (top < margin) top = margin;
-
-    picker.style.left = `${left}px`;
-    picker.style.top = `${top}px`;
-    picker.style.right = 'auto';
-    picker.style.bottom = 'auto';
-
-    clearEmojiSearchInput();
-    switchEmojiTabProgrammatic('recent');
-}
-
-// switchEmojiTab() reads `event.target`, which only exists for a real
-// click — calling it programmatically (no click event) would throw.
-// This does the same tab-switch without relying on a click event.
-function switchEmojiTabProgrammatic(category) {
-    document.querySelectorAll('.emoji-tab').forEach(t => t.classList.remove('active'));
-    const tab = document.querySelector(`.emoji-tab[onclick="switchEmojiTab('${category}')"]`);
-    if (tab) tab.classList.add('active');
-    currentEmojiCategory = category;
-    loadEmojiCategory(category);
 }
 
 function toggleReaction(messageId, emoji) {
@@ -1120,19 +723,8 @@ function toggleReaction(messageId, emoji) {
     });
 }
 
-function updateReaction(messageId, emoji, user, added) {
-    if (!messageReactions[messageId]) messageReactions[messageId] = {};
-    const bucket = messageReactions[messageId];
-
-    if (added) {
-        if (!bucket[emoji]) bucket[emoji] = [];
-        if (!bucket[emoji].includes(user)) bucket[emoji].push(user);
-    } else if (bucket[emoji]) {
-        bucket[emoji] = bucket[emoji].filter(u => u !== user);
-        if (bucket[emoji].length === 0) delete bucket[emoji];
-    }
-
-    renderMessageReactions(messageId);
+function updateReaction(messageId, emoji, user) {
+    // Refresh messages
 }
 
 function openImageViewer(url) {
@@ -1160,28 +752,13 @@ function addToSharedMedia(url) {
     grid.insertBefore(item, grid.firstChild);
 }
 
-// Close emoji picker when clicking outside it (and not on one of its
-// own trigger buttons — the composer's emoji button, or any message's
-// reaction button, both of which open/reposition it themselves).
+// Close emoji picker when clicking outside
 document.addEventListener('click', (e) => {
     const picker = document.getElementById('emojiPicker');
-    if (!picker || picker.classList.contains('hidden')) return;
-    const isTrigger = e.target.closest('.emoji-btn, .action-btn');
-    if (!picker.contains(e.target) && !isTrigger) {
-        hideEmojiPicker();
+    const emojiBtn = document.querySelector('.emoji-btn');
+    if (picker && emojiBtn && !picker.contains(e.target) && e.target !== emojiBtn && !picker.classList.contains('hidden')) {
+        picker.classList.add('hidden');
     }
-});
-
-// A reaction picker is anchored to the message it was opened from at a
-// single point in time — it doesn't track scroll position. Scrolling the
-// message list would leave it floating next to the wrong message, so
-// just close it instead.
-document.addEventListener('DOMContentLoaded', () => {
-    const messagesContainer = document.getElementById('messagesContainer');
-    if (!messagesContainer) return;
-    messagesContainer.addEventListener('scroll', () => {
-        if (emojiPickerContext) hideEmojiPicker();
-    });
 });
 
 // --- GIF picker (GIPHY) ---
