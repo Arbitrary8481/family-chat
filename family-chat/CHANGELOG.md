@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.3.0
+
+### Added
+- **Support for more than two people.** The app used to hardcode exactly two named identities ("Family Member 1/2"). It's now an open-ended roster, managed from the admin panel — add or remove people, rename anyone, no fixed limit. Existing installs are migrated automatically: your current two names carry over as the first two roster entries the first time this version starts, nothing is lost.
+- Every roster member can be individually mapped to their Home Assistant account from the same "Auto sign-in from Home Assistant" section as before — this now lists all current members, not just two.
+
+### Changed
+- The old "rename the two family members" admin form is replaced by the new Family Members section (add/rename/remove, same place in `/admin`).
+- The member sidebar in the chat now lists everyone in the roster instead of a fixed pair, with avatar colors cycling through a small palette so each person still gets a distinct look.
+
+## 2.2.0
+
+### Added
+- **Channel management in the admin panel.** The four channels (general, family-plans, memories, shared-files) used to be hardcoded in the page template. They're now stored in the database and editable from `/admin` — add a channel with a name and icon, or delete one. At least one channel always has to exist. Deleting a channel just hides it from the sidebar; its messages stay in the database and come back if you re-add a channel with the same name.
+
 ## 2.1.1
 
 ### Fixed

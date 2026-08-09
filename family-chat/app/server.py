@@ -4,6 +4,7 @@ import functools
 import hmac
 import json
 import os
+import re
 import secrets
 import sqlite3
 import base64
@@ -139,6 +140,24 @@ def init_db():
     c.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)',
               ('username2', USERNAME2_DEFAULT))
 
+    # Family members — this used to be a fixed pair (username1/username2
+    # above). It's now an open-ended roster so more than two people can
+    # use the chat. On first run, migrate whatever the old two names were
+    # (or their defaults) into the roster so existing installs don't lose
+    # their configured names when upgrading; from then on this table is
+    # the source of truth and the roster is managed from /admin.
+    c.execute('''CREATE TABLE IF NOT EXISTS family_members
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  name TEXT UNIQUE NOT NULL)''')
+    c.execute('SELECT COUNT(*) FROM family_members')
+    if c.fetchone()[0] == 0:
+        for key, fallback in (('username1', USERNAME1_DEFAULT), ('username2', USERNAME2_DEFAULT)):
+            c.execute('SELECT value FROM settings WHERE key = ?', (key,))
+            row = c.fetchone()
+            name = (row[0] if row else fallback).strip()
+            if name:
+                c.execute('INSERT OR IGNORE INTO family_members (name) VALUES (?)', (name,))
+
     # Home Assistant users seen via ingress auth headers, so the admin
     # panel can offer "when this HA account is logged in, auto-sign-in as
     # <family member>" without the add-on needing to talk to HA's auth API.
@@ -147,6 +166,26 @@ def init_db():
                   username TEXT,
                   display_name TEXT,
                   last_seen TEXT)''')
+
+    # Channels — used to be four hardcoded entries in the HTML template.
+    # Seeded with those same four defaults so nothing changes for existing
+    # installs; from here on they're managed from the admin panel.
+    c.execute('''CREATE TABLE IF NOT EXISTS channels
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  slug TEXT UNIQUE NOT NULL,
+                  name TEXT NOT NULL,
+                  icon TEXT NOT NULL DEFAULT '#')''')
+    c.execute('SELECT COUNT(*) FROM channels')
+    if c.fetchone()[0] == 0:
+        c.executemany(
+            'INSERT INTO channels (slug, name, icon) VALUES (?, ?, ?)',
+            [
+                ('general', 'general', '#'),
+                ('plans', 'family-plans', '#'),
+                ('memories', 'memories', '📸'),
+                ('files', 'shared-files', '📁'),
+            ]
+        )
 
     conn.commit()
     conn.close()
@@ -197,6 +236,104 @@ def get_ha_user_map():
 
 def set_ha_user_map(mapping):
     set_setting('ha_user_map', json.dumps(mapping))
+
+def slugify(text):
+    slug = re.sub(r'[^a-z0-9]+', '-', text.strip().lower()).strip('-')
+    return slug[:30]
+
+def get_channels():
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('SELECT slug, name, icon FROM channels ORDER BY id ASC')
+    rows = c.fetchall()
+    conn.close()
+    return [{'slug': r[0], 'name': r[1], 'icon': r[2]} for r in rows]
+
+def add_channel(name, icon):
+    name = name.strip()[:30]
+    icon = (icon.strip() or '#')[:8]
+    slug = slugify(name)
+    if not name or not slug:
+        return None, 'Channel name is required.'
+
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('SELECT 1 FROM channels WHERE slug = ?', (slug,))
+    if c.fetchone():
+        conn.close()
+        return None, 'A channel with that name already exists.'
+    c.execute('INSERT INTO channels (slug, name, icon) VALUES (?, ?, ?)', (slug, name, icon))
+    conn.commit()
+    conn.close()
+    return slug, None
+
+def delete_channel(slug):
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('SELECT COUNT(*) FROM channels')
+    if c.fetchone()[0] <= 1:
+        conn.close()
+        return False, "Can't delete the last remaining channel."
+    c.execute('DELETE FROM channels WHERE slug = ?', (slug,))
+    conn.commit()
+    conn.close()
+    # Messages already posted in this channel are left in place (just no
+    # longer reachable from the channel list) rather than deleted, so
+    # re-creating a channel with the same slug would bring them back.
+    return True, None
+
+def get_family_members():
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('SELECT id, name FROM family_members ORDER BY id ASC')
+    rows = c.fetchall()
+    conn.close()
+    return [{'id': r[0], 'name': r[1]} for r in rows]
+
+def add_family_member(name):
+    name = name.strip()[:30]
+    if not name:
+        return None, 'Name is required.'
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('SELECT 1 FROM family_members WHERE name = ?', (name,))
+    if c.fetchone():
+        conn.close()
+        return None, 'That name is already in use.'
+    c.execute('INSERT INTO family_members (name) VALUES (?)', (name,))
+    conn.commit()
+    member_id = c.lastrowid
+    conn.close()
+    return member_id, None
+
+def rename_family_member(member_id, new_name):
+    new_name = new_name.strip()[:30]
+    if not new_name:
+        return False, 'Name is required.'
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('SELECT 1 FROM family_members WHERE name = ? AND id != ?', (new_name, member_id))
+    if c.fetchone():
+        conn.close()
+        return False, 'That name is already in use.'
+    c.execute('UPDATE family_members SET name = ? WHERE id = ?', (new_name, member_id))
+    conn.commit()
+    conn.close()
+    return True, None
+
+def delete_family_member(member_id):
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('SELECT COUNT(*) FROM family_members')
+    if c.fetchone()[0] <= 1:
+        conn.close()
+        return False, "Can't remove the last remaining family member."
+    c.execute('DELETE FROM family_members WHERE id = ?', (member_id,))
+    conn.commit()
+    conn.close()
+    # Same principle as messages/channels: existing messages keep whatever
+    # name was active when they were sent, rather than being rewritten.
+    return True, None
 
 def get_messages(limit=100, channel='general'):
     conn = sqlite3.connect('/data/chat.db')
@@ -329,24 +466,30 @@ def index():
     _, auto_user = resolve_ha_identity()
 
     return render_template('index.html',
-                          username1=get_setting('username1', USERNAME1_DEFAULT),
-                          username2=get_setting('username2', USERNAME2_DEFAULT),
+                          members=get_family_members(),
                           theme=THEME,
                           asset_version=ASSET_VERSION,
                           inline_css=INLINE_CSS,
+                          channels=get_channels(),
                           auto_user=auto_user,
                           ha_identified=bool(ha_user_id))
+
+@app.route('/api/channels')
+def api_channels():
+    return jsonify(get_channels())
 
 @app.route('/admin')
 def admin_panel():
     if not session.get('is_admin'):
         return render_template('admin.html', logged_in=False, error=request.args.get('error'))
     return render_template('admin.html', logged_in=True,
-                          username1=get_setting('username1', USERNAME1_DEFAULT),
-                          username2=get_setting('username2', USERNAME2_DEFAULT),
+                          members=get_family_members(),
+                          member_error=request.args.get('member_error'),
                           saved=request.args.get('saved'),
                           ha_users=get_ha_users(),
-                          ha_user_map=get_ha_user_map())
+                          ha_user_map=get_ha_user_map(),
+                          channels=get_channels(),
+                          channel_error=request.args.get('channel_error'))
 
 @app.route('/admin/login', methods=['POST'])
 def admin_login():
@@ -362,35 +505,70 @@ def admin_logout():
     session.pop('is_admin', None)
     return ingress_redirect(url_for('admin_panel'))
 
-@app.route('/admin/usernames', methods=['POST'])
+@app.route('/admin/members/add', methods=['POST'])
 @require_admin
-def admin_update_usernames():
-    name1 = request.form.get('username1', '').strip()
-    name2 = request.form.get('username2', '').strip()
+def admin_add_member():
+    member_id, error = add_family_member(request.form.get('name', ''))
+    if error:
+        return ingress_redirect(url_for('admin_panel', member_error=error))
+    return ingress_redirect(url_for('admin_panel', saved='1'))
 
-    if not name1 or not name2:
-        return ingress_redirect(url_for('admin_panel', saved='error'))
-    # Keep names short — they're rendered as avatar initials and channel
-    # member labels, and long values would break that UI.
-    name1 = name1[:30]
-    name2 = name2[:30]
+@app.route('/admin/members/rename', methods=['POST'])
+@require_admin
+def admin_rename_member():
+    try:
+        member_id = int(request.form.get('id', ''))
+    except ValueError:
+        return ingress_redirect(url_for('admin_panel', member_error='Invalid member.'))
+    ok, error = rename_family_member(member_id, request.form.get('name', ''))
+    if error:
+        return ingress_redirect(url_for('admin_panel', member_error=error))
+    return ingress_redirect(url_for('admin_panel', saved='1'))
 
-    set_setting('username1', name1)
-    set_setting('username2', name2)
+@app.route('/admin/members/delete', methods=['POST'])
+@require_admin
+def admin_delete_member():
+    try:
+        member_id = int(request.form.get('id', ''))
+    except ValueError:
+        return ingress_redirect(url_for('admin_panel', member_error='Invalid member.'))
+    ok, error = delete_family_member(member_id)
+    if error:
+        return ingress_redirect(url_for('admin_panel', member_error=error))
     return ingress_redirect(url_for('admin_panel', saved='1'))
 
 @app.route('/admin/ha-mapping', methods=['POST'])
 @require_admin
 def admin_update_ha_mapping():
+    valid_names = {m['name'] for m in get_family_members()}
     mapping = {}
     for user_id, choice in request.form.items():
         if not user_id.startswith('map_'):
             continue
         user_id = user_id[len('map_'):]
         choice = choice.strip()
-        if choice:  # empty selection = no auto sign-in for this HA user
-            mapping[user_id] = choice[:30]
+        if choice and choice in valid_names:  # empty selection = no auto sign-in for this HA user
+            mapping[user_id] = choice
     set_ha_user_map(mapping)
+    return ingress_redirect(url_for('admin_panel', saved='1'))
+
+@app.route('/admin/channels/add', methods=['POST'])
+@require_admin
+def admin_add_channel():
+    name = request.form.get('name', '')
+    icon = request.form.get('icon', '#')
+    slug, error = add_channel(name, icon)
+    if error:
+        return ingress_redirect(url_for('admin_panel', channel_error=error))
+    return ingress_redirect(url_for('admin_panel', saved='1'))
+
+@app.route('/admin/channels/delete', methods=['POST'])
+@require_admin
+def admin_delete_channel():
+    slug = request.form.get('slug', '')
+    ok, error = delete_channel(slug)
+    if error:
+        return ingress_redirect(url_for('admin_panel', channel_error=error))
     return ingress_redirect(url_for('admin_panel', saved='1'))
 
 @app.route('/api/messages')

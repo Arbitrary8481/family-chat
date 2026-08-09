@@ -51,6 +51,91 @@
             font-size: 15px;
             margin-bottom: 4px;
         }
+        .channel-manage-list {
+            margin-top: 12px;
+        }
+        .channel-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 10px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            margin-bottom: 6px;
+        }
+        .channel-row-label {
+            font-size: 14px;
+        }
+        .channel-row form {
+            width: auto;
+            margin: 0;
+        }
+        .member-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 0;
+            margin-bottom: 6px;
+        }
+        .member-row input[type="text"] {
+            flex: 1;
+            margin: 0;
+        }
+        .member-row button {
+            width: auto;
+            margin: 0;
+            padding: 8px 12px;
+            font-size: 13px;
+            white-space: nowrap;
+        }
+        .save-btn {
+            background: var(--bg-accent);
+            color: white;
+            border: none;
+        }
+        .save-btn:hover {
+            background: var(--bg-accent-hover);
+        }
+        .delete-btn {
+            width: auto;
+            margin-top: 0;
+            padding: 4px 10px;
+            font-size: 13px;
+            background: transparent;
+            border: 1px solid var(--danger);
+            color: var(--danger);
+        }
+        .delete-btn:hover {
+            background: var(--danger);
+            color: white;
+        }
+        .delete-btn:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+            border-color: var(--text-muted);
+            color: var(--text-muted);
+        }
+        .delete-btn:disabled:hover {
+            background: transparent;
+        }
+        .channel-add-form {
+            display: flex;
+            align-items: flex-end;
+            gap: 8px;
+            margin-top: 12px;
+        }
+        .channel-add-form label {
+            margin-top: 0;
+        }
+        .channel-add-form input {
+            margin: 0;
+        }
+        .channel-add-form button {
+            width: auto;
+            margin-top: 0;
+            padding: 10px 14px;
+            white-space: nowrap;
+        }
         h1 {
             font-size: 20px;
             margin: 0 0 4px;
@@ -143,17 +228,49 @@
                     <button type="submit">Log Out</button>
                 </form>
             </div>
-            <p class="subtitle">Manage the two family member names.</p>
-            {% if saved == '1' %}<div class="message success">Saved. Reload the chat to see the new names.</div>{% endif %}
-            {% if saved == 'error' %}<div class="message error">Both names are required.</div>{% endif %}
-            <form method="post" action="./admin/usernames">
-                <label for="username1">Family Member 1</label>
-                <input type="text" id="username1" name="username1" maxlength="30" value="{{ username1 }}" required>
-                <label for="username2">Family Member 2</label>
-                <input type="text" id="username2" name="username2" maxlength="30" value="{{ username2 }}" required>
-                <button type="submit">Save Names</button>
+            <p class="subtitle">Manage who can use the chat.</p>
+            {% if saved == '1' %}<div class="message success">Saved. Reload the chat to see changes.</div>{% endif %}
+            {% if member_error %}<div class="message error">{{ member_error }}</div>{% endif %}
+
+            <h2 class="section-title" style="margin-top:0; padding-top:0; border-top:none;">Family Members</h2>
+            <div class="channel-manage-list">
+                {% for m in members %}
+                <form method="post" class="member-row">
+                    <input type="hidden" name="id" value="{{ m.id }}">
+                    <input type="text" name="name" value="{{ m.name }}" maxlength="30" required>
+                    <button type="submit" formaction="./admin/members/rename" class="save-btn">Save</button>
+                    <button type="submit" formaction="./admin/members/delete" class="delete-btn" title="Remove"{% if members|length <= 1 %} disabled{% endif %}>✕</button>
+                </form>
+                {% endfor %}
+            </div>
+            <form method="post" action="./admin/members/add" class="channel-add-form">
+                <label for="member_name">Name</label>
+                <input type="text" id="member_name" name="name" maxlength="30" placeholder="e.g. Sarah" required>
+                <button type="submit">Add Member</button>
             </form>
-            <p class="hint">Note: renaming someone here doesn't rewrite their existing messages — those keep showing the old name, since messages are stored under the name that was active when they were sent.</p>
+            <p class="hint">Renaming or removing someone doesn't rewrite their existing messages — those keep showing the name that was active when sent.</p>
+
+            <h2 class="section-title">Channels</h2>
+            {% if channel_error %}<div class="message error">{{ channel_error }}</div>{% endif %}
+            <div class="channel-manage-list">
+                {% for ch in channels %}
+                <div class="channel-row">
+                    <span class="channel-row-label">{{ ch.icon }} {{ ch.name }}</span>
+                    <form method="post" action="./admin/channels/delete">
+                        <input type="hidden" name="slug" value="{{ ch.slug }}">
+                        <button type="submit" class="delete-btn" title="Delete channel"{% if channels|length <= 1 %} disabled{% endif %}>✕</button>
+                    </form>
+                </div>
+                {% endfor %}
+            </div>
+            <form method="post" action="./admin/channels/add" class="channel-add-form">
+                <label for="channel_icon">Icon</label>
+                <input type="text" id="channel_icon" name="icon" maxlength="8" value="#" style="max-width: 60px;">
+                <label for="channel_name">Channel name</label>
+                <input type="text" id="channel_name" name="name" maxlength="30" placeholder="e.g. school-stuff" required>
+                <button type="submit">Add Channel</button>
+            </form>
+            <p class="hint">Deleting a channel just hides it from the sidebar — its messages aren't deleted, and reappear if you add a channel with the same name later. At least one channel must always exist.</p>
 
             <h2 class="section-title">Auto sign-in from Home Assistant</h2>
             <p class="subtitle">
@@ -168,8 +285,9 @@
                 <label for="map_{{ u.user_id }}">{{ u.display_name or u.username or u.user_id }}</label>
                 <select id="map_{{ u.user_id }}" name="map_{{ u.user_id }}">
                     <option value="" {% if ha_user_map.get(u.user_id) is none %}selected{% endif %}>— Don't auto sign in —</option>
-                    <option value="{{ username1 }}" {% if ha_user_map.get(u.user_id) == username1 %}selected{% endif %}>{{ username1 }}</option>
-                    <option value="{{ username2 }}" {% if ha_user_map.get(u.user_id) == username2 %}selected{% endif %}>{{ username2 }}</option>
+                    {% for m in members %}
+                    <option value="{{ m.name }}" {% if ha_user_map.get(u.user_id) == m.name %}selected{% endif %}>{{ m.name }}</option>
+                    {% endfor %}
                 </select>
                 {% endfor %}
                 <button type="submit">Save Mapping</button>

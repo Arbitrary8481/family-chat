@@ -1,7 +1,7 @@
 // Global state
 let socket;
 let currentUser = null;
-let currentChannel = 'general';
+let currentChannel = window.DEFAULT_CHANNEL || 'general';
 let selectedFile = null;
 let customEmojis = {};
 let recentEmojis = JSON.parse(localStorage.getItem('recentEmojis') || '[]');
