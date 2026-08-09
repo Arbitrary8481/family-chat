@@ -202,6 +202,29 @@
             </div>
             <p class="hint">Adding a channel is self-service now — anyone can do it from the chat's own Settings (✏️) → Channels tab. Deleting one here just hides it from the sidebar — its messages aren't deleted, and reappear if a channel with the same name is added again later. At least one channel must always exist.</p>
 
+            <h2 class="section-title">Server Owner</h2>
+            <p class="subtitle">
+                The owner can delete any message and manage channels directly from the chat's own Settings —
+                without needing the admin password. Only one at a time; leave it unset and only an admin
+                session (this login) has those powers.
+            </p>
+            {% if ha_accounts %}
+            <form method="post" action="./admin/owner/set">
+                <label for="owner_user_id">Owner</label>
+                <select id="owner_user_id" name="owner_user_id">
+                    <option value="">— No owner set —</option>
+                    {% for a in ha_accounts %}
+                    <option value="{{ a.user_id }}"{% if a.user_id == current_owner_id %} selected{% endif %}>
+                        {{ a.alias or a.ha_name }}
+                    </option>
+                    {% endfor %}
+                </select>
+                <button type="submit">Save Owner</button>
+            </form>
+            {% else %}
+            <p class="hint">No Home Assistant users detected yet. Open the chat from the Home Assistant sidebar first, then come back here.</p>
+            {% endif %}
+
             <h2 class="section-title">Display Names</h2>
             <p class="subtitle">
                 Everyone can set their own display name from the settings menu (✏️) in the chat.

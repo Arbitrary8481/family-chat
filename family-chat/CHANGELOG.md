@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.12.0
+
+### Added
+- **Server Owner.** An admin can designate one Home Assistant account as the "owner" from the admin panel (Settings section: Server Owner). The owner gets the same delete-any-message and delete-any-channel powers an admin has, but tied to their own Home Assistant login — no admin password needed, no visiting the admin panel. Channel deletion is now available right from the chat's own Settings (✏️ → Channels tab) for the owner and for anyone with an active admin session, alongside the add-channel form that already lived there. Leaving the owner unset (the default) changes nothing — those powers stay admin-only, exactly as before.
+
 ## 2.11.0
 
 ### Added

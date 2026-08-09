@@ -274,6 +274,21 @@ def set_setting(key, value):
     conn.commit()
     conn.close()
 
+def get_owner_user_id():
+    """The one HA account, if any, designated by an admin as the server
+    owner — see is_privileged_user(). Stored in the generic settings
+    table rather than a dedicated column since it's a single optional
+    value, same reasoning as everything else kept there."""
+    return get_setting('owner_user_id') or None
+
+def is_owner(user_id):
+    """True for the designated owner only. Deliberately does NOT check
+    the admin session here — admin (password) and owner (identity) are
+    two independent ways to qualify for the same privileges; callers
+    combine them explicitly: `session.get('is_admin') or is_owner(requester_id)`."""
+    owner_id = get_owner_user_id()
+    return bool(user_id) and bool(owner_id) and user_id == owner_id
+
 def record_ha_user(user_id, username, display_name):
     conn = sqlite3.connect('/data/chat.db')
     c = conn.cursor()
@@ -462,12 +477,14 @@ def save_message(sender, content, channel='general', msg_type='text',
     conn.close()
     return msg_id
 
-def delete_message(message_id, requester_id, is_admin):
+def delete_message(message_id, requester_id, can_manage):
     """Regular users can only delete their own messages (matched by the
     stable sender_id, not the display name — a renamed or reused alias
-    shouldn't matter here). Admins, authenticated separately via the
-    /admin session, can delete anyone's. Returns (channel, error);
-    channel tells the caller which socket room to notify."""
+    shouldn't matter here). An admin (password session) or the
+    designated owner (identity-based, see is_owner()) can delete
+    anyone's — can_manage covers both, decided by the caller. Returns
+    (channel, error); channel tells the caller which socket room to
+    notify."""
     conn = sqlite3.connect('/data/chat.db')
     c = conn.cursor()
     c.execute('SELECT sender_id, channel, file_url FROM messages WHERE id = ?', (message_id,))
@@ -477,7 +494,7 @@ def delete_message(message_id, requester_id, is_admin):
         return None, 'Message not found — it may have already been deleted.'
 
     sender_id, channel, file_url = row
-    if not is_admin and sender_id != requester_id:
+    if not can_manage and sender_id != requester_id:
         conn.close()
         return None, 'You can only delete your own messages.'
 
@@ -604,6 +621,7 @@ def index():
                           auto_user=auto_user,
                           auto_user_id=auto_user_id,
                           is_admin=bool(session.get('is_admin')),
+                          is_owner=is_owner(auto_user_id),
                           giphy_enabled=bool(GIPHY_API_KEY))
 
 @app.route('/api/channels')
@@ -612,9 +630,10 @@ def api_channels():
 
 @app.route('/api/channels/add', methods=['POST'])
 def api_add_channel():
-    # Adding a channel is self-service for any signed-in family member —
-    # deleting one stays admin-only (see /admin/channels/delete), since
-    # that's the more disruptive action and affects everyone at once.
+    # Adding a channel is self-service for any signed-in family member.
+    # Deleting one is more disruptive (affects everyone, drops it out of
+    # the sidebar for the whole family at once) — see api_delete_channel
+    # below for who's allowed to do that.
     ha_user_id = request.headers.get('X-Remote-User-Id')
     if not ha_user_id:
         return jsonify({'error': 'Not accessed through Home Assistant'}), 403
@@ -623,6 +642,20 @@ def api_add_channel():
     if error:
         return jsonify({'error': error}), 400
     return jsonify({'success': True, 'slug': slug, 'channels': get_channels()})
+
+@app.route('/api/channels/delete', methods=['POST'])
+def api_delete_channel():
+    # Self-service for the designated owner or an authenticated admin
+    # session — anyone else still has to go through /admin (i.e.
+    # doesn't have this capability at all without the admin password).
+    ha_user_id = request.headers.get('X-Remote-User-Id')
+    if not (bool(session.get('is_admin')) or is_owner(ha_user_id)):
+        return jsonify({'error': 'Only the server owner or an admin can delete channels.'}), 403
+    data = request.get_json(silent=True) or {}
+    ok, error = delete_channel(data.get('slug', ''))
+    if error:
+        return jsonify({'error': error}), 400
+    return jsonify({'success': True, 'channels': get_channels()})
 
 def _escape_like(s):
     # LIKE treats % and _ as wildcards — escape them so a search for a
@@ -723,7 +756,18 @@ def admin_panel():
                           saved=request.args.get('saved'),
                           channels=get_channels(),
                           channel_error=request.args.get('channel_error'),
-                          ha_accounts=get_known_ha_accounts())
+                          ha_accounts=get_known_ha_accounts(),
+                          current_owner_id=get_owner_user_id())
+
+@app.route('/admin/owner/set', methods=['POST'])
+@require_admin
+def admin_set_owner():
+    # Empty selection clears the owner entirely — set_setting stores ''
+    # rather than deleting the row, which get_owner_user_id() already
+    # treats as "no owner" via `or None`.
+    owner_user_id = request.form.get('owner_user_id', '').strip()
+    set_setting('owner_user_id', owner_user_id)
+    return ingress_redirect(url_for('admin_panel', saved='1'))
 
 @app.route('/admin/login', methods=['POST'])
 def admin_login():
@@ -1260,15 +1304,15 @@ def handle_reaction(data):
 def handle_delete_message(data):
     message_id = data.get('message_id')
     requester_id, requester_name = resolve_ha_identity()
-    is_admin = bool(session.get('is_admin'))
+    can_manage = bool(session.get('is_admin')) or is_owner(requester_id)
 
     if not message_id:
         return
-    if not requester_id and not is_admin:
+    if not requester_id and not can_manage:
         emit('server_error', {'message': "Couldn't identify you as a Home Assistant user — try reloading the page."})
         return
 
-    channel, error = delete_message(message_id, requester_id, is_admin)
+    channel, error = delete_message(message_id, requester_id, can_manage)
     if error:
         emit('server_error', {'message': error})
         return

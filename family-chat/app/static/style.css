@@ -1076,6 +1076,35 @@ body {
     font-size: 14px;
 }
 
+.settings-channel-delete {
+    background: transparent;
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    border-radius: 4px;
+    width: 24px;
+    height: 24px;
+    line-height: 1;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.15s;
+}
+
+.settings-channel-delete:hover {
+    background: var(--danger);
+    color: white;
+}
+
+.settings-channel-delete:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    border-color: var(--text-muted);
+    color: var(--text-muted);
+}
+
+.settings-channel-delete:disabled:hover {
+    background: transparent;
+}
+
 .modal-header {
     padding: 16px;
     display: flex;

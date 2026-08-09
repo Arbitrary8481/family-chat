@@ -344,11 +344,12 @@ function addMessage(data) {
     messageReactions[data.id] = data.reactions || {};
 
     // Own messages are deletable by their sender; any message is
-    // deletable by an admin (window.IS_ADMIN reflects whether *this*
-    // browser has an authenticated /admin session — separate from the
-    // per-person Home Assistant identity everything else here uses).
+    // deletable by an admin (window.IS_ADMIN — an authenticated /admin
+    // session in *this* browser) or the designated owner (window.IS_OWNER
+    // — tied to this person's Home Assistant identity, no password
+    // needed).
     const canDelete = !!data.sender_id &&
-        (data.sender_id === window.AUTO_CHAT_USER_ID || window.IS_ADMIN);
+        (data.sender_id === window.AUTO_CHAT_USER_ID || window.IS_ADMIN || window.IS_OWNER);
     const deleteBtnHtml = canDelete
         ? `<button class="action-btn action-btn-danger" onclick="deleteMessage(${data.id})" title="Delete message">🗑️</button>`
         : '';
@@ -1028,6 +1029,8 @@ function loadChannelsSettings() {
     if (!list) return;
     list.innerHTML = '<p class="settings-hint">Loading channels…</p>';
 
+    const canManage = window.IS_ADMIN || window.IS_OWNER;
+
     fetch(apiUrl('/api/channels'))
         .then(r => r.json())
         .then(channels => {
@@ -1038,13 +1041,48 @@ function loadChannelsSettings() {
             list.innerHTML = channels.map(ch => `
                 <div class="settings-channel-row">
                     <span>${escapeHtml(ch.icon)}</span>
-                    <span>${escapeHtml(ch.name)}</span>
+                    <span style="flex:1;">${escapeHtml(ch.name)}</span>
+                    ${canManage ? `<button class="settings-channel-delete" onclick="deleteChannelSettings('${escapeHtml(ch.slug)}')" title="Delete channel"${channels.length <= 1 ? ' disabled' : ''}>✕</button>` : ''}
                 </div>
             `).join('');
         })
         .catch(() => {
             list.innerHTML = '<p class="settings-hint">Couldn\'t load channels.</p>';
         });
+}
+
+function deleteChannelSettings(slug) {
+    if (!confirm(`Delete #${slug}? Its messages are hidden, not erased, and come back if a channel with the same name is added again.`)) return;
+
+    fetch(apiUrl('/api/channels/delete'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug })
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+            loadChannelsSettings();
+            loadNotifySettings(); // it may have been someone's subscribed channel
+            removeChannelFromSidebar(slug, data.channels || []);
+        })
+        .catch(() => alert("Couldn't delete the channel. Please try again."));
+}
+
+function removeChannelFromSidebar(slug, remainingChannels) {
+    const el = document.querySelector(`.channel-sidebar .channel[data-channel="${CSS.escape(slug)}"]`);
+    const wasActive = el && el.classList.contains('active');
+    if (el) el.remove();
+
+    // If the channel you were actively viewing is the one just deleted,
+    // land somewhere that still exists instead of showing a channel
+    // that's no longer in the sidebar.
+    if (wasActive && remainingChannels.length > 0) {
+        switchChannel(remainingChannels[0].slug);
+    }
 }
 
 // Sidebar channel elements each get their own click listener at page
