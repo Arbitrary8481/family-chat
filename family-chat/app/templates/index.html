@@ -197,26 +197,116 @@
         </div>
     </div>
 
-    <!-- Emoji Manager Modal -->
-    <div class="modal hidden" id="emojiModal">
-        <div class="modal-content">
+    <div class="modal hidden" id="settingsModal">
+        <div class="modal-content settings-modal-content">
             <div class="modal-header">
-                <h3>Custom Emojis</h3>
-                <button class="close-btn" onclick="closeEmojiManager()">×</button>
+                <h3>Settings</h3>
+                <button class="close-btn" onclick="closeMySettings()">×</button>
             </div>
-            <div class="emoji-upload">
-                <input type="text" id="newEmojiName" placeholder=":emoji_name:">
-                <input type="file" id="emojiFileInput" accept="image/*">
-                <button class="btn btn-primary" onclick="uploadEmoji()">Upload Emoji</button>
-            </div>
-            <div class="custom-emoji-list" id="customEmojiList">
-                <!-- Custom emojis listed here -->
+            <div class="settings-body">
+                <div class="settings-tabs">
+                    <button class="settings-tab active" data-tab="profile" onclick="switchSettingsTab('profile')">
+                        <span class="settings-tab-icon">👤</span><span class="settings-tab-label">Profile</span>
+                    </button>
+                    <button class="settings-tab" data-tab="notifications" onclick="switchSettingsTab('notifications')">
+                        <span class="settings-tab-icon">🔔</span><span class="settings-tab-label">Notifications</span>
+                    </button>
+                    <button class="settings-tab" data-tab="channels" onclick="switchSettingsTab('channels')">
+                        <span class="settings-tab-icon">#️⃣</span><span class="settings-tab-label">Channels</span>
+                    </button>
+                    <button class="settings-tab" data-tab="emojis" onclick="switchSettingsTab('emojis')">
+                        <span class="settings-tab-icon">😀</span><span class="settings-tab-label">Emojis</span>
+                    </button>
+                </div>
+
+                <div class="settings-panels">
+                    <!-- Profile -->
+                    <div class="settings-panel active" id="settingsPanel-profile">
+                        <div class="settings-section">
+                            <label for="myAliasInput" style="display:block; font-size: 13px; color: var(--text-muted); margin-bottom: 6px;">
+                                Display name <span id="myHaNameHint"></span>
+                            </label>
+                            <div class="emoji-upload" style="padding: 0; border-bottom: none;">
+                                <input type="text" id="myAliasInput" maxlength="30" placeholder="Your display name">
+                                <button class="btn btn-primary" onclick="saveMyAlias()">Save</button>
+                            </div>
+                            <p style="font-size: 12px; color: var(--text-muted); margin-top: 12px;">
+                                This changes how your name appears everywhere, including messages you've already sent.
+                                Leave it blank and save to go back to your Home Assistant name.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Notifications -->
+                    <div class="settings-panel" id="settingsPanel-notifications">
+                        <div class="settings-section">
+                            <label style="display:block; font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">
+                                Notify my phone about new messages in
+                            </label>
+                            <div id="notifyChannelList" class="notify-channel-list">
+                                <p class="settings-hint">Loading channels…</p>
+                            </div>
+                            <div id="notifySettingsBody" style="margin-top: 12px;">
+                                <label for="notifyServiceSelect" style="display:block; font-size: 13px; color: var(--text-muted); margin-bottom: 6px;">
+                                    Send to
+                                </label>
+                                <select id="notifyServiceSelect" class="settings-select">
+                                    <option value="">Loading devices…</option>
+                                </select>
+                                <div style="display:flex; align-items:center; gap:8px; margin-top: 8px;">
+                                    <button class="btn btn-primary" style="flex:1;" onclick="saveNotifyPrefs()">Save</button>
+                                    <button class="btn btn-secondary" style="flex:1;" onclick="sendTestNotification()">Send Test</button>
+                                </div>
+                                <p id="notifySaveStatus" class="settings-save-status hidden">Saved</p>
+                            </div>
+                            <p style="font-size: 12px; color: var(--text-muted); margin-top: 12px;">
+                                Uses Home Assistant's own notifications. Install the Home Assistant Companion App on your
+                                phone and make sure it's connected first — it'll then show up in the list above. You won't
+                                be notified about your own messages.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Channels -->
+                    <div class="settings-panel" id="settingsPanel-channels">
+                        <div class="settings-section">
+                            <label style="display:block; font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">
+                                Existing channels
+                            </label>
+                            <div id="settingsChannelList" class="settings-channel-list">
+                                <p class="settings-hint">Loading channels…</p>
+                            </div>
+                            <label style="display:block; font-size: 13px; color: var(--text-muted); margin: 16px 0 6px;">
+                                Add a channel
+                            </label>
+                            <div class="emoji-upload" style="padding: 0; border-bottom: none;">
+                                <input type="text" id="newChannelIcon" maxlength="8" placeholder="#" style="flex: 0 1 60px;">
+                                <input type="text" id="newChannelName" maxlength="30" placeholder="e.g. school-stuff" style="flex: 1 1 140px;">
+                                <button class="btn btn-primary" onclick="addChannel()">Add Channel</button>
+                            </div>
+                            <p id="addChannelStatus" class="settings-save-status hidden"></p>
+                            <p style="font-size: 12px; color: var(--text-muted); margin-top: 12px;">
+                                Anyone can add a channel. Removing one is admin-only, from the admin panel.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Emojis -->
+                    <div class="settings-panel" id="settingsPanel-emojis">
+                        <div class="emoji-upload">
+                            <input type="text" id="newEmojiName" placeholder=":emoji_name:">
+                            <input type="file" id="emojiFileInput" accept="image/*">
+                            <button class="btn btn-primary" onclick="uploadEmoji()">Upload Emoji</button>
+                        </div>
+                        <div class="custom-emoji-list" id="customEmojiList">
+                            <!-- Custom emojis loaded here -->
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Settings: lets you set your own display name (alias). Only your
-         own — an admin panel section handles changing anyone else's. -->
     <!-- Search: across all channels, per the family's request to be able
          to search previous chats, not just the current one. -->
     <div class="modal hidden" id="searchModal">
@@ -241,57 +331,6 @@
                 <button class="close-btn" onclick="closeFileBrowser()">×</button>
             </div>
             <div id="filesList" class="search-results"></div>
-        </div>
-    </div>
-
-    <div class="modal hidden" id="settingsModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Settings</h3>
-                <button class="close-btn" onclick="closeMySettings()">×</button>
-            </div>
-            <div style="padding: 16px; border-bottom: 1px solid var(--bg-tertiary);">
-                <label for="myAliasInput" style="display:block; font-size: 13px; color: var(--text-muted); margin-bottom: 6px;">
-                    Display name <span id="myHaNameHint"></span>
-                </label>
-                <div class="emoji-upload" style="padding: 0; border-bottom: none;">
-                    <input type="text" id="myAliasInput" maxlength="30" placeholder="Your display name">
-                    <button class="btn btn-primary" onclick="saveMyAlias()">Save</button>
-                </div>
-                <p style="font-size: 12px; color: var(--text-muted); margin-top: 12px;">
-                    This changes how your name appears everywhere, including messages you've already sent.
-                    Leave it blank and save to go back to your Home Assistant name.
-                </p>
-            </div>
-            <div style="padding: 16px; border-bottom: 1px solid var(--bg-tertiary);">
-                <label style="display:block; font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">
-                    Notify my phone about new messages in
-                </label>
-                <div id="notifyChannelList" class="notify-channel-list">
-                    <p class="settings-hint">Loading channels…</p>
-                </div>
-                <div id="notifySettingsBody" style="margin-top: 12px;">
-                    <label for="notifyServiceSelect" style="display:block; font-size: 13px; color: var(--text-muted); margin-bottom: 6px;">
-                        Send to
-                    </label>
-                    <select id="notifyServiceSelect" class="settings-select">
-                        <option value="">Loading devices…</option>
-                    </select>
-                    <div style="display:flex; align-items:center; gap:8px; margin-top: 8px;">
-                        <button class="btn btn-primary" style="flex:1;" onclick="saveNotifyPrefs()">Save</button>
-                        <button class="btn btn-secondary" style="flex:1;" onclick="sendTestNotification()">Send Test</button>
-                    </div>
-                    <p id="notifySaveStatus" class="settings-save-status hidden">Saved</p>
-                </div>
-                <p style="font-size: 12px; color: var(--text-muted); margin-top: 12px;">
-                    Uses Home Assistant's own notifications. Install the Home Assistant Companion App on your
-                    phone and make sure it's connected first — it'll then show up in the list above. You won't
-                    be notified about your own messages.
-                </p>
-            </div>
-            <div style="padding: 16px;">
-                <button class="btn btn-secondary" style="width: 100%;" onclick="closeMySettings(); openEmojiManager();">😀 Manage Custom Emojis</button>
-            </div>
         </div>
     </div>
 

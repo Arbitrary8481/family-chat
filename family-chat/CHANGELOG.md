@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.10.0
+
+### Changed
+- **Settings is now a vertical-tab panel** (Profile, Notifications, Channels, Emojis) instead of one long scrolling column — each category gets its own space, no more scrolling past notification settings to reach custom emojis.
+- **Adding a channel moved from the admin panel into everyone's own Settings** (✏️ → Channels tab). Any family member can now add a channel without needing the admin password. Deleting a channel stays admin-only, since that's the more disruptive action.
+- The old separate "Manage Custom Emojis" popup is gone — it's just the Emojis tab now.
+
 ## 2.9.3
 
 ### Fixed

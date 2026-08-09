@@ -92,24 +92,6 @@
         .delete-btn:disabled:hover {
             background: transparent;
         }
-        .channel-add-form {
-            display: flex;
-            align-items: flex-end;
-            gap: 8px;
-            margin-top: 12px;
-        }
-        .channel-add-form label {
-            margin-top: 0;
-        }
-        .channel-add-form input {
-            margin: 0;
-        }
-        .channel-add-form button {
-            width: auto;
-            margin-top: 0;
-            padding: 10px 14px;
-            white-space: nowrap;
-        }
         h1 {
             font-size: 20px;
             margin: 0 0 4px;
@@ -218,14 +200,7 @@
                 </div>
                 {% endfor %}
             </div>
-            <form method="post" action="./admin/channels/add" class="channel-add-form">
-                <label for="channel_icon">Icon</label>
-                <input type="text" id="channel_icon" name="icon" maxlength="8" value="#" style="max-width: 60px;">
-                <label for="channel_name">Channel name</label>
-                <input type="text" id="channel_name" name="name" maxlength="30" placeholder="e.g. school-stuff" required>
-                <button type="submit">Add Channel</button>
-            </form>
-            <p class="hint">Deleting a channel just hides it from the sidebar — its messages aren't deleted, and reappear if you add a channel with the same name later. At least one channel must always exist.</p>
+            <p class="hint">Adding a channel is self-service now — anyone can do it from the chat's own Settings (✏️) → Channels tab. Deleting one here just hides it from the sidebar — its messages aren't deleted, and reappear if a channel with the same name is added again later. At least one channel must always exist.</p>
 
             <h2 class="section-title">Display Names</h2>
             <p class="subtitle">

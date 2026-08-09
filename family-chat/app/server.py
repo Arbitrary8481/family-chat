@@ -570,6 +570,20 @@ def index():
 def api_channels():
     return jsonify(get_channels())
 
+@app.route('/api/channels/add', methods=['POST'])
+def api_add_channel():
+    # Adding a channel is self-service for any signed-in family member —
+    # deleting one stays admin-only (see /admin/channels/delete), since
+    # that's the more disruptive action and affects everyone at once.
+    ha_user_id = request.headers.get('X-Remote-User-Id')
+    if not ha_user_id:
+        return jsonify({'error': 'Not accessed through Home Assistant'}), 403
+    data = request.get_json(silent=True) or {}
+    slug, error = add_channel(data.get('name', ''), data.get('icon', '#'))
+    if error:
+        return jsonify({'error': error}), 400
+    return jsonify({'success': True, 'slug': slug, 'channels': get_channels()})
+
 def _escape_like(s):
     # LIKE treats % and _ as wildcards — escape them so a search for a
     # literal "50%" or "file_name" doesn't behave unexpectedly.
@@ -684,16 +698,6 @@ def admin_login():
 def admin_logout():
     session.pop('is_admin', None)
     return ingress_redirect(url_for('index'))
-
-@app.route('/admin/channels/add', methods=['POST'])
-@require_admin
-def admin_add_channel():
-    name = request.form.get('name', '')
-    icon = request.form.get('icon', '#')
-    slug, error = add_channel(name, icon)
-    if error:
-        return ingress_redirect(url_for('admin_panel', channel_error=error))
-    return ingress_redirect(url_for('admin_panel', saved='1'))
 
 @app.route('/admin/channels/delete', methods=['POST'])
 @require_admin

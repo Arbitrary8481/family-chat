@@ -976,6 +976,101 @@ body {
     box-shadow: 0 24px 48px rgba(0,0,0,0.4);
 }
 
+/* Settings modal: wider, with a vertical tab rail down the left so each
+   category of option gets its own scrollable pane instead of one long
+   stacked column. */
+.settings-modal-content {
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    max-width: 640px;
+    width: 92%;
+    max-height: 82vh;
+    overflow: hidden;
+    box-shadow: 0 24px 48px rgba(0,0,0,0.4);
+    display: flex;
+    flex-direction: column;
+}
+
+.settings-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+}
+
+.settings-tabs {
+    width: 168px;
+    flex-shrink: 0;
+    background: var(--bg-tertiary);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px;
+    overflow-y: auto;
+}
+
+.settings-tab {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    padding: 10px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    text-align: left;
+    transition: all 0.15s;
+}
+
+.settings-tab-icon {
+    font-size: 16px;
+}
+
+.settings-tab:hover {
+    background: var(--bg-modifier-hover);
+    color: var(--interactive-hover);
+}
+
+.settings-tab.active {
+    background: var(--bg-modifier-active);
+    color: var(--interactive-active);
+}
+
+.settings-panels {
+    flex: 1;
+    overflow-y: auto;
+    min-width: 0;
+}
+
+.settings-panel {
+    display: none;
+}
+
+.settings-panel.active {
+    display: block;
+}
+
+.settings-section {
+    padding: 16px;
+}
+
+.settings-channel-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.settings-channel-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    background: var(--bg-tertiary);
+    font-size: 14px;
+}
+
 .modal-header {
     padding: 16px;
     display: flex;
@@ -1429,5 +1524,21 @@ body {
         width: calc(100vw - 32px);
         right: 16px;
         left: 16px;
+    }
+    .settings-modal-content {
+        width: 96%;
+        max-height: 88vh;
+    }
+    .settings-tabs {
+        width: 56px;
+    }
+    .settings-tab {
+        justify-content: center;
+        padding: 10px 6px;
+    }
+    /* Text label hidden, icon-only — the vertical rail stays but no
+       longer eats a third of a phone-width modal with English words. */
+    .settings-tab-label {
+        display: none;
     }
 }

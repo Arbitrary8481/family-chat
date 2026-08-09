@@ -871,20 +871,24 @@ function closeFileBrowser() {
     if (modal) modal.classList.add('hidden');
 }
 
-function openEmojiManager() {
-    const modal = document.getElementById('emojiModal');
-    if (modal) modal.classList.remove('hidden');
-    loadCustomEmojiList();
-}
-
-function closeEmojiManager() {
-    const modal = document.getElementById('emojiModal');
-    if (modal) modal.classList.add('hidden');
+function switchSettingsTab(tab) {
+    document.querySelectorAll('.settings-tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.tab === tab);
+    });
+    document.querySelectorAll('.settings-panel').forEach(p => {
+        p.classList.toggle('active', p.id === `settingsPanel-${tab}`);
+    });
+    if (tab === 'emojis') loadCustomEmojiList();
 }
 
 function openMySettings() {
     const modal = document.getElementById('settingsModal');
     if (modal) modal.classList.remove('hidden');
+
+    // Always open on the Profile tab rather than remembering whichever
+    // tab was open last — predictable beats clever here, and the other
+    // tabs are one click away regardless.
+    switchSettingsTab('profile');
 
     fetch(apiUrl('/api/me'))
         .then(r => r.json())
@@ -897,6 +901,7 @@ function openMySettings() {
         .catch(() => {});
 
     loadNotifySettings();
+    loadChannelsSettings();
 }
 
 function loadNotifySettings() {
@@ -1001,6 +1006,88 @@ function sendTestNotification() {
             }
         })
         .catch(() => alert("Couldn't send a test notification."));
+}
+
+function loadChannelsSettings() {
+    const list = document.getElementById('settingsChannelList');
+    if (!list) return;
+    list.innerHTML = '<p class="settings-hint">Loading channels…</p>';
+
+    fetch(apiUrl('/api/channels'))
+        .then(r => r.json())
+        .then(channels => {
+            if (!channels || channels.length === 0) {
+                list.innerHTML = '<p class="settings-hint">No channels yet.</p>';
+                return;
+            }
+            list.innerHTML = channels.map(ch => `
+                <div class="settings-channel-row">
+                    <span>${escapeHtml(ch.icon)}</span>
+                    <span>${escapeHtml(ch.name)}</span>
+                </div>
+            `).join('');
+        })
+        .catch(() => {
+            list.innerHTML = '<p class="settings-hint">Couldn\'t load channels.</p>';
+        });
+}
+
+// Sidebar channel elements each get their own click listener at page
+// load (see initializeChat()), not a delegated one — so a channel added
+// without a full page reload needs the same treatment here to actually
+// be clickable.
+function addChannelToSidebar(ch) {
+    const channelList = document.querySelector('.channel-sidebar .channel-list');
+    if (!channelList) return;
+    if (channelList.querySelector(`.channel[data-channel="${CSS.escape(ch.slug)}"]`)) return;
+
+    const el = document.createElement('div');
+    el.className = 'channel';
+    el.dataset.channel = ch.slug;
+    el.innerHTML = `<span class="channel-icon">${escapeHtml(ch.icon)}</span><span>${escapeHtml(ch.name)}</span>`;
+    el.addEventListener('click', function() {
+        switchChannel(this.dataset.channel);
+    });
+    channelList.appendChild(el);
+}
+
+function addChannel() {
+    const iconInput = document.getElementById('newChannelIcon');
+    const nameInput = document.getElementById('newChannelName');
+    const status = document.getElementById('addChannelStatus');
+    const icon = iconInput ? iconInput.value.trim() : '';
+    const name = nameInput ? nameInput.value.trim() : '';
+
+    if (!name) {
+        alert('Give the channel a name first.');
+        return;
+    }
+
+    fetch(apiUrl('/api/channels/add'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, icon })
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+            if (nameInput) nameInput.value = '';
+            if (iconInput) iconInput.value = '';
+            if (status) {
+                status.textContent = `Added #${name}`;
+                status.classList.remove('hidden');
+            }
+            loadChannelsSettings();
+            // The new channel should be immediately selectable in the
+            // notification tab's per-channel list too.
+            loadNotifySettings();
+            const added = (data.channels || []).find(c => c.slug === data.slug);
+            if (added) addChannelToSidebar(added);
+        })
+        .catch(() => alert("Couldn't add the channel. Please try again."));
 }
 
 function closeMySettings() {
