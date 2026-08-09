@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.17.0
+
+### Changed
+- **The admin panel is now tabbed** (Chat Name, Channels, Server Owner, Display Names), matching the vertical-tab layout the user Settings panel already uses, instead of one long scrolling page. Saving something in a tab now redirects back to that same tab rather than jumping to the top of the page.
+
+## 2.16.0
+
+### Added
+- **Admin-configurable chat name.** The "🏠 Family Home" header at the top of the channel sidebar was hardcoded — it's now editable from the admin panel (new "Chat Name" section at the top), with a separate icon field. Leaving it blank falls back to the original default rather than saving empty.
+
 ## 2.15.0
 
 ### Added

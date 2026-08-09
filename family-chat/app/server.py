@@ -289,6 +289,24 @@ def is_owner(user_id):
     owner_id = get_owner_user_id()
     return bool(user_id) and bool(owner_id) and user_id == owner_id
 
+DEFAULT_SERVER_NAME = 'Family Home'
+DEFAULT_SERVER_ICON = '🏠'
+
+def get_server_identity():
+    """The name/icon shown at the top of the channel sidebar — admin-only
+    to change, via the admin panel. Falls back to the original hardcoded
+    values so a fresh install looks exactly like it always did."""
+    return {
+        'name': get_setting('server_name') or DEFAULT_SERVER_NAME,
+        'icon': get_setting('server_icon') or DEFAULT_SERVER_ICON,
+    }
+
+def set_server_identity(name, icon):
+    name = (name or '').strip()[:40] or DEFAULT_SERVER_NAME
+    icon = (icon or '').strip()[:8] or DEFAULT_SERVER_ICON
+    set_setting('server_name', name)
+    set_setting('server_icon', icon)
+
 def record_ha_user(user_id, username, display_name):
     conn = sqlite3.connect('/data/chat.db')
     c = conn.cursor()
@@ -611,6 +629,7 @@ def index():
         ha_display_name = request.headers.get('X-Remote-User-Display-Name', '')
         record_ha_user(ha_user_id, ha_username, ha_display_name)
     auto_user_id, auto_user = resolve_ha_identity()
+    server_identity = get_server_identity()
 
     return render_template('index.html',
                           members=[{'name': n} for n in get_known_people()],
@@ -622,6 +641,8 @@ def index():
                           auto_user_id=auto_user_id,
                           is_admin=bool(session.get('is_admin')),
                           is_owner=is_owner(auto_user_id),
+                          server_name=server_identity['name'],
+                          server_icon=server_identity['icon'],
                           giphy_enabled=bool(GIPHY_API_KEY))
 
 @app.route('/api/channels')
@@ -754,10 +775,18 @@ def admin_panel():
         return render_template('admin.html', logged_in=False, error=request.args.get('error'))
     return render_template('admin.html', logged_in=True,
                           saved=request.args.get('saved'),
+                          active_tab=request.args.get('tab', 'chatname'),
                           channels=get_channels(),
                           channel_error=request.args.get('channel_error'),
                           ha_accounts=get_known_ha_accounts(),
-                          current_owner_id=get_owner_user_id())
+                          current_owner_id=get_owner_user_id(),
+                          server_identity=get_server_identity())
+
+@app.route('/admin/server-name/set', methods=['POST'])
+@require_admin
+def admin_set_server_name():
+    set_server_identity(request.form.get('server_name', ''), request.form.get('server_icon', ''))
+    return ingress_redirect(url_for('admin_panel', saved='1', tab='chatname'))
 
 @app.route('/admin/owner/set', methods=['POST'])
 @require_admin
@@ -767,7 +796,7 @@ def admin_set_owner():
     # treats as "no owner" via `or None`.
     owner_user_id = request.form.get('owner_user_id', '').strip()
     set_setting('owner_user_id', owner_user_id)
-    return ingress_redirect(url_for('admin_panel', saved='1'))
+    return ingress_redirect(url_for('admin_panel', saved='1', tab='owner'))
 
 @app.route('/admin/login', methods=['POST'])
 def admin_login():
@@ -789,8 +818,8 @@ def admin_delete_channel():
     slug = request.form.get('slug', '')
     ok, error = delete_channel(slug)
     if error:
-        return ingress_redirect(url_for('admin_panel', channel_error=error))
-    return ingress_redirect(url_for('admin_panel', saved='1'))
+        return ingress_redirect(url_for('admin_panel', channel_error=error, tab='channels'))
+    return ingress_redirect(url_for('admin_panel', saved='1', tab='channels'))
 
 @app.route('/admin/aliases', methods=['POST'])
 @require_admin
@@ -803,7 +832,7 @@ def admin_update_aliases():
             continue
         user_id = field[len('alias_'):]
         set_alias(user_id, value)
-    return ingress_redirect(url_for('admin_panel', saved='1'))
+    return ingress_redirect(url_for('admin_panel', saved='1', tab='aliases'))
 
 @app.route('/api/messages')
 def get_messages_api():
