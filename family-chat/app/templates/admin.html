@@ -226,6 +226,25 @@
                 <button type="submit">Add Channel</button>
             </form>
             <p class="hint">Deleting a channel just hides it from the sidebar — its messages aren't deleted, and reappear if you add a channel with the same name later. At least one channel must always exist.</p>
+
+            <h2 class="section-title">Display Names</h2>
+            <p class="subtitle">
+                Everyone can set their own display name from the settings menu (✏️) in the chat.
+                From here you can change anyone's, or clear one back to their real Home Assistant name.
+                Renaming updates all of that person's previous messages too, not just new ones.
+            </p>
+            {% if ha_accounts %}
+            <form method="post" action="./admin/aliases">
+                {% for a in ha_accounts %}
+                <label for="alias_{{ a.user_id }}">{{ a.ha_name }}</label>
+                <input type="text" id="alias_{{ a.user_id }}" name="alias_{{ a.user_id }}"
+                       maxlength="30" value="{{ a.alias }}" placeholder="{{ a.ha_name }}">
+                {% endfor %}
+                <button type="submit">Save Display Names</button>
+            </form>
+            {% else %}
+            <p class="hint">No Home Assistant users detected yet. Open the chat from the Home Assistant sidebar first, then come back here.</p>
+            {% endif %}
         {% endif %}
     </div>
 </body>

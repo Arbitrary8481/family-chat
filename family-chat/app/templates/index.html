@@ -45,6 +45,7 @@
                         <span class="user-status">🏠 At Home</span>
                     </div>
                 </div>
+                <button class="header-btn" onclick="openMySettings()" title="Settings">✏️</button>
             </div>
         </div>
 
@@ -186,6 +187,28 @@
             <div class="custom-emoji-list" id="customEmojiList">
                 <!-- Custom emojis listed here -->
             </div>
+        </div>
+    </div>
+
+    <!-- Settings: lets you set your own display name (alias). Only your
+         own — an admin panel section handles changing anyone else's. -->
+    <div class="modal hidden" id="settingsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Settings</h3>
+                <button class="close-btn" onclick="closeMySettings()">×</button>
+            </div>
+            <div class="emoji-upload">
+                <label for="myAliasInput" style="display:block; font-size: 13px; color: var(--text-muted); margin-bottom: 6px;">
+                    Display name <span id="myHaNameHint"></span>
+                </label>
+                <input type="text" id="myAliasInput" maxlength="30" placeholder="Your display name">
+                <button class="btn btn-primary" onclick="saveMyAlias()">Save</button>
+            </div>
+            <p style="font-size: 12px; color: var(--text-muted); margin-top: 12px;">
+                This changes how your name appears everywhere, including messages you've already sent.
+                Leave it blank and save to go back to your Home Assistant name.
+            </p>
         </div>
     </div>
 

@@ -110,8 +110,21 @@ def init_db():
                   file_url TEXT,
                   file_name TEXT,
                   file_size INTEGER,
-                  mime_type TEXT)''')
-    
+                  mime_type TEXT,
+                  sender_id TEXT)''')
+    # sender_id didn't exist in older versions — add it if this DB predates
+    # the alias feature, so existing installs upgrade without losing data.
+    c.execute("PRAGMA table_info(messages)")
+    if 'sender_id' not in [col[1] for col in c.fetchall()]:
+        c.execute('ALTER TABLE messages ADD COLUMN sender_id TEXT')
+
+    # Display name aliases, keyed by the stable Home Assistant user ID (not
+    # by name, since names can change). Looked up at read time so renaming
+    # someone updates every message they've ever sent, not just future
+    # ones — see get_messages() and resolve_ha_identity().
+    c.execute('''CREATE TABLE IF NOT EXISTS user_aliases
+                 (user_id TEXT PRIMARY KEY, alias TEXT NOT NULL)''')
+
     # Custom emojis table
     c.execute('''CREATE TABLE IF NOT EXISTS custom_emojis
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -199,20 +212,65 @@ def get_known_people():
     """Everyone who's ever opened the chat through Home Assistant, most
     recently seen first. Used for the member sidebar. There's no admin
     roster to maintain — this is just who's actually shown up, using
-    each person's own HA display name (or username as a fallback)."""
+    each person's chosen alias if they've set one, else their HA display
+    name (or username as a fallback)."""
     conn = sqlite3.connect('/data/chat.db')
     c = conn.cursor()
-    c.execute('SELECT display_name, username FROM ha_users ORDER BY last_seen DESC')
+    c.execute('''SELECT h.user_id, h.display_name, h.username, ua.alias
+                 FROM ha_users h
+                 LEFT JOIN user_aliases ua ON ua.user_id = h.user_id
+                 ORDER BY h.last_seen DESC''')
     rows = c.fetchall()
     conn.close()
     seen = set()
     people = []
-    for display_name, username in rows:
-        name = (display_name or '').strip() or (username or '').strip()
+    for user_id, display_name, username, alias in rows:
+        name = (alias or '').strip() or (display_name or '').strip() or (username or '').strip()
         if name and name not in seen:
             seen.add(name)
             people.append(name)
     return people
+
+def get_alias(user_id):
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('SELECT alias FROM user_aliases WHERE user_id = ?', (user_id,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+def set_alias(user_id, alias):
+    alias = (alias or '').strip()[:30]
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    if alias:
+        c.execute('''INSERT INTO user_aliases (user_id, alias) VALUES (?, ?)
+                     ON CONFLICT(user_id) DO UPDATE SET alias = excluded.alias''',
+                  (user_id, alias))
+    else:
+        # Empty alias = revert to their real Home Assistant name.
+        c.execute('DELETE FROM user_aliases WHERE user_id = ?', (user_id,))
+    conn.commit()
+    conn.close()
+
+def get_known_ha_accounts():
+    """Every HA account that's visited, with their real HA name and
+    current alias (if any) — used by the admin panel's display-name
+    management, which can edit anyone's alias, unlike the self-service
+    settings menu which can only edit your own."""
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('''SELECT h.user_id, h.display_name, h.username, ua.alias
+                 FROM ha_users h
+                 LEFT JOIN user_aliases ua ON ua.user_id = h.user_id
+                 ORDER BY h.last_seen DESC''')
+    rows = c.fetchall()
+    conn.close()
+    result = []
+    for user_id, display_name, username, alias in rows:
+        ha_name = (display_name or '').strip() or (username or '').strip() or 'HA User'
+        result.append({'user_id': user_id, 'ha_name': ha_name, 'alias': alias or ''})
+    return result
 
 def slugify(text):
     slug = re.sub(r'[^a-z0-9]+', '-', text.strip().lower()).strip('-')
@@ -262,9 +320,11 @@ def delete_channel(slug):
 def get_messages(limit=100, channel='general'):
     conn = sqlite3.connect('/data/chat.db')
     c = conn.cursor()
-    c.execute('''SELECT m.*, GROUP_CONCAT(r.emoji || ':' || r.user) as reactions
+    c.execute('''SELECT m.*, GROUP_CONCAT(r.emoji || ':' || r.user) as reactions,
+                        ua.alias as current_alias
                  FROM messages m
                  LEFT JOIN reactions r ON m.id = r.message_id
+                 LEFT JOIN user_aliases ua ON ua.user_id = m.sender_id
                  WHERE m.channel = ?
                  GROUP BY m.id
                  ORDER BY m.timestamp DESC LIMIT ?''', (channel, limit))
@@ -275,6 +335,12 @@ def get_messages(limit=100, channel='general'):
     result = []
     for row in messages:
         msg = dict(zip(columns, row))
+        # If the sender has since set (or been given) an alias, show that
+        # instead of whatever name was frozen into the message at send
+        # time — this is what makes a rename apply retroactively.
+        if msg.get('current_alias'):
+            msg['sender'] = msg['current_alias']
+        del msg['current_alias']
         # Parse reactions
         if msg['reactions']:
             reactions = {}
@@ -293,16 +359,17 @@ def get_messages(limit=100, channel='general'):
     return list(reversed(result))
 
 def save_message(sender, content, channel='general', msg_type='text', 
-                 file_url=None, file_name=None, file_size=None, mime_type=None):
+                 file_url=None, file_name=None, file_size=None, mime_type=None,
+                 sender_id=None):
     conn = sqlite3.connect('/data/chat.db')
     c = conn.cursor()
     timestamp = datetime.now().isoformat()
     c.execute('''INSERT INTO messages 
                  (sender, content, timestamp, channel, message_type, 
-                  file_url, file_name, file_size, mime_type) 
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                  file_url, file_name, file_size, mime_type, sender_id) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
               (sender, content, timestamp, channel, msg_type,
-               file_url, file_name, file_size, mime_type))
+               file_url, file_name, file_size, mime_type, sender_id))
     msg_id = c.lastrowid
     conn.commit()
     conn.close()
@@ -357,15 +424,17 @@ def set_static_cache_headers(response):
     return response
 
 def resolve_ha_identity():
-    """The chat name is always the logged-in Home Assistant user's own
-    name — there's no admin mapping step. Prefers the display name set on
-    their HA profile (what HA itself shows for them); falls back to their
-    login username if that's blank. Returns (ha_user_id, chat_name);
-    chat_name is None only if there's no HA identity at all (e.g. accessed
-    outside ingress)."""
+    """The chat name is the logged-in Home Assistant user's own chosen
+    alias if they've set one (via the settings menu, or set for them by
+    an admin), otherwise their HA display name, otherwise their login
+    username. Returns (ha_user_id, chat_name); chat_name is None only if
+    there's no HA identity at all (e.g. accessed outside ingress)."""
     ha_user_id = request.headers.get('X-Remote-User-Id')
     if not ha_user_id:
         return None, None
+    alias = get_alias(ha_user_id)
+    if alias:
+        return ha_user_id, alias
     display_name = request.headers.get('X-Remote-User-Display-Name', '').strip()
     username = request.headers.get('X-Remote-User-Name', '').strip()
     chat_name = (display_name or username or 'HA User')[:30]
@@ -406,6 +475,32 @@ def index():
 def api_channels():
     return jsonify(get_channels())
 
+@app.route('/api/me')
+def api_me():
+    ha_user_id = request.headers.get('X-Remote-User-Id')
+    if not ha_user_id:
+        return jsonify({'error': 'Not accessed through Home Assistant'}), 403
+    display_name = request.headers.get('X-Remote-User-Display-Name', '').strip()
+    username = request.headers.get('X-Remote-User-Name', '').strip()
+    ha_name = display_name or username or 'HA User'
+    return jsonify({
+        'ha_name': ha_name,
+        'alias': get_alias(ha_user_id) or '',
+    })
+
+@app.route('/api/my-alias', methods=['POST'])
+def api_set_my_alias():
+    # The target is always the requester's own HA user ID, derived from
+    # the ingress headers — never from anything in the request body — so
+    # this endpoint can only ever change your own alias, not someone
+    # else's. Changing anyone else's is admin-only (see /admin/aliases).
+    ha_user_id = request.headers.get('X-Remote-User-Id')
+    if not ha_user_id:
+        return jsonify({'error': 'Not accessed through Home Assistant'}), 403
+    data = request.get_json(silent=True) or {}
+    set_alias(ha_user_id, data.get('alias', ''))
+    return jsonify({'success': True})
+
 @app.route('/admin')
 def admin_panel():
     if not session.get('is_admin'):
@@ -413,7 +508,8 @@ def admin_panel():
     return render_template('admin.html', logged_in=True,
                           saved=request.args.get('saved'),
                           channels=get_channels(),
-                          channel_error=request.args.get('channel_error'))
+                          channel_error=request.args.get('channel_error'),
+                          ha_accounts=get_known_ha_accounts())
 
 @app.route('/admin/login', methods=['POST'])
 def admin_login():
@@ -427,7 +523,7 @@ def admin_login():
 @app.route('/admin/logout', methods=['POST'])
 def admin_logout():
     session.pop('is_admin', None)
-    return ingress_redirect(url_for('admin_panel'))
+    return ingress_redirect(url_for('index'))
 
 @app.route('/admin/channels/add', methods=['POST'])
 @require_admin
@@ -446,6 +542,19 @@ def admin_delete_channel():
     ok, error = delete_channel(slug)
     if error:
         return ingress_redirect(url_for('admin_panel', channel_error=error))
+    return ingress_redirect(url_for('admin_panel', saved='1'))
+
+@app.route('/admin/aliases', methods=['POST'])
+@require_admin
+def admin_update_aliases():
+    # Unlike /api/my-alias, this can target any known HA account — that's
+    # what makes it admin-only. Each field is named alias_<user_id> so one
+    # form submission can update everyone at once.
+    for field, value in request.form.items():
+        if not field.startswith('alias_'):
+            continue
+        user_id = field[len('alias_'):]
+        set_alias(user_id, value)
     return ingress_redirect(url_for('admin_panel', saved='1'))
 
 @app.route('/api/messages')
@@ -537,7 +646,7 @@ def handle_message(data):
     # headers, not taken from the client payload — otherwise anyone could
     # still claim to be a different family member by editing the socket
     # message, defeating the point of removing the manual picker.
-    _, sender = resolve_ha_identity()
+    sender_id, sender = resolve_ha_identity()
     content = data.get('content')
     channel = data.get('channel', 'general')
     msg_type = data.get('type', 'text')
@@ -550,7 +659,8 @@ def handle_message(data):
         mime_type = file_info.get('mime_type') if file_info else None
         
         msg_id = save_message(sender, content, channel, msg_type,
-                             file_url, file_name, file_size, mime_type)
+                             file_url, file_name, file_size, mime_type,
+                             sender_id=sender_id)
         
         emit('new_message', {
             'id': msg_id,

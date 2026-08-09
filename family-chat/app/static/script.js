@@ -439,6 +439,46 @@ function closeEmojiManager() {
     if (modal) modal.classList.add('hidden');
 }
 
+function openMySettings() {
+    const modal = document.getElementById('settingsModal');
+    if (modal) modal.classList.remove('hidden');
+
+    fetch(apiUrl('/api/me'))
+        .then(r => r.json())
+        .then(me => {
+            const input = document.getElementById('myAliasInput');
+            const hint = document.getElementById('myHaNameHint');
+            if (input) input.value = me.alias || '';
+            if (hint) hint.textContent = `(your Home Assistant name is "${me.ha_name}")`;
+        })
+        .catch(() => {});
+}
+
+function closeMySettings() {
+    const modal = document.getElementById('settingsModal');
+    if (modal) modal.classList.add('hidden');
+}
+
+function saveMyAlias() {
+    const input = document.getElementById('myAliasInput');
+    const alias = input ? input.value.trim() : '';
+
+    fetch(apiUrl('/api/my-alias'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alias })
+    })
+        .then(r => r.json())
+        .then(() => {
+            // Reload so the new name applies everywhere at once — the
+            // sidebar, the header, and every past message you've sent.
+            location.reload();
+        })
+        .catch(() => {
+            alert("Couldn't save your display name. Please try again.");
+        });
+}
+
 function loadCustomEmojiList() {
     const list = document.getElementById('customEmojiList');
     if (!list) return;

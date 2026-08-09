@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.5.0
+
+### Added
+- **Display name (alias) support.** Anyone can now set how their name appears in the chat, separate from their real Home Assistant name — via the new ✏️ settings button next to your name in the sidebar. Changing your alias updates every message you've ever sent, not just future ones (messages are attributed by your stable Home Assistant account internally, and the displayed name is resolved live, so a rename applies everywhere retroactively).
+- **Admins can set anyone's display name.** A new "Display Names" section in the admin panel (`/admin`) lists every known Home Assistant account and lets an admin change any of their aliases, or clear one back to that person's real HA name. Note: "admin" here means whoever has the admin panel password, same as the rest of `/admin` — Home Assistant doesn't expose per-user admin status through ingress, so there's no way for the add-on to check HA's own admin role directly.
+
+## 2.4.1
+
+### Fixed
+- Logging out of the admin panel now returns you to the chat instead of back to the admin login screen.
+
 ## 2.4.0
 
 ### Changed
