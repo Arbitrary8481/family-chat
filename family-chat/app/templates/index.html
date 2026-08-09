@@ -21,6 +21,14 @@
             </div>
         </div>
 
+        <!-- Dims/blocks the chat behind the channel sidebar when it's
+             open as a mobile slide-over drawer (see the <768px media
+             query in style.css) — tapping it closes the drawer, same as
+             tapping outside any other overlay in this app. Invisible
+             and inert at wider widths, where the sidebar sits inline
+             instead of overlaying anything. -->
+        <div class="sidebar-backdrop hidden" id="channelSidebarBackdrop" onclick="toggleChannelSidebar()"></div>
+
         <!-- Channel List -->
         <div class="channel-sidebar" id="channelSidebar">
             <div class="server-header">

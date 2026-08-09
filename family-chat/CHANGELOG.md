@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.21.1
+
+### Fixed
+- **Reverted the eventlet → threading migration from 2.20.0 — it broke real-time messaging.** Flask-SocketIO's `threading` async mode runs on Werkzeug's plain development server, which has no native WebSocket support at all. Every client silently fell back to HTTP long-polling: visible in the add-on log as the same session making a new `/socket.io/` request every ~150ms, eventually followed by `'Session is disconnected'`. Confirmed directly by Flask-SocketIO's own maintainer in their issue tracker: threading mode works "without WebSocket for now." Back on eventlet (still the CVE-2025-58068-patched `>=0.40.3` from 2.19.0, with `monkey_patch()` correctly called first) — verified with a live connection that stays on genuine WebSocket transport with zero polling traffic while connected, not just "the server boots." The deprecation warning in the log is back too; that trade was the right one to reverse. A non-eventlet path may be worth revisiting later (Flask-SocketIO mentions threading mode plus the `simple-websocket` package as a possible fix, though with mixed reliability reports) — but not as a same-day swap without dedicated testing.
+
+## 2.21.0
+
+### Fixed
+- **The channel sidebar was completely inaccessible on any phone-width screen.** The mobile CSS was toggling a class (`.channel-sidebar.open`) that no JavaScript anywhere ever actually set — a leftover from before the desktop collapse/expand feature existed. On mobile the sidebar was permanently stuck off-screen with no way to open it at all. It's now a proper slide-over drawer using the same ☰ button and collapse system already used on desktop, with a dimmed backdrop you can tap to close it. First-time mobile visitors land on the chat with the drawer closed by default (desktop is unaffected — still opens by default there, as before); anyone who's explicitly toggled it either way has that choice remembered regardless of screen size.
+- **The 😊 react / 🗑️ delete buttons on messages only ever appeared on hover** — completely unreachable on any touchscreen, since tapping a message doesn't produce a hover state the way a mouse does. Now shown permanently on touch devices and narrow screens.
+- Picking a channel from the mobile drawer now closes it afterward, instead of leaving it covering the channel you just switched to.
+- The 👥 member-list toggle button is now hidden on screens where the member list itself is already auto-hidden (below 1200px) — it used to stay visible and tappable while doing nothing.
+- The static "Family communication center" subtitle next to the channel name is hidden on phone-width screens to make room for the buttons that actually do something.
+
 ## 2.20.0
 
 ### Changed

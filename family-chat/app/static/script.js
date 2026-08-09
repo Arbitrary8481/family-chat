@@ -132,7 +132,7 @@ function resolveUrl(url) {
 // localStorage, so reloading (or reopening the ingress panel) doesn't
 // snap it back open.
 const SIDEBAR_CONFIG = {
-    channel: { id: 'channelSidebar', toggleId: 'channelSidebarToggle', storageKey: 'channelSidebarCollapsed' },
+    channel: { id: 'channelSidebar', toggleId: 'channelSidebarToggle', storageKey: 'channelSidebarCollapsed', backdropId: 'channelSidebarBackdrop' },
     members: { id: 'membersSidebar', toggleId: 'membersSidebarToggle', storageKey: 'membersSidebarCollapsed' }
 };
 
@@ -146,14 +146,31 @@ function setSidebarCollapsed(which, collapsed) {
         btn.classList.toggle('active', collapsed);
         btn.setAttribute('aria-pressed', String(!collapsed));
     }
+    // Only the channel sidebar becomes a mobile overlay drawer (see the
+    // <768px media query) — the backdrop dims the chat behind it and
+    // gives a tap-outside-to-close target, same as any other overlay in
+    // this app. It's invisible/inert at wider widths regardless.
+    if (cfg.backdropId) {
+        const backdrop = document.getElementById(cfg.backdropId);
+        if (backdrop) backdrop.classList.toggle('hidden', collapsed);
+    }
     try { localStorage.setItem(cfg.storageKey, collapsed ? '1' : '0'); } catch (e) {}
 }
 
 function restoreSidebarState() {
     Object.keys(SIDEBAR_CONFIG).forEach(which => {
         const cfg = SIDEBAR_CONFIG[which];
-        let collapsed = false;
-        try { collapsed = localStorage.getItem(cfg.storageKey) === '1'; } catch (e) {}
+        let collapsed;
+        try { collapsed = localStorage.getItem(cfg.storageKey); } catch (e) { collapsed = null; }
+        if (collapsed === null) {
+            // No explicit preference saved yet — default to collapsed on
+            // phone-width screens so a first-time mobile visitor lands
+            // on the actual chat, not a sidebar drawer covering it.
+            // Unchanged (expanded) on desktop, matching prior behavior.
+            collapsed = window.innerWidth <= 768;
+        } else {
+            collapsed = collapsed === '1';
+        }
         setSidebarCollapsed(which, collapsed);
     });
 }
@@ -861,6 +878,14 @@ function switchChannel(slug, onLoaded) {
     });
     currentChannel = slug;
     try { localStorage.setItem('lastChannel', currentChannel); } catch (e) {}
+
+    // On phone-width screens the channel sidebar is a slide-over drawer
+    // (see the <768px media query) — picking a channel from it should
+    // close it afterward the way any mobile nav drawer would, rather
+    // than leaving it covering the very channel you just switched to.
+    if (window.innerWidth <= 768) {
+        setSidebarCollapsed('channel', true);
+    }
 
     // A different channel is a fresh view, always landing at the bottom
     // (see below) — any unseen count from the channel just left doesn't

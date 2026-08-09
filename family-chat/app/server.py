@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+# eventlet.monkey_patch() has to run before anything else imports the
+# stdlib modules it patches (socket, select, ssl, os, threading, time,
+# ...) — importing e.g. sqlite3 or urllib first would leave those
+# holding references to the real, blocking implementations, defeating
+# the patch for exactly the code that needs it most.
+import eventlet
+eventlet.monkey_patch()
+
 import asyncio
 import functools
 import hmac
@@ -29,23 +37,24 @@ logging.basicConfig(
 logger = logging.getLogger('family_chat')
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
-# async_mode='threading' — was 'eventlet' (green threads, requiring
-# eventlet.monkey_patch() at the very top of this file to make blocking
-# calls like sqlite3/urllib cooperative). Eventlet is now
-# maintenance-only upstream and its own docs recommend new/ongoing
-# projects move off it. 'threading' gets the same practical property —
-# one slow request (a GIPHY search, a Home Assistant notification call)
-# doesn't stall every other connected client's requests — using real OS
-# threads instead: CPython releases the GIL during blocking I/O, so
-# other threads keep running regardless. No monkey-patching, no
-# eventlet dependency, nothing implicitly relying on every stdlib call
-# behaving differently than it looks like it does. The tradeoff is
-# lower scalability under very high concurrent connection counts, which
-# doesn't apply here — this is a family chat add-on, not a
-# many-thousands-of-users service.
+# async_mode='eventlet' — briefly switched to 'threading' (2.20.0) to
+# get off eventlet, which is deprecated upstream, but that broke real
+# functionality: Flask-SocketIO's threading mode runs on Werkzeug's
+# plain dev server, which has no native WebSocket support at all —
+# every client falls back to HTTP long-polling, visible in the log as
+# the same session id making a new /socket.io/ request every ~150ms,
+# eventually followed by "Session is disconnected". Confirmed directly
+# by Flask-SocketIO's own maintainer: threading mode works "without
+# WebSocket for now." Eventlet's own WSGI server has genuine WebSocket
+# support built in, which is what this app actually needs for real-time
+# delivery to feel real-time rather than constant re-polling. Back on
+# eventlet until there's a properly-tested alternative that doesn't
+# regress this (e.g. threading mode + the simple-websocket package,
+# which the same discussion mentions but with mixed reliability reports
+# — not something to switch to without dedicated testing first).
 # logger=True surfaces Socket.IO's own connect/disconnect/event activity in
 # the log too, which is useful context alongside our own error logging below.
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', logger=True)
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet', logger=True)
 
 # Home Assistant writes add-on options to /data/options.json regardless of
 # base image. This app never read it (run.sh just hardcoded env vars
@@ -1499,15 +1508,4 @@ def handle_delete_message(data):
 
 if __name__ == '__main__':
     init_db()
-    # threading mode's server is Werkzeug's own — Flask-SocketIO refuses
-    # to start it without this flag, since Werkzeug's server isn't
-    # hardened for handling untrusted traffic directly (no protection
-    # against slow/malformed-request attacks, no production-grade
-    # connection handling). That's an acceptable tradeoff specifically
-    # here: this add-on is never reached directly — Home Assistant's own
-    # ingress proxy is the only thing that ever talks to it (see
-    # config.yaml: ingress-only, no direct port mapping), and that
-    # proxy is the actual internet/LAN-facing component handling
-    # untrusted traffic. If that ever changes (a direct port mapping
-    # gets added), this stops being a safe assumption.
-    socketio.run(app, host='0.0.0.0', port=8099, debug=False, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=8099, debug=False)
