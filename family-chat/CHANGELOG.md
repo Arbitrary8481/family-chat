@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.13.0
+
+### Added
+- **Paste screenshots directly into the message box.** Copy a screenshot (or any image) and paste with Ctrl+V / Cmd+V while the message box is focused — it uploads and opens the same preview-and-caption flow as picking a file with 📎, no need to save it to disk first.
+
 ## 2.12.0
 
 ### Added

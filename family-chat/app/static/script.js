@@ -241,6 +241,7 @@ function initializeChat() {
                 sendMessageClick();
             }
         });
+        input.addEventListener('paste', handleMessageInputPaste);
     }
     
     document.querySelectorAll('.channel').forEach(ch => {
@@ -496,13 +497,12 @@ function getFileIcon(mimeType) {
     return '📎';
 }
 
-function handleFileSelect(event) {
-    const file = event.target.files[0];
+function uploadFile(file) {
     if (!file) return;
-    
+
     const formData = new FormData();
     formData.append('file', file);
-    
+
     fetch(apiUrl('/api/upload'), {
         method: 'POST',
         body: formData
@@ -520,8 +520,35 @@ function handleFileSelect(event) {
         console.error('Upload error:', err);
         alert('Upload failed');
     });
-    
+}
+
+function handleFileSelect(event) {
+    const file = event.target.files[0];
+    uploadFile(file);
     event.target.value = '';
+}
+
+// Pasting a screenshot (or any copied image) while the message box is
+// focused uploads it the same way picking a file with the 📎 button
+// does — same preview modal, same "add a caption and send" flow.
+function handleMessageInputPaste(event) {
+    const items = event.clipboardData && event.clipboardData.items;
+    if (!items) return;
+
+    for (const item of items) {
+        if (item.kind === 'file' && item.type && item.type.startsWith('image/')) {
+            const file = item.getAsFile();
+            if (!file) continue;
+            // A pasted image typically has no real filename — give it
+            // one so it doesn't show up downstream as a bare "image.png"
+            // with no useful info.
+            const ext = (item.type.split('/')[1] || 'png').split('+')[0];
+            const named = new File([file], `pasted-screenshot-${Date.now()}.${ext}`, { type: item.type });
+            event.preventDefault(); // don't also let the browser try to paste raw image bytes as text
+            uploadFile(named);
+            break; // only the first image if somehow more than one was pasted at once
+        }
+    }
 }
 
 function showFilePreview(data, file) {
