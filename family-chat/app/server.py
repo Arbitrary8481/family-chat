@@ -462,6 +462,44 @@ def save_message(sender, content, channel='general', msg_type='text',
     conn.close()
     return msg_id
 
+def delete_message(message_id, requester_id, is_admin):
+    """Regular users can only delete their own messages (matched by the
+    stable sender_id, not the display name — a renamed or reused alias
+    shouldn't matter here). Admins, authenticated separately via the
+    /admin session, can delete anyone's. Returns (channel, error);
+    channel tells the caller which socket room to notify."""
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('SELECT sender_id, channel, file_url FROM messages WHERE id = ?', (message_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return None, 'Message not found — it may have already been deleted.'
+
+    sender_id, channel, file_url = row
+    if not is_admin and sender_id != requester_id:
+        conn.close()
+        return None, 'You can only delete your own messages.'
+
+    c.execute('DELETE FROM reactions WHERE message_id = ?', (message_id,))
+    c.execute('DELETE FROM messages WHERE id = ?', (message_id,))
+    conn.commit()
+    conn.close()
+
+    # Only ever remove a file that's actually one of our own uploads
+    # (GIF messages point at an external GIPHY URL, which must never be
+    # touched here) — and resolve it to confirm it can't have climbed
+    # outside the upload folder before deleting anything from disk.
+    if file_url and file_url.startswith('/uploads/'):
+        candidate = (UPLOAD_FOLDER / file_url[len('/uploads/'):]).resolve()
+        if candidate.is_relative_to(UPLOAD_FOLDER.resolve()) and candidate.exists():
+            try:
+                candidate.unlink()
+            except OSError as e:
+                logger.warning('Could not remove file for deleted message %s: %s', message_id, e)
+
+    return channel, None
+
 def get_custom_emojis():
     conn = sqlite3.connect('/data/chat.db')
     c = conn.cursor()
@@ -555,7 +593,7 @@ def index():
         ha_username = request.headers.get('X-Remote-User-Name', '')
         ha_display_name = request.headers.get('X-Remote-User-Display-Name', '')
         record_ha_user(ha_user_id, ha_username, ha_display_name)
-    _, auto_user = resolve_ha_identity()
+    auto_user_id, auto_user = resolve_ha_identity()
 
     return render_template('index.html',
                           members=[{'name': n} for n in get_known_people()],
@@ -564,6 +602,8 @@ def index():
                           inline_css=INLINE_CSS,
                           channels=get_channels(),
                           auto_user=auto_user,
+                          auto_user_id=auto_user_id,
+                          is_admin=bool(session.get('is_admin')),
                           giphy_enabled=bool(GIPHY_API_KEY))
 
 @app.route('/api/channels')
@@ -1155,6 +1195,7 @@ def handle_message(data):
     emit('new_message', {
         'id': msg_id,
         'sender': sender,
+        'sender_id': sender_id,
         'content': content,
         'timestamp': datetime.now().isoformat(),
         'channel': channel,
@@ -1213,6 +1254,26 @@ def handle_reaction(data):
         'user': user,
         'added': added
     }, room=channel)
+
+@socketio.on('delete_message')
+@log_socket_errors
+def handle_delete_message(data):
+    message_id = data.get('message_id')
+    requester_id, requester_name = resolve_ha_identity()
+    is_admin = bool(session.get('is_admin'))
+
+    if not message_id:
+        return
+    if not requester_id and not is_admin:
+        emit('server_error', {'message': "Couldn't identify you as a Home Assistant user — try reloading the page."})
+        return
+
+    channel, error = delete_message(message_id, requester_id, is_admin)
+    if error:
+        emit('server_error', {'message': error})
+        return
+
+    emit('message_deleted', {'message_id': message_id}, room=channel)
 
 if __name__ == '__main__':
     init_db()

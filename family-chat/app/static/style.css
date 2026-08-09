@@ -558,6 +558,11 @@ body {
     color: var(--interactive-hover);
 }
 
+.action-btn-danger:hover {
+    background: rgba(237, 66, 69, 0.15);
+    color: var(--danger);
+}
+
 /* Typing Indicator */
 .typing-indicator {
     padding: 8px 16px;

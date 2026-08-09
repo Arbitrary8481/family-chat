@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.11.0
+
+### Added
+- **Delete your own messages.** A 🗑️ button appears alongside the reaction button (hover over a message) on anything you sent — deleting removes it instantly for everyone in that channel, including any reactions on it and, for uploaded files/images, the underlying file on disk. GIFs are never touched on disk since they're just a link to GIPHY, not a local file.
+- **Admins can delete anyone's message.** Requires having signed into the admin panel (with the admin password) in that same browser first — the delete button then appears on every message, not just your own.
+
 ## 2.10.0
 
 ### Changed

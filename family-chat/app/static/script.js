@@ -209,6 +209,10 @@ function initializeChat() {
         updateReaction(data.message_id, data.emoji, data.user, data.added);
     });
 
+    socket.on('message_deleted', function(data) {
+        removeMessageFromDom(data.message_id);
+    });
+
     // If something goes wrong server-side while handling an event (a
     // failed send, a bad reaction, etc.), this is what used to fail
     // completely silently — now at least tell the person something broke.
@@ -339,6 +343,16 @@ function addMessage(data) {
     const reactionsHtml = buildReactionsHtml(data.id, data.reactions || {});
     messageReactions[data.id] = data.reactions || {};
 
+    // Own messages are deletable by their sender; any message is
+    // deletable by an admin (window.IS_ADMIN reflects whether *this*
+    // browser has an authenticated /admin session — separate from the
+    // per-person Home Assistant identity everything else here uses).
+    const canDelete = !!data.sender_id &&
+        (data.sender_id === window.AUTO_CHAT_USER_ID || window.IS_ADMIN);
+    const deleteBtnHtml = canDelete
+        ? `<button class="action-btn action-btn-danger" onclick="deleteMessage(${data.id})" title="Delete message">🗑️</button>`
+        : '';
+
     messageDiv.innerHTML = `
         <div class="message-avatar">${data.sender[0]}</div>
         <div class="message-content">
@@ -351,6 +365,7 @@ function addMessage(data) {
         </div>
         <div class="message-actions">
             <button class="action-btn" onclick="openReactionPicker(${data.id}, this)" title="Add reaction">😊</button>
+            ${deleteBtnHtml}
         </div>
     `;
     
@@ -1227,6 +1242,17 @@ function toggleReaction(messageId, emoji) {
         emoji: emoji,
         user: currentUser
     });
+}
+
+function deleteMessage(messageId) {
+    if (!confirm('Delete this message? This can\'t be undone.')) return;
+    socket.emit('delete_message', { message_id: messageId });
+}
+
+function removeMessageFromDom(messageId) {
+    const el = document.querySelector(`.message[data-id="${messageId}"]`);
+    if (el) el.remove();
+    delete messageReactions[messageId];
 }
 
 function updateReaction(messageId, emoji, user, added) {

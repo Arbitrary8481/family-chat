@@ -359,6 +359,8 @@
     <!-- Resolved automatically from the Home Assistant login -->
     <script>
         window.AUTO_CHAT_USER = {{ auto_user|tojson }};
+        window.AUTO_CHAT_USER_ID = {{ auto_user_id|tojson }};
+        window.IS_ADMIN = {{ is_admin|tojson }};
         window.DEFAULT_CHANNEL = {{ (channels[0].slug if channels else 'general')|tojson }};
     </script>
     <script src="./static/script.js?v={{ asset_version }}"></script>
