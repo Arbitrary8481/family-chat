@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.9.3
+
+### Fixed
+- **A message being sent and nobody getting notified looked identical in the log to notifications working correctly and just not firing** — both were silent. Now logs an explicit line either way: "No notification subscribers for #channel" if nobody's subscribed, or "Notified X via Y" for each person actually notified, so a missing notification can be diagnosed straight from the add-on log instead of guessing.
+
 ## 2.9.2
 
 ### Added

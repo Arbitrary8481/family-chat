@@ -991,9 +991,16 @@ def notify_message_subscribers(channel, sender, sender_id, content, msg_type, fi
     message delivery in the chat itself, which has already happened by
     the time this is called."""
     if not SUPERVISOR_TOKEN:
+        logger.info('Skipping notifications for a message in #%s — SUPERVISOR_TOKEN not set', channel)
         return
     subscribers = get_subscribers_for_channel(channel, exclude_user_id=sender_id)
     if not subscribers:
+        # Logged at INFO rather than staying silent — otherwise "nobody
+        # is subscribed to this channel" and "this function never ran"
+        # look identical in the log, which makes exactly this situation
+        # (message sent, no notification, nothing to go on) impossible
+        # to diagnose from the log alone.
+        logger.info('No notification subscribers for #%s (message from %s)', channel, sender)
         return
 
     channel_obj = next((c for c in get_channels() if c['slug'] == channel), None)
@@ -1003,7 +1010,9 @@ def notify_message_subscribers(channel, sender, sender_id, content, msg_type, fi
 
     for user_id, notify_service in subscribers:
         ok, error = send_ha_notification(notify_service, title, body)
-        if not ok:
+        if ok:
+            logger.info('Notified %s via %s for a message in #%s', user_id, notify_service, channel)
+        else:
             logger.warning('Notification to %s via %s failed: %s', user_id, notify_service, error)
 
 @app.route('/api/notify/services')
