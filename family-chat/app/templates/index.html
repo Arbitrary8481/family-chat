@@ -190,6 +190,33 @@
 
     <!-- Settings: lets you set your own display name (alias). Only your
          own — an admin panel section handles changing anyone else's. -->
+    <!-- Search: across all channels, per the family's request to be able
+         to search previous chats, not just the current one. -->
+    <div class="modal hidden" id="searchModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Search Messages</h3>
+                <button class="close-btn" onclick="closeSearch()">×</button>
+            </div>
+            <div class="emoji-upload">
+                <input type="text" id="searchInput" placeholder="Search all channels…" onkeypress="if(event.key==='Enter') runSearch();">
+                <button class="btn btn-primary" onclick="runSearch()">Search</button>
+            </div>
+            <div id="searchResults" class="search-results"></div>
+        </div>
+    </div>
+
+    <!-- Files: everything shared in the current channel. -->
+    <div class="modal hidden" id="filesModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Shared Files</h3>
+                <button class="close-btn" onclick="closeFileBrowser()">×</button>
+            </div>
+            <div id="filesList" class="search-results"></div>
+        </div>
+    </div>
+
     <div class="modal hidden" id="settingsModal">
         <div class="modal-content">
             <div class="modal-header">

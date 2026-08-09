@@ -493,6 +493,71 @@ def index():
 def api_channels():
     return jsonify(get_channels())
 
+def _escape_like(s):
+    # LIKE treats % and _ as wildcards — escape them so a search for a
+    # literal "50%" or "file_name" doesn't behave unexpectedly.
+    return s.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+
+@app.route('/api/search')
+def api_search():
+    query = request.args.get('q', '').strip()
+    if len(query) < 2:
+        return jsonify([])
+
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('''SELECT m.id, m.sender, m.content, m.timestamp, m.channel,
+                        ua.alias as current_alias
+                 FROM messages m
+                 LEFT JOIN user_aliases ua ON ua.user_id = m.sender_id
+                 WHERE m.content LIKE ? ESCAPE '\\'
+                 ORDER BY m.timestamp DESC LIMIT 50''',
+              (f'%{_escape_like(query)}%',))
+    rows = c.fetchall()
+    conn.close()
+
+    channels_by_slug = {ch['slug']: ch for ch in get_channels()}
+    results = []
+    for msg_id, sender, content, timestamp, channel, alias in rows:
+        ch = channels_by_slug.get(channel)
+        results.append({
+            'id': msg_id,
+            'sender': alias or sender,
+            'content': content,
+            'timestamp': timestamp,
+            'channel': channel,
+            'channel_name': ch['name'] if ch else channel,
+            'channel_icon': ch['icon'] if ch else '#',
+        })
+    return jsonify(results)
+
+@app.route('/api/files')
+def api_files():
+    channel = request.args.get('channel', 'general')
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('''SELECT m.id, m.sender, m.file_url, m.file_name, m.file_size, m.mime_type, m.timestamp,
+                        ua.alias as current_alias
+                 FROM messages m
+                 LEFT JOIN user_aliases ua ON ua.user_id = m.sender_id
+                 WHERE m.channel = ? AND m.file_url IS NOT NULL
+                 ORDER BY m.timestamp DESC LIMIT 100''', (channel,))
+    rows = c.fetchall()
+    conn.close()
+
+    results = []
+    for msg_id, sender, file_url, file_name, file_size, mime_type, timestamp, alias in rows:
+        results.append({
+            'id': msg_id,
+            'sender': alias or sender,
+            'url': file_url,
+            'filename': file_name,
+            'size': file_size,
+            'mime_type': mime_type,
+            'timestamp': timestamp,
+        })
+    return jsonify(results)
+
 @app.route('/api/me')
 def api_me():
     ha_user_id = request.headers.get('X-Remote-User-Id')

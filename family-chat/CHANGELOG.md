@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.6.0
+
+### Fixed
+- **The 🔍 search and 📎 files buttons in the header never did anything.** They were calling functions that were never actually implemented in the original template — clicking them just silently failed. Both are now fully built.
+
+### Added
+- **Search.** Click 🔍 to search message text across *all* channels (not just the one you're viewing), most recent matches first. Click a result to jump to that channel; if the message is recent enough to already be loaded, it scrolls to and briefly highlights it. (Very old messages beyond a channel's most recent 100 will switch you to the right channel but won't auto-scroll yet — there's no "load older history" feature to support that until a future update.)
+- **Shared files.** Click 📎 to see every file shared in the *current* channel — name, who sent it, size, and when — each one a direct link to open it.
+
 ## 2.5.3
 
 ### Fixed

@@ -148,37 +148,7 @@ function initializeChat() {
     
     document.querySelectorAll('.channel').forEach(ch => {
         ch.addEventListener('click', function() {
-            document.querySelectorAll('.channel').forEach(c => c.classList.remove('active'));
-            this.classList.add('active');
-            currentChannel = this.dataset.channel;
-            try { localStorage.setItem('lastChannel', currentChannel); } catch (e) {}
-            
-            const channelEl = document.getElementById('currentChannel');
-            const welcomeEl = document.getElementById('welcomeChannel');
-            const inputEl = document.getElementById('messageInput');
-            
-            if (channelEl) channelEl.textContent = currentChannel;
-            if (welcomeEl) welcomeEl.textContent = currentChannel;
-            if (inputEl) inputEl.placeholder = `Message #${currentChannel}`;
-            
-            const container = document.getElementById('messagesContainer');
-            if (container) {
-                container.innerHTML = `
-                    <div class="welcome-message">
-                        <h1>Welcome to #${currentChannel}!</h1>
-                        <p>Stay connected with your family 👨‍👩‍👧‍👦</p>
-                    </div>
-                `;
-            }
-            
-            socket.emit('join', {room: currentChannel});
-            
-            fetch(apiUrl(`/api/messages?channel=${currentChannel}`))
-                .then(r => r.json())
-                .then(messages => {
-                    messages.forEach(msg => addMessage(msg));
-                    scrollToBottom();
-                });
+            switchChannel(this.dataset.channel);
         });
     });
     
@@ -462,6 +432,148 @@ function insertEmoji(emoji) {
         if (recentEmojis.length > 32) recentEmojis.pop();
         localStorage.setItem('recentEmojis', JSON.stringify(recentEmojis));
     }
+}
+
+function switchChannel(slug, onLoaded) {
+    document.querySelectorAll('.channel').forEach(c => {
+        c.classList.toggle('active', c.dataset.channel === slug);
+    });
+    currentChannel = slug;
+    try { localStorage.setItem('lastChannel', currentChannel); } catch (e) {}
+
+    const channelEl = document.getElementById('currentChannel');
+    const welcomeEl = document.getElementById('welcomeChannel');
+    const inputEl = document.getElementById('messageInput');
+
+    if (channelEl) channelEl.textContent = currentChannel;
+    if (welcomeEl) welcomeEl.textContent = currentChannel;
+    if (inputEl) inputEl.placeholder = `Message #${currentChannel}`;
+
+    const container = document.getElementById('messagesContainer');
+    if (container) {
+        container.innerHTML = `
+            <div class="welcome-message">
+                <h1>Welcome to #${currentChannel}!</h1>
+                <p>Stay connected with your family 👨‍👩‍👧‍👦</p>
+            </div>
+        `;
+    }
+
+    if (socket) socket.emit('join', {room: currentChannel});
+
+    fetch(apiUrl(`/api/messages?channel=${currentChannel}`))
+        .then(r => r.json())
+        .then(messages => {
+            messages.forEach(msg => addMessage(msg));
+            scrollToBottom();
+            if (onLoaded) onLoaded();
+        });
+}
+
+function toggleSearch() {
+    const modal = document.getElementById('searchModal');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    const input = document.getElementById('searchInput');
+    const results = document.getElementById('searchResults');
+    if (input) { input.value = ''; input.focus(); }
+    if (results) results.innerHTML = '<p class="hint">Type at least 2 characters and press Enter, or click Search.</p>';
+}
+
+function closeSearch() {
+    const modal = document.getElementById('searchModal');
+    if (modal) modal.classList.add('hidden');
+}
+
+function runSearch() {
+    const input = document.getElementById('searchInput');
+    const results = document.getElementById('searchResults');
+    if (!input || !results) return;
+    const q = input.value.trim();
+    if (q.length < 2) {
+        results.innerHTML = '<p class="hint">Type at least 2 characters to search.</p>';
+        return;
+    }
+    results.innerHTML = '<p class="hint">Searching…</p>';
+    fetch(apiUrl(`/api/search?q=${encodeURIComponent(q)}`))
+        .then(r => r.json())
+        .then(matches => {
+            if (!matches.length) {
+                results.innerHTML = '<p class="hint">No messages found.</p>';
+                return;
+            }
+            results.innerHTML = '';
+            matches.forEach(m => {
+                const item = document.createElement('div');
+                item.className = 'search-result';
+                const time = new Date(m.timestamp).toLocaleString();
+                item.innerHTML = `
+                    <div class="search-result-meta">${escapeHtml(m.channel_icon)} ${escapeHtml(m.channel_name)} · <strong>${escapeHtml(m.sender)}</strong> · ${escapeHtml(time)}</div>
+                    <div class="search-result-content">${escapeHtml(m.content || '')}</div>
+                `;
+                item.onclick = () => jumpToSearchResult(m);
+                results.appendChild(item);
+            });
+        })
+        .catch(() => {
+            results.innerHTML = '<p class="hint">Search failed — check the add-on log.</p>';
+        });
+}
+
+function jumpToSearchResult(m) {
+    closeSearch();
+    switchChannel(m.channel, () => {
+        const el = document.querySelector(`[data-id="${m.id}"]`);
+        if (el) {
+            el.scrollIntoView({behavior: 'smooth', block: 'center'});
+            el.classList.add('highlight-flash');
+            setTimeout(() => el.classList.remove('highlight-flash'), 2000);
+        }
+        // Older messages beyond the most recent 100 in a channel aren't
+        // loaded yet — there's no "load more history" yet, so very old
+        // results land you on the channel but won't auto-scroll to it.
+    });
+}
+
+function openFileBrowser() {
+    const modal = document.getElementById('filesModal');
+    const list = document.getElementById('filesList');
+    if (!modal || !list) return;
+    modal.classList.remove('hidden');
+    list.innerHTML = '<p class="hint">Loading…</p>';
+    fetch(apiUrl(`/api/files?channel=${currentChannel}`))
+        .then(r => r.json())
+        .then(files => {
+            if (!files.length) {
+                list.innerHTML = '<p class="hint">No files shared in this channel yet.</p>';
+                return;
+            }
+            list.innerHTML = '';
+            files.forEach(f => {
+                const item = document.createElement('a');
+                item.className = 'file-browser-item';
+                item.href = safeUrl(resolveUrl(f.url));
+                item.target = '_blank';
+                item.rel = 'noopener';
+                const time = new Date(f.timestamp).toLocaleString();
+                item.innerHTML = `
+                    <div class="file-icon">${getFileIcon(f.mime_type)}</div>
+                    <div class="file-info">
+                        <div class="file-name">${escapeHtml(f.filename || 'file')}</div>
+                        <div class="file-size">${escapeHtml(f.sender)} · ${formatFileSize(f.size || 0)} · ${escapeHtml(time)}</div>
+                    </div>
+                `;
+                list.appendChild(item);
+            });
+        })
+        .catch(() => {
+            list.innerHTML = '<p class="hint">Failed to load files — check the add-on log.</p>';
+        });
+}
+
+function closeFileBrowser() {
+    const modal = document.getElementById('filesModal');
+    if (modal) modal.classList.add('hidden');
 }
 
 function openEmojiManager() {
