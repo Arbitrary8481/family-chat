@@ -18,6 +18,11 @@ let currentChannel = getStoredChannel() || window.DEFAULT_CHANNEL || 'general';
 let selectedFile = null;
 let customEmojis = {};
 let recentEmojis = JSON.parse(localStorage.getItem('recentEmojis') || '[]');
+// Which message (if any) the emoji picker is currently choosing a
+// reaction for. null means it's in its normal "insert into the
+// composer" mode. Set by openReactionPicker(), cleared whenever the
+// picker closes.
+let emojiPickerContext = null;
 
 // Standard emoji categories
 const emojiCategories = {
@@ -308,7 +313,7 @@ function addMessage(data) {
             ${reactionsHtml}
         </div>
         <div class="message-actions">
-            <button class="action-btn" onclick="addReaction(${data.id})" title="Add reaction">😊</button>
+            <button class="action-btn" onclick="openReactionPicker(${data.id}, this)" title="Add reaction">😊</button>
         </div>
     `;
     
@@ -450,7 +455,36 @@ function toggleEmojiPicker() {
     if (!picker) return;
     const gifPicker = document.getElementById('gifPicker');
     if (gifPicker) gifPicker.classList.add('hidden');
-    picker.classList.toggle('hidden');
+
+    // If it's already open for composing (no reaction context), this
+    // click closes it. Otherwise (closed, or open for a reaction) this
+    // click (re)opens it anchored to the composer as normal.
+    const isOpenForCompose = !picker.classList.contains('hidden') && !emojiPickerContext;
+    if (isOpenForCompose) {
+        hideEmojiPicker();
+        return;
+    }
+    resetEmojiPickerPosition();
+    emojiPickerContext = null;
+    picker.classList.remove('hidden');
+}
+
+function resetEmojiPickerPosition() {
+    const picker = document.getElementById('emojiPicker');
+    if (!picker) return;
+    picker.style.position = '';
+    picker.style.top = '';
+    picker.style.left = '';
+    picker.style.right = '';
+    picker.style.bottom = '';
+}
+
+function hideEmojiPicker() {
+    const picker = document.getElementById('emojiPicker');
+    if (!picker) return;
+    picker.classList.add('hidden');
+    resetEmojiPickerPosition();
+    emojiPickerContext = null;
 }
 
 function switchEmojiTab(category) {
@@ -490,14 +524,20 @@ function loadEmojiCategory(category) {
 }
 
 function insertEmoji(emoji) {
-    const input = document.getElementById('messageInput');
-    if (input) input.value += emoji;
-    
     if (!recentEmojis.includes(emoji)) {
         recentEmojis.unshift(emoji);
         if (recentEmojis.length > 32) recentEmojis.pop();
-        localStorage.setItem('recentEmojis', JSON.stringify(recentEmojis));
+        try { localStorage.setItem('recentEmojis', JSON.stringify(recentEmojis)); } catch (e) {}
     }
+
+    if (emojiPickerContext && emojiPickerContext.messageId) {
+        toggleReaction(emojiPickerContext.messageId, emoji);
+        hideEmojiPicker();
+        return;
+    }
+
+    const input = document.getElementById('messageInput');
+    if (input) input.value += emoji;
 }
 
 function switchChannel(slug, onLoaded) {
@@ -753,11 +793,60 @@ function uploadEmoji() {
     });
 }
 
-function addReaction(messageId) {
-    const emoji = prompt('Enter emoji:');
-    if (emoji) {
-        toggleReaction(messageId, emoji);
+function openReactionPicker(messageId, btnEl) {
+    const picker = document.getElementById('emojiPicker');
+    if (!picker) return;
+    const gifPicker = document.getElementById('gifPicker');
+    if (gifPicker) gifPicker.classList.add('hidden');
+
+    // Clicking the same message's reaction button again closes the
+    // picker, same toggle behavior as the composer's emoji button.
+    const alreadyOpenForThis = !picker.classList.contains('hidden') &&
+        emojiPickerContext && emojiPickerContext.messageId === messageId;
+    if (alreadyOpenForThis) {
+        hideEmojiPicker();
+        return;
     }
+
+    emojiPickerContext = { messageId };
+    picker.classList.remove('hidden');
+
+    // Anchor it near the button that was clicked instead of the
+    // composer's fixed bottom-right spot, clamped to the viewport so it
+    // doesn't get cut off for messages near the top or edges of the
+    // screen.
+    picker.style.position = 'fixed';
+    const rect = btnEl.getBoundingClientRect();
+    const margin = 8;
+    const width = picker.offsetWidth || 380;
+    const height = picker.offsetHeight || 420;
+
+    let left = rect.right - width;
+    if (left < margin) left = margin;
+    if (left + width > window.innerWidth - margin) left = window.innerWidth - width - margin;
+
+    let top = rect.bottom + margin;
+    if (top + height > window.innerHeight - margin) top = rect.top - height - margin;
+    if (top < margin) top = margin;
+
+    picker.style.left = `${left}px`;
+    picker.style.top = `${top}px`;
+    picker.style.right = 'auto';
+    picker.style.bottom = 'auto';
+
+    const searchInput = document.getElementById('emojiSearch');
+    if (searchInput) searchInput.value = '';
+    switchEmojiTabProgrammatic('recent');
+}
+
+// switchEmojiTab() reads `event.target`, which only exists for a real
+// click — calling it programmatically (no click event) would throw.
+// This does the same tab-switch without relying on a click event.
+function switchEmojiTabProgrammatic(category) {
+    document.querySelectorAll('.emoji-tab').forEach(t => t.classList.remove('active'));
+    const tab = document.querySelector(`.emoji-tab[onclick="switchEmojiTab('${category}')"]`);
+    if (tab) tab.classList.add('active');
+    loadEmojiCategory(category);
 }
 
 function toggleReaction(messageId, emoji) {
@@ -797,13 +886,28 @@ function addToSharedMedia(url) {
     grid.insertBefore(item, grid.firstChild);
 }
 
-// Close emoji picker when clicking outside
+// Close emoji picker when clicking outside it (and not on one of its
+// own trigger buttons — the composer's emoji button, or any message's
+// reaction button, both of which open/reposition it themselves).
 document.addEventListener('click', (e) => {
     const picker = document.getElementById('emojiPicker');
-    const emojiBtn = document.querySelector('.emoji-btn');
-    if (picker && emojiBtn && !picker.contains(e.target) && e.target !== emojiBtn && !picker.classList.contains('hidden')) {
-        picker.classList.add('hidden');
+    if (!picker || picker.classList.contains('hidden')) return;
+    const isTrigger = e.target.closest('.emoji-btn, .action-btn');
+    if (!picker.contains(e.target) && !isTrigger) {
+        hideEmojiPicker();
     }
+});
+
+// A reaction picker is anchored to the message it was opened from at a
+// single point in time — it doesn't track scroll position. Scrolling the
+// message list would leave it floating next to the wrong message, so
+// just close it instead.
+document.addEventListener('DOMContentLoaded', () => {
+    const messagesContainer = document.getElementById('messagesContainer');
+    if (!messagesContainer) return;
+    messagesContainer.addEventListener('scroll', () => {
+        if (emojiPickerContext) hideEmojiPicker();
+    });
 });
 
 // --- GIF picker (GIPHY) ---

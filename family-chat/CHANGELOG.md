@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.8.1
+
+### Fixed
+- **The 😊 "add reaction" button on messages popped up a plain browser prompt ("Enter emoji:") instead of a real picker.** It now opens the same full emoji picker used by the composer — tabs, search box, and custom emojis — positioned right next to the button you clicked. Picking an emoji reacts with it immediately; clicking the button again (or elsewhere) closes it.
+
 ## 2.8.0
 
 ### Added
