@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.18.0
+
+### Fixed
+- **Images loading inconsistently on refresh (root cause).** The server was started with `async_mode='eventlet'` but never actually called `eventlet.monkey_patch()` — meaning it never had the cooperative concurrency that setting is supposed to provide. In practice, any blocking call anywhere (a GIPHY search, a Home Assistant notification, even just serving a file from `/uploads/`) stalled the *entire* single-threaded process, not just that one request — including everyone else's in-flight image loads. A full page refresh fires off many concurrent image requests at once; if the process happened to be mid-stall from something else at that exact moment, a whole batch of them could time out together. This is now fixed at the source.
+- **A missing `Content-Type` from the browser on some uploads silently downgraded a real image into a plain file-name attachment**, with no preview. Some browser/OS/file-type combinations just don't supply one. The image-vs-file decision now falls back to the file extension when there's no MIME type to go on, instead of assuming "not an image."
+- **API responses (`/api/messages` etc.) had no cache-control headers at all**, leaving them cacheable by the browser or any proxy in the request path (Home Assistant's ingress always is one) — same category of bug already fixed for static assets a while back, just not applied to the API. Now explicitly `no-store`.
+- **A failed fetch of message history used to fail completely silently**, looking exactly like an empty channel. Now shows a visible error instead.
+
 ## 2.17.0
 
 ### Changed

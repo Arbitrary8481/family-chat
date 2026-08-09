@@ -1,4 +1,23 @@
 #!/usr/bin/env python3
+# eventlet.monkey_patch() has to run before anything else imports the
+# stdlib modules it patches (socket, select, ssl, os, threading, time,
+# ...) — importing e.g. sqlite3 or urllib first would leave those
+# holding references to the real, blocking implementations, defeating
+# the patch for exactly the code that needs it most. This was missing
+# entirely before despite async_mode='eventlet' being requested below,
+# which is a real bug, not a stylistic nicety: without it, ANY blocking
+# call anywhere in a request (a GIPHY search, a Home Assistant
+# notification call, even just serving a file from /uploads/) stalls
+# the single OS thread this whole process runs on — not just that one
+# request, every connected client's request, including everyone else's
+# in-flight image loads. A full page refresh fires off many concurrent
+# /uploads/* requests at once; if the process happens to be mid-stall
+# from something else at that moment, a whole batch of them can time
+# out together, which is exactly "images inconsistently fail to load,
+# all at once, varying by refresh."
+import eventlet
+eventlet.monkey_patch()
+
 import asyncio
 import functools
 import hmac
@@ -20,7 +39,6 @@ from flask import Flask, render_template, request, jsonify, send_from_directory,
 from flask_socketio import SocketIO, emit, join_room, leave_room, rooms
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-import eventlet
 
 logging.basicConfig(
     level=logging.INFO,
@@ -581,6 +599,16 @@ def set_static_cache_headers(response):
         # stale CSS to stick around across Home Assistant's ingress "soft"
         # panel reloads until a manual refresh.
         response.headers['Cache-Control'] = 'no-cache'
+    elif request.path.startswith('/api/'):
+        # API responses are live application state — message history,
+        # reactions, channel lists — that's expected to differ from one
+        # request to the next. jsonify() sets no cache headers at all by
+        # default, which leaves the door open for a browser (or any
+        # proxy sitting in the request path, and Home Assistant's
+        # ingress always is one) to cache a GET response heuristically.
+        # 'no-store' rules that out entirely rather than relying on
+        # conditional-revalidation being handled correctly everywhere.
+        response.headers['Cache-Control'] = 'no-store'
     return response
 
 def resolve_ha_identity():

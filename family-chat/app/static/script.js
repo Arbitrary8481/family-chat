@@ -235,6 +235,16 @@ function initializeChat() {
         .then(messages => {
             messages.forEach(msg => addMessage(msg));
             scrollToBottomRobust();
+        })
+        .catch(err => {
+            // Previously silent — a failed fetch here (network blip,
+            // server hiccup) looked exactly like an empty channel, with
+            // no indication anything had gone wrong.
+            console.error('Failed to load message history:', err);
+            const container = document.getElementById('messagesContainer');
+            if (container) {
+                container.innerHTML = '<div class="welcome-message"><h1>Couldn\'t load messages</h1><p>Check your connection and try reloading.</p></div>';
+            }
         });
     
     fetch(apiUrl('/api/emojis'))
@@ -315,11 +325,12 @@ function addMessage(data) {
     let contentHtml = `<div class="message-text">${linkifyText(data.content || '')}</div>`;
     
     if (data.file || data.file_url) {
+        const rawFileName = data.file?.filename || data.file_name || '';
         const fileUrl = safeUrl(resolveUrl(data.file?.url || data.file_url));
-        const fileName = escapeHtml(data.file?.filename || data.file_name);
-        const mimeType = escapeHtml(data.file?.mime_type || data.mime_type);
+        const fileName = escapeHtml(rawFileName);
+        const mimeType = escapeHtml(data.file?.mime_type || data.mime_type || '');
         
-        if (mimeType && mimeType.startsWith('image/')) {
+        if (looksLikeImageFile(mimeType, rawFileName)) {
             contentHtml += `
                 <div class="message-image" onclick="openImageViewer('${fileUrl}')">
                     <img src="${fileUrl}" alt="${fileName}" loading="lazy">
@@ -552,6 +563,18 @@ function formatFileSize(bytes) {
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+// Browsers don't always supply a Content-Type for an upload — some OS/
+// browser/file-type combinations leave it blank, which would otherwise
+// silently downgrade a real image to a generic file-attachment block
+// (icon + filename, no preview) even though it's perfectly viewable.
+// When there's no mime type to go on, fall back to the file extension
+// rather than assuming "not an image".
+function looksLikeImageFile(mimeType, filename) {
+    if (mimeType) return mimeType.startsWith('image/');
+    const ext = (filename || '').split('.').pop().toLowerCase();
+    return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext);
 }
 
 function getFileIcon(mimeType) {
@@ -882,6 +905,13 @@ function switchChannel(slug, onLoaded) {
                 onLoaded();
             } else {
                 scrollToBottomRobust();
+            }
+        })
+        .catch(err => {
+            console.error('Failed to load message history:', err);
+            const container = document.getElementById('messagesContainer');
+            if (container) {
+                container.innerHTML = '<div class="welcome-message"><h1>Couldn\'t load messages</h1><p>Check your connection and try reloading.</p></div>';
             }
         });
 }
