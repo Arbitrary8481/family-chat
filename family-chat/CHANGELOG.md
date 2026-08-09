@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.15.0
+
+### Added
+- **Jump-to-bottom button.** Scroll up to read earlier messages and a small ↓ button appears above the message box to take you back to the latest ones — with a badge showing how many new messages arrived while you were away, once there are any.
+- Incoming messages no longer force-scroll you to the bottom if you'd scrolled up to read history — they still arrive right away, but the view no longer gets yanked out from under you. You only auto-follow new messages if you were already at the bottom when they came in.
+
+## 2.14.0
+
+### Added
+- **Links in messages are now clickable.** Any `http://` or `https://` URL in a message (in the main chat and in search results) turns into a real link that opens in a new tab. Trailing punctuation like a sentence-ending period or a wrapping parenthesis is correctly excluded from the link itself. Message content is still fully escaped either way — this doesn't loosen anything about what's safe to post.
+
 ## 2.13.1
 
 ### Fixed

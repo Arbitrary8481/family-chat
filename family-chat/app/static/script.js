@@ -197,8 +197,18 @@ function initializeChat() {
     });
     
     socket.on('new_message', function(data) {
+        const container = document.getElementById('messagesContainer');
+        const wasNearBottom = isNearBottom(container);
+
         addMessage(data);
-        scrollToBottom();
+
+        if (wasNearBottom) {
+            scrollToBottom();
+        } else {
+            unseenMessageCount++;
+            updateScrollToBottomBadge();
+            updateScrollToBottomButton();
+        }
         
         if (data.type === 'image' || data.type === 'gif' || (data.file && data.file.mime_type && data.file.mime_type.startsWith('image/'))) {
             addToSharedMedia(resolveUrl(data.file.url));
@@ -302,7 +312,7 @@ function addMessage(data) {
         minute: '2-digit'
     });
     
-    let contentHtml = `<div class="message-text">${escapeHtml(data.content || '')}</div>`;
+    let contentHtml = `<div class="message-text">${linkifyText(data.content || '')}</div>`;
     
     if (data.file || data.file_url) {
         const fileUrl = safeUrl(resolveUrl(data.file?.url || data.file_url));
@@ -465,6 +475,62 @@ function escapeHtml(text) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+
+// Turns http(s) URLs in plain message text into clickable links. Escapes
+// everything itself (both the surrounding text and the URLs) — callers
+// should NOT also run escapeHtml() on text passed through here, or
+// entities would get double-escaped.
+function linkifyText(text) {
+    if (!text) return '';
+    const urlPattern = /https?:\/\/[^\s<>"']+/g;
+    let result = '';
+    let lastIndex = 0;
+    let match;
+
+    while ((match = urlPattern.exec(text)) !== null) {
+        let url = match[0];
+        let end = match.index + url.length;
+
+        // Trailing punctuation almost always belongs to the sentence,
+        // not the link — "check this out: https://example.com." should
+        // not swallow the period. Strips one character at a time so
+        // something like "(see https://example.com)." unwraps correctly
+        // in either order. A closing paren/bracket is only stripped if
+        // it doesn't have a matching opener earlier in the URL, since
+        // some real URLs (e.g. Wikipedia article titles) legitimately
+        // end in one.
+        let trimmed = true;
+        while (trimmed && url.length > 0) {
+            trimmed = false;
+            if (/[.,!?:;]$/.test(url)) {
+                url = url.slice(0, -1);
+                end -= 1;
+                trimmed = true;
+            } else if (url.endsWith(')') && (url.match(/\(/g) || []).length < (url.match(/\)/g) || []).length) {
+                url = url.slice(0, -1);
+                end -= 1;
+                trimmed = true;
+            } else if (url.endsWith(']') && (url.match(/\[/g) || []).length < (url.match(/\]/g) || []).length) {
+                url = url.slice(0, -1);
+                end -= 1;
+                trimmed = true;
+            }
+        }
+        if (!url) continue;
+
+        result += escapeHtml(text.slice(lastIndex, match.index));
+        const safeHref = escapeHtml(url); // url is guaranteed http(s):// by the regex, and can't contain a quote character (excluded from the match), so this is just attribute-encoding, not a scheme check
+        // stopPropagation matters here: linkifyText() output sometimes
+        // ends up inside an element that itself has its own onclick (a
+        // search result row navigates to the message it's from) — without
+        // this, clicking the link would both open it AND trigger that.
+        result += `<a href="${safeHref}" target="_blank" rel="noopener noreferrer nofollow" onclick="event.stopPropagation()">${escapeHtml(url)}</a>`;
+        lastIndex = end;
+        urlPattern.lastIndex = end; // resume scanning right after whatever we actually linked, since trimming may have moved it earlier than the raw regex match
+    }
+    result += escapeHtml(text.slice(lastIndex));
+    return result;
 }
 
 function safeUrl(url) {
@@ -773,6 +839,14 @@ function switchChannel(slug, onLoaded) {
     currentChannel = slug;
     try { localStorage.setItem('lastChannel', currentChannel); } catch (e) {}
 
+    // A different channel is a fresh view, always landing at the bottom
+    // (see below) — any unseen count from the channel just left doesn't
+    // carry over.
+    unseenMessageCount = 0;
+    updateScrollToBottomBadge();
+    const scrollBtn = document.getElementById('scrollToBottomBtn');
+    if (scrollBtn) scrollBtn.classList.add('hidden');
+
     const channelEl = document.getElementById('currentChannel');
     const welcomeEl = document.getElementById('welcomeChannel');
     const inputEl = document.getElementById('messageInput');
@@ -851,7 +925,7 @@ function runSearch() {
                 const time = new Date(m.timestamp).toLocaleString();
                 item.innerHTML = `
                     <div class="search-result-meta">${escapeHtml(m.channel_icon)} ${escapeHtml(m.channel_name)} · <strong>${escapeHtml(m.sender)}</strong> · ${escapeHtml(time)}</div>
-                    <div class="search-result-content">${escapeHtml(m.content || '')}</div>
+                    <div class="search-result-content">${linkifyText(m.content || '')}</div>
                 `;
                 item.onclick = () => jumpToSearchResult(m);
                 results.appendChild(item);
@@ -1385,8 +1459,57 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!messagesContainer) return;
     messagesContainer.addEventListener('scroll', () => {
         if (emojiPickerContext) hideEmojiPicker();
+        updateScrollToBottomButton();
     });
 });
+
+// --- Jump to bottom ---
+// Also changes what happens when a new message arrives (see the
+// new_message handler): previously every incoming message force-scrolled
+// everyone to the bottom, which yanked the view out from under anyone who
+// had scrolled up to read earlier messages. Now that only happens if you
+// were already at the bottom — otherwise the message still arrives, but
+// you stay where you are and this button lights up instead.
+let unseenMessageCount = 0;
+const SCROLL_BOTTOM_THRESHOLD = 80; // px of slack still counted as "at the bottom"
+
+function isNearBottom(container) {
+    if (!container) return true;
+    return container.scrollHeight - container.scrollTop - container.clientHeight <= SCROLL_BOTTOM_THRESHOLD;
+}
+
+function updateScrollToBottomButton() {
+    const container = document.getElementById('messagesContainer');
+    const btn = document.getElementById('scrollToBottomBtn');
+    if (!container || !btn) return;
+
+    if (isNearBottom(container)) {
+        btn.classList.add('hidden');
+        unseenMessageCount = 0;
+        updateScrollToBottomBadge();
+    } else {
+        btn.classList.remove('hidden');
+    }
+}
+
+function updateScrollToBottomBadge() {
+    const badge = document.getElementById('scrollToBottomBadge');
+    if (!badge) return;
+    if (unseenMessageCount > 0) {
+        badge.textContent = unseenMessageCount > 99 ? '99+' : String(unseenMessageCount);
+        badge.classList.remove('hidden');
+    } else {
+        badge.classList.add('hidden');
+    }
+}
+
+function jumpToBottom() {
+    scrollToBottom();
+    unseenMessageCount = 0;
+    updateScrollToBottomBadge();
+    const btn = document.getElementById('scrollToBottomBtn');
+    if (btn) btn.classList.add('hidden');
+}
 
 // --- GIF picker (GIPHY) ---
 // The picker loads trending GIFs on first open, then re-queries as the

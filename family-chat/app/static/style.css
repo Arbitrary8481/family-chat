@@ -240,6 +240,49 @@ body {
     flex-direction: column;
     background: var(--bg-primary);
     min-width: 0;
+    position: relative;
+}
+
+.scroll-to-bottom-btn {
+    position: absolute;
+    right: 24px;
+    bottom: 88px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--bg-secondary);
+    border: 1px solid var(--bg-tertiary);
+    color: var(--text-normal);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    transition: all 0.15s;
+    z-index: 10;
+}
+
+.scroll-to-bottom-btn:hover {
+    background: var(--bg-modifier-hover);
+    transform: translateY(-2px);
+}
+
+.scroll-to-bottom-badge {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    border-radius: 9px;
+    background: var(--danger);
+    color: white;
+    font-size: 11px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
 }
 
 .chat-header {
@@ -407,6 +450,18 @@ body {
     line-height: 1.375;
     word-wrap: break-word;
     white-space: pre-wrap;
+}
+
+.message-text a,
+.search-result-content a {
+    color: var(--text-link);
+    text-decoration: none;
+    word-break: break-all;
+}
+
+.message-text a:hover,
+.search-result-content a:hover {
+    text-decoration: underline;
 }
 
 /* File Attachments */

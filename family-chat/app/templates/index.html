@@ -77,6 +77,16 @@
                 </div>
             </div>
 
+            <!-- Jump-to-bottom: hidden until you scroll up away from the
+                 newest message, or a new message arrives while you're not
+                 there. -->
+            <button class="scroll-to-bottom-btn hidden" id="scrollToBottomBtn" onclick="jumpToBottom()" title="Jump to latest messages">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 16l-6-6h12l-6 6z"/>
+                </svg>
+                <span class="scroll-to-bottom-badge hidden" id="scrollToBottomBadge">0</span>
+            </button>
+
             <!-- Typing indicator -->
             <div class="typing-indicator hidden" id="typingIndicator">
                 <span id="typingUser">Someone</span> is typing<span class="dots">...</span>
