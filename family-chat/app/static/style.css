@@ -117,6 +117,15 @@ body {
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
+    overflow: hidden;
+    transition: width 0.15s ease, opacity 0.15s ease;
+}
+
+.channel-sidebar.collapsed {
+    width: 0;
+    opacity: 0;
+    pointer-events: none;
+    white-space: nowrap;
 }
 
 .server-header {
@@ -243,10 +252,18 @@ body {
     flex-shrink: 0;
 }
 
+.chat-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
 .channel-info {
     display: flex;
     align-items: center;
     gap: 8px;
+    min-width: 0;
 }
 
 .channel-hash {
@@ -287,6 +304,15 @@ body {
 .header-btn:hover {
     background: var(--bg-modifier-hover);
     color: var(--interactive-hover);
+}
+
+.sidebar-toggle-btn {
+    font-size: 16px;
+}
+
+.sidebar-toggle-btn.active {
+    background: var(--bg-modifier-active);
+    color: var(--interactive-active);
 }
 
 /* Messages */
@@ -803,6 +829,17 @@ body {
     padding: 16px 8px;
     flex-shrink: 0;
     overflow-y: auto;
+    overflow-x: hidden;
+    transition: width 0.15s ease, opacity 0.15s ease, padding 0.15s ease;
+}
+
+.members-sidebar.collapsed {
+    width: 0;
+    padding-left: 0;
+    padding-right: 0;
+    opacity: 0;
+    pointer-events: none;
+    white-space: nowrap;
 }
 
 .members-header {

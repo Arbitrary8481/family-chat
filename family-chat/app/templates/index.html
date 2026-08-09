@@ -22,7 +22,7 @@
         </div>
 
         <!-- Channel List -->
-        <div class="channel-sidebar">
+        <div class="channel-sidebar" id="channelSidebar">
             <div class="server-header">
                 <h3>🏠 Family Home</h3>
             </div>
@@ -50,14 +50,22 @@
         <!-- Main Chat Area -->
         <div class="chat-container">
             <div class="chat-header">
-                <div class="channel-info">
-                    <span class="channel-hash">{{ channels[0].icon if channels else '#' }}</span>
-                    <span id="currentChannel">{{ channels[0].slug if channels else 'general' }}</span>
-                    <span class="channel-topic">Family communication center</span>
+                <div class="chat-header-left">
+                    <button class="header-btn sidebar-toggle-btn" onclick="toggleChannelSidebar()" title="Toggle channel list" id="channelSidebarToggle">
+                        ☰
+                    </button>
+                    <div class="channel-info">
+                        <span class="channel-hash">{{ channels[0].icon if channels else '#' }}</span>
+                        <span id="currentChannel">{{ channels[0].slug if channels else 'general' }}</span>
+                        <span class="channel-topic">Family communication center</span>
+                    </div>
                 </div>
                 <div class="header-actions">
                     <button class="header-btn" onclick="toggleSearch()" title="Search">🔍</button>
                     <button class="header-btn" onclick="openFileBrowser()" title="Files">📎</button>
+                    <button class="header-btn sidebar-toggle-btn" onclick="toggleMembersSidebar()" title="Toggle member list" id="membersSidebarToggle">
+                        👥
+                    </button>
                     <a class="header-btn" href="./admin" title="Admin settings" style="display:inline-block; text-decoration:none;">⚙️</a>
                 </div>
             </div>
@@ -141,7 +149,7 @@
         </div>
 
         <!-- Members List -->
-        <div class="members-sidebar">
+        <div class="members-sidebar" id="membersSidebar">
             <div class="members-header">👨‍👩‍👧‍👦 FAMILY — {{ members|length }}</div>
             {% for m in members %}
             <div class="member online" data-user="{{ m.name }}">

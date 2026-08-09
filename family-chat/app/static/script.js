@@ -33,6 +33,8 @@ const emojiCategories = {
 // picker anymore. If Home Assistant couldn't resolve a name, the
 // identityGate stays visible with instructions instead of the chat.
 document.addEventListener('DOMContentLoaded', function() {
+    restoreSidebarState();
+
     if (window.AUTO_CHAT_USER) {
         currentUser = window.AUTO_CHAT_USER;
         const gate = document.getElementById('identityGate');
@@ -75,6 +77,49 @@ function apiUrl(path) {
 function resolveUrl(url) {
     if (!url || !url.startsWith('/')) return url;
     return getIngressBasePath() + url.slice(1);
+}
+
+// --- Sidebar collapse/expand ---
+// Each sidebar's collapsed state is remembered independently in
+// localStorage, so reloading (or reopening the ingress panel) doesn't
+// snap it back open.
+const SIDEBAR_CONFIG = {
+    channel: { id: 'channelSidebar', toggleId: 'channelSidebarToggle', storageKey: 'channelSidebarCollapsed' },
+    members: { id: 'membersSidebar', toggleId: 'membersSidebarToggle', storageKey: 'membersSidebarCollapsed' }
+};
+
+function setSidebarCollapsed(which, collapsed) {
+    const cfg = SIDEBAR_CONFIG[which];
+    if (!cfg) return;
+    const el = document.getElementById(cfg.id);
+    const btn = document.getElementById(cfg.toggleId);
+    if (el) el.classList.toggle('collapsed', collapsed);
+    if (btn) {
+        btn.classList.toggle('active', collapsed);
+        btn.setAttribute('aria-pressed', String(!collapsed));
+    }
+    try { localStorage.setItem(cfg.storageKey, collapsed ? '1' : '0'); } catch (e) {}
+}
+
+function restoreSidebarState() {
+    Object.keys(SIDEBAR_CONFIG).forEach(which => {
+        const cfg = SIDEBAR_CONFIG[which];
+        let collapsed = false;
+        try { collapsed = localStorage.getItem(cfg.storageKey) === '1'; } catch (e) {}
+        setSidebarCollapsed(which, collapsed);
+    });
+}
+
+function toggleChannelSidebar() {
+    const el = document.getElementById(SIDEBAR_CONFIG.channel.id);
+    if (!el) return;
+    setSidebarCollapsed('channel', !el.classList.contains('collapsed'));
+}
+
+function toggleMembersSidebar() {
+    const el = document.getElementById(SIDEBAR_CONFIG.members.id);
+    if (!el) return;
+    setSidebarCollapsed('members', !el.classList.contains('collapsed'));
 }
 
 function initializeChat() {

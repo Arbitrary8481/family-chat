@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.8.0
+
+### Added
+- **Collapsible sidebars.** New ☰ and 👥 buttons in the chat header collapse/expand the channel list and member list independently. Each sidebar remembers its collapsed state across reloads.
+
 ## 2.7.0
 
 ### Added
