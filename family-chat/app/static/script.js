@@ -127,7 +127,7 @@ function initializeChat() {
         .then(r => r.json())
         .then(messages => {
             messages.forEach(msg => addMessage(msg));
-            scrollToBottom();
+            scrollToBottomRobust();
         });
     
     fetch(apiUrl('/api/emojis'))
@@ -273,6 +273,24 @@ function addMessage(data) {
 function scrollToBottom() {
     const container = document.getElementById('messagesContainer');
     if (container) container.scrollTop = container.scrollHeight;
+}
+
+// Images finish loading asynchronously, after they've already been
+// inserted into the DOM — each one that loads grows the page a bit more.
+// A single scrollToBottom() called right after rendering measures the
+// page before that growth happens, so on a channel with attachments you
+// can land noticeably above the actual most recent message. This re-runs
+// the scroll whenever a newly-added image finishes loading (or fails to).
+function scrollToBottomRobust() {
+    scrollToBottom();
+    const container = document.getElementById('messagesContainer');
+    if (!container) return;
+    container.querySelectorAll('img').forEach(img => {
+        if (!img.complete) {
+            img.addEventListener('load', scrollToBottom, { once: true });
+            img.addEventListener('error', scrollToBottom, { once: true });
+        }
+    });
 }
 
 function escapeHtml(text) {
@@ -465,8 +483,18 @@ function switchChannel(slug, onLoaded) {
         .then(r => r.json())
         .then(messages => {
             messages.forEach(msg => addMessage(msg));
-            scrollToBottom();
-            if (onLoaded) onLoaded();
+            if (onLoaded) {
+                // Jumping to a specific message (e.g. from search) — scroll
+                // there first, then let the caller's own scroll-into-view
+                // take over. Using the robust/image-aware scroll here could
+                // yank the view back down to the bottom later if an image
+                // above the target message finishes loading after we've
+                // already landed on it.
+                scrollToBottom();
+                onLoaded();
+            } else {
+                scrollToBottomRobust();
+            }
         });
 }
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.6.1
+
+### Fixed
+- **Reloading a channel with images/files didn't always land on the most recent message.** The scroll-to-bottom happened right after messages were inserted into the page, but attached images finish loading (and growing the page) afterward — landing you above the true bottom on channels with a lot of attachments. Loading a channel's history now re-corrects the scroll position as each image finishes loading, so it settles on the actual most recent message.
+
 ## 2.6.0
 
 ### Fixed
