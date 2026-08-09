@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.13.1
+
+### Fixed
+- **Pasting a screenshot only worked once per message.** The paste listener was only attached to the plain message box, but the first pasted image opens the caption/preview modal — which moves keyboard focus into the caption field. A second paste while focus was there never reached the handler at all. It's now a single document-level listener, so pasting works no matter what's currently focused.
+
 ## 2.13.0
 
 ### Added

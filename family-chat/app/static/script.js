@@ -241,7 +241,6 @@ function initializeChat() {
                 sendMessageClick();
             }
         });
-        input.addEventListener('paste', handleMessageInputPaste);
     }
     
     document.querySelectorAll('.channel').forEach(ch => {
@@ -528,10 +527,14 @@ function handleFileSelect(event) {
     event.target.value = '';
 }
 
-// Pasting a screenshot (or any copied image) while the message box is
-// focused uploads it the same way picking a file with the 📎 button
-// does — same preview modal, same "add a caption and send" flow.
-function handleMessageInputPaste(event) {
+// Pasting a screenshot (or any copied image) anywhere on the page — not
+// just while the message box itself is focused — uploads it the same
+// way picking a file with 📎 does. This has to be document-level rather
+// than scoped to #messageInput: the first pasted image opens the
+// caption/preview modal, which moves focus into the caption field, so a
+// listener only on the message input would stop firing after exactly
+// one paste — a real bug that shipped in the first version of this.
+function handlePasteImage(event) {
     const items = event.clipboardData && event.clipboardData.items;
     if (!items) return;
 
@@ -550,6 +553,7 @@ function handleMessageInputPaste(event) {
         }
     }
 }
+document.addEventListener('paste', handlePasteImage);
 
 function showFilePreview(data, file) {
     const modal = document.getElementById('fileModal');
