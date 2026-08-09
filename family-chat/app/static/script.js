@@ -895,6 +895,90 @@ function openMySettings() {
             if (hint) hint.textContent = `(your Home Assistant name is "${me.ha_name}")`;
         })
         .catch(() => {});
+
+    loadNotifySettings();
+}
+
+function loadNotifySettings() {
+    const select = document.getElementById('notifyServiceSelect');
+    const checkbox = document.getElementById('notifyEnabledInput');
+    if (!select || !checkbox) return;
+
+    select.innerHTML = '<option value="">Loading devices…</option>';
+
+    Promise.all([
+        fetch(apiUrl('/api/notify/services')).then(r => r.json()),
+        fetch(apiUrl('/api/notify/prefs')).then(r => r.json())
+    ])
+        .then(([servicesData, prefs]) => {
+            const services = servicesData.services || [];
+
+            if (servicesData.error) {
+                select.innerHTML = `<option value="">${escapeHtml(servicesData.error)}</option>`;
+            } else if (services.length === 0) {
+                select.innerHTML = '<option value="">No devices found — open the Home Assistant Companion App on your phone first</option>';
+            } else {
+                select.innerHTML = '<option value="">Choose a device…</option>' +
+                    services.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+                if (prefs.notify_service) select.value = prefs.notify_service;
+            }
+
+            checkbox.checked = !!prefs.enabled;
+        })
+        .catch(() => {
+            select.innerHTML = '<option value="">Couldn\'t load devices — try again</option>';
+        });
+}
+
+function saveNotifyPrefs() {
+    const checkbox = document.getElementById('notifyEnabledInput');
+    const select = document.getElementById('notifyServiceSelect');
+    const enabled = checkbox ? checkbox.checked : false;
+    const notify_service = select ? select.value : '';
+
+    if (enabled && !notify_service) {
+        alert('Choose a device before turning notifications on.');
+        return;
+    }
+
+    fetch(apiUrl('/api/notify/prefs'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled, notify_service })
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+            closeMySettings();
+        })
+        .catch(() => alert("Couldn't save notification settings. Please try again."));
+}
+
+function sendTestNotification() {
+    const select = document.getElementById('notifyServiceSelect');
+    const notify_service = select ? select.value : '';
+    if (!notify_service) {
+        alert('Choose a device first.');
+        return;
+    }
+
+    fetch(apiUrl('/api/notify/test'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notify_service })
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+            } else {
+                alert('Test notification sent — check your phone.');
+            }
+        })
+        .catch(() => alert("Couldn't send a test notification."));
 }
 
 function closeMySettings() {

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.9.0
+
+### Added
+- **Push notifications for new messages, via Home Assistant.** Each person can opt in from Settings (✏️), choosing which of their devices to notify — the list is pulled live from Home Assistant's own `notify.*` services (created automatically by the HA Companion App on each phone), so there's nothing to type by hand. A "Send Test" button lets you confirm you picked the right device before relying on it.
+  - You're never notified about your own messages.
+  - Notifications are scoped to the channel a message was posted in.
+  - No separate push service or API key is needed — this add-on now requests `homeassistant_api` access and calls Home Assistant's own REST API through the supervisor to trigger the notification. **Existing installs need to rebuild the add-on (not just restart it) for this new permission to take effect** — Settings → Add-ons → Family Chat → Rebuild.
+  - Requires the Home Assistant Companion App to be installed and connected on each phone you want to notify; until then that person's device simply won't appear in the list.
+
 ## 2.8.4
 
 ### Fixed
