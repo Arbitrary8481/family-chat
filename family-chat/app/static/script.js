@@ -87,6 +87,13 @@ function initializeChat() {
     socket.on('reaction_added', function(data) {
         updateReaction(data.message_id, data.emoji, data.user);
     });
+
+    // If something goes wrong server-side while handling an event (a
+    // failed send, a bad reaction, etc.), this is what used to fail
+    // completely silently — now at least tell the person something broke.
+    socket.on('server_error', function(data) {
+        alert(data.message || 'Something went wrong. Check the add-on log for details.');
+    });
     
     fetch(apiUrl('/api/messages'))
         .then(r => r.json())

@@ -3,12 +3,14 @@ import asyncio
 import functools
 import hmac
 import json
+import logging
 import os
 import re
 import secrets
 import sqlite3
 import base64
 import hashlib
+import traceback
 from datetime import datetime
 from pathlib import Path
 from flask import Flask, render_template, request, jsonify, send_from_directory, session, redirect, url_for
@@ -17,9 +19,18 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import eventlet
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+)
+logger = logging.getLogger('family_chat')
+
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+# logger=True surfaces Socket.IO's own connect/disconnect/event activity in
+# the log too, which is useful context alongside our own error logging below.
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet', logger=True)
 
 # Home Assistant writes add-on options to /data/options.json regardless of
 # base image. This app never read it (run.sh just hardcoded env vars
@@ -62,8 +73,8 @@ MAX_FILE_SIZE = int(os.environ.get('MAX_FILE_SIZE', '25')) * 1024 * 1024
 ADMIN_PASSWORD = get_option('admin_password', 'ADMIN_PASSWORD', 'changeme')
 ADMIN_PASSWORD_HASH = generate_password_hash(ADMIN_PASSWORD)
 if ADMIN_PASSWORD == 'changeme':
-    print('WARNING: admin_password is still set to the default "changeme". '
-          'Set it in the add-on configuration.')
+    logger.warning('admin_password is still set to the default "changeme". '
+                    'Set it in the add-on configuration.')
 
 # Cache-busting token for static assets (CSS/JS). Home Assistant's ingress
 # "soft" panel navigation (clicking the sidebar entry again) can reuse a
@@ -448,6 +459,13 @@ def require_admin(view):
         return view(*args, **kwargs)
     return wrapped
 
+@app.errorhandler(Exception)
+def handle_uncaught_exception(e):
+    logger.exception('Unhandled exception on %s %s', request.method, request.path)
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'Internal server error — check the add-on log for details.'}), 500
+    return 'Internal server error — check the add-on log for details.', 500
+
 @app.route('/')
 def index():
     # Home Assistant's ingress proxy adds these headers identifying the
@@ -630,17 +648,40 @@ def upload_emoji():
 def serve_file(filename):
     return send_from_directory(UPLOAD_FOLDER, filename)
 
+def log_socket_errors(handler):
+    """Socket.IO event handlers don't go through Flask's normal error
+    handling — an unhandled exception in one can otherwise just vanish
+    with the client never knowing anything happened. This logs the full
+    traceback and tells the client something went wrong, instead of a
+    message silently failing to send."""
+    @functools.wraps(handler)
+    def wrapped(*args, **kwargs):
+        try:
+            return handler(*args, **kwargs)
+        except Exception:
+            logger.exception('Unhandled error in socket handler %s', handler.__name__)
+            try:
+                emit('server_error', {
+                    'message': "That didn't go through — check the add-on log for details."
+                })
+            except Exception:
+                pass
+    return wrapped
+
 @socketio.on('connect')
-def handle_connect():
-    print('Client connected')
+@log_socket_errors
+def handle_connect(auth=None):
+    logger.info('Client connected')
 
 @socketio.on('join')
+@log_socket_errors
 def on_join(data):
     room = data.get('room', 'general')
     join_room(room)
     emit('joined', {'room': room})
 
 @socketio.on('send_message')
+@log_socket_errors
 def handle_message(data):
     # Identity is resolved server-side from the Home Assistant ingress
     # headers, not taken from the client payload — otherwise anyone could
@@ -652,28 +693,33 @@ def handle_message(data):
     msg_type = data.get('type', 'text')
     file_info = data.get('file', None)
     
-    if sender:
-        file_url = file_info.get('url') if file_info else None
-        file_name = file_info.get('filename') if file_info else None
-        file_size = file_info.get('size') if file_info else None
-        mime_type = file_info.get('mime_type') if file_info else None
-        
-        msg_id = save_message(sender, content, channel, msg_type,
-                             file_url, file_name, file_size, mime_type,
-                             sender_id=sender_id)
-        
-        emit('new_message', {
-            'id': msg_id,
-            'sender': sender,
-            'content': content,
-            'timestamp': datetime.now().isoformat(),
-            'channel': channel,
-            'type': msg_type,
-            'file': file_info,
-            'reactions': {}
-        }, broadcast=True)
+    if not sender:
+        logger.warning('send_message from a request with no resolvable HA identity (sender_id=%s)', sender_id)
+        emit('server_error', {'message': "Couldn't identify you as a Home Assistant user — try reloading the page."})
+        return
+
+    file_url = file_info.get('url') if file_info else None
+    file_name = file_info.get('filename') if file_info else None
+    file_size = file_info.get('size') if file_info else None
+    mime_type = file_info.get('mime_type') if file_info else None
+    
+    msg_id = save_message(sender, content, channel, msg_type,
+                         file_url, file_name, file_size, mime_type,
+                         sender_id=sender_id)
+    
+    emit('new_message', {
+        'id': msg_id,
+        'sender': sender,
+        'content': content,
+        'timestamp': datetime.now().isoformat(),
+        'channel': channel,
+        'type': msg_type,
+        'file': file_info,
+        'reactions': {}
+    }, broadcast=True)
 
 @socketio.on('add_reaction')
+@log_socket_errors
 def handle_reaction(data):
     message_id = data.get('message_id')
     emoji = data.get('emoji')

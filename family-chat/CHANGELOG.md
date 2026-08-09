@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.5.1
+
+### Fixed
+- **Errors were invisible.** `run.sh` ran Python without unbuffered output, so anything printed to the log (including error tracebacks) could sit in a buffer and never actually appear in the add-on's log viewer. Fixed by setting `PYTHONUNBUFFERED=1`.
+- Socket.IO event handlers (message sending, reactions, joining a channel) don't go through Flask's normal error handling — an exception in one could fail completely silently, with nothing in the log and nothing shown to the user. All of them now log full tracebacks and tell the person in the chat that something went wrong instead of just doing nothing.
+- Found and fixed a real bug this surfaced immediately: the `connect` handler's function signature didn't accept the `auth` argument the installed Socket.IO version actually passes to it, so it was silently throwing an exception on *every single connection* — harmless in practice (connections still worked), but pure log noise once errors became visible, so worth fixing outright.
+- Any uncaught exception in a regular page/API request is now also guaranteed to be logged with a full traceback.
+
 ## 2.5.0
 
 ### Added
