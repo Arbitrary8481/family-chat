@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.8.4
+
+### Fixed
+- **Messages and reactions were broadcast to every connected browser regardless of which channel they were posted in**, not just people actually viewing that channel — invisible with one person on one device, since you only ever post into the channel you're looking at, but with multiple family members online at once, someone in #general could have messages meant for #memories or #plans appear directly in their view. Both are now scoped server-side to the channel they belong to.
+- **Switching channels joined the new channel's live-update group without ever leaving the old one.** A single browser session that visited several channels over time would end up subscribed to all of them, which would have undermined the fix above the longer a tab stayed open. Switching channels now properly leaves the previous one first.
+
 ## 2.8.3
 
 ### Fixed

@@ -17,7 +17,7 @@ import urllib.error
 from datetime import datetime
 from pathlib import Path
 from flask import Flask, render_template, request, jsonify, send_from_directory, session, redirect, url_for
-from flask_socketio import SocketIO, emit, join_room
+from flask_socketio import SocketIO, emit, join_room, leave_room, rooms
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import eventlet
@@ -837,6 +837,17 @@ def handle_connect(auth=None):
 @log_socket_errors
 def on_join(data):
     room = data.get('room', 'general')
+    # Switching channels previously only ever *joined* the new room and
+    # never left the old one — a session that visited every channel over
+    # time would end up subscribed to all of them simultaneously, so
+    # messages posted anywhere would land in whichever channel you
+    # happened to be looking at. Every socket's own default room is its
+    # sid, which must stay untouched; leave everything else before
+    # joining the requested channel so a connection is only ever in the
+    # one channel room it's actually viewing.
+    for r in list(rooms()):
+        if r != request.sid:
+            leave_room(r)
     join_room(room)
     emit('joined', {'room': room})
 
@@ -876,7 +887,7 @@ def handle_message(data):
         'type': msg_type,
         'file': file_info,
         'reactions': {}
-    }, broadcast=True)
+    }, room=channel)
 
 @socketio.on('add_reaction')
 @log_socket_errors
@@ -890,6 +901,14 @@ def handle_reaction(data):
 
     conn = sqlite3.connect('/data/chat.db')
     c = conn.cursor()
+
+    c.execute('SELECT channel FROM messages WHERE id = ?', (message_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return
+    channel = row[0]
+
     # A reaction click is a toggle: clicking the same emoji you've
     # already placed on this message removes it again — this is what the
     # "active"/highlighted pill styling in the UI has always implied, but
@@ -913,7 +932,7 @@ def handle_reaction(data):
         'emoji': emoji,
         'user': user,
         'added': added
-    }, broadcast=True)
+    }, room=channel)
 
 if __name__ == '__main__':
     init_db()
