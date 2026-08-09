@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.8.2
+
+### Added
+- **The emoji picker's search box now actually works.** Typing filters live across every category at once (so "cat" finds 🐱 even while the Food tab is showing) and matches your custom emojis by name too. Previously the search field was just a dead input. Emoji are matched against ~830 generated keyword names (e.g. 😍 → "smiling face with heart-eyes"), so search understands plain-English terms rather than the raw characters.
+
 ## 2.8.1
 
 ### Fixed

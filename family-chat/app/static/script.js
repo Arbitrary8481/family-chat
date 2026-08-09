@@ -18,6 +18,10 @@ let currentChannel = getStoredChannel() || window.DEFAULT_CHANNEL || 'general';
 let selectedFile = null;
 let customEmojis = {};
 let recentEmojis = JSON.parse(localStorage.getItem('recentEmojis') || '[]');
+// Which emoji tab is currently selected — restored when a search is
+// cleared, since a search temporarily takes over the grid regardless of
+// which tab is active.
+let currentEmojiCategory = 'recent';
 // Which message (if any) the emoji picker is currently choosing a
 // reaction for. null means it's in its normal "insert into the
 // composer" mode. Set by openReactionPicker(), cleared whenever the
@@ -30,6 +34,45 @@ const emojiCategories = {
     nature: ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐽','🐸','🐵','🙈','🙉','🙊','🐒','🐔','🐧','🐦','🐤','🐣','🐥','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🐛','🦋','🐌','🐞','🐜','🦟','🦗','🕷️','🕸️','🦂','🐢','🐍','🦎','🦖','🦕','🐙','🦑','🦐','🦞','🦀','🐡','🐠','🐟','🐬','🐳','🐋','🦈','🐊','🐅','🐆','🦓','🦍','🦧','🐘','🦛','🦏','🐪','🐫','🦒','🦘','🐃','🐂','🐄','🐎','🐖','🐏','🐑','🦙','🐐','🦌','🐕','🐩','🦮','🐕‍🦺','🐈','🐈‍⬛','🐓','🦃','🦚','🦜','🦢','🦩','🕊️','🐇','🦝','🦨','🦡','🦦','🦥','🐁','🐀','🐿️','🦔','🐾','🐉','🐲','🌵','🎄','🌲','🌳','🌴','🌱','🌿','☘️','🍀','🎍','🎋','🍃','🍂','🍁','🍄','🐚','🌾','💐','🌷','🌹','🥀','🌺','🌸','🌼','🌻','🌞','🌝','🌛','🌜','🌚','🌕','🌖','🌗','🌘','🌑','🌒','🌓','🌔','🌙','🌎','🌍','🌏','🪐','💫','⭐','🌟','✨','⚡','🔥','💥','☄️','☀️','🌤️','⛅','🌥️','🌦️','🌈','☁️','🌧️','⛈️','🌩️','🌨️','❄️','☃️','⛄','🌬️','💨','💧','💦','☔','☂️','🌊','🌫️'],
     food: ['🍏','🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🍈','🍒','🍑','🍍','🥝','🥥','🥑','🍆','🍅','🌶️','🥒','🥬','🥦','🧄','🧅','🍄','🥜','🌰','🍞','🥐','🥖','🥨','🥯','🥞','🧇','🧀','🍖','🍗','🥩','🥓','🍔','🍟','🍕','🌭','🥪','🌮','🌯','🥙','🧆','🥚','🍳','🥘','🍲','🥣','🥗','🍿','🧈','🧂','🥫','🍱','🍘','🍙','🍚','🍛','🍜','🍝','🍠','🍢','🍣','🍤','🍥','🍡','🍦','🍧','🍨','🍩','🍪','🎂','🍰','🧁','🥧','🍫','🍬','🍭','🍮','🍯','🍼','🥛','☕','🍵','🧃','🥤','🍶','🍺','🍻','🥂','🍷','🥃','🍸','🍹','🧉','🍾','🧊','🥄','🍴','🍽️','🥣','🥡','🥢','🧂'],
     activities: ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🪀','🏓','🏸','🏒','🏑','🥍','🏏','🥅','⛳','🪁','🏹','🎣','🤿','🥊','🥋','🎽','🛹','🛷','⛸️','🥌','🎿','⛷️','🏂','🏋️','🤼','🤽','🤾','🤺','🏇','⛷️','🏂','🏌️','🏄','🚣','🏊','⛹️','🏋️','🚴','🚵','🎽','🎿','🛷','🥅','⛳','🎣','🎽','🎿','🎯','🎱','🔮','🧿','🎮','🕹️','🎰','🎲','🧩','🧸','🪅','🪆','♠️','♥️','♦️','♣️','♟️','🃏','🀄','🎴','🎭','🖼️','🎨','🧵','🧶','🥼','🥽','🥾','🥿','👟','👞','🥾','🥿','👠','👡','👢','👑','👒','🎩','🎓','🧢','⛑️','📿','💄','💍','💎','🔇','🔈','🔉','🔊','📢','📣','📯','🔔','🔕','🎼','🎵','🎶','🎙️','🎚️','🎛️','🎤','🎧','📻','🎷','🎸','🎹','🎺','🎻','🪕','🥁','📱','📲','☎️','📞','📟','📠','🔋','🔌','💻','🖥️','🖨️','⌨️','🖱️','🖲️','💽','💾','💿','📀','🧮','🎥','🎞️','📽️','🎬','📺','📷','📸','📹','📼','🔍','🔎','🕯️','💡','🔦','🏮','🪔','📔','📕','📖','📗','📘','📙','📚','📓','📒','📃','📜','📄','📰','🗞️','📑','🔖','🏷️','💰','🪙','💴','💵','💶','💷','💸','💳','🧾','💹','✉️','📧','📨','📩','📤','📥','📦','📫','📪','📬','📭','📮','🗳️','✏️','✒️','🖋️','🖊️','🖌️','🖍️','📝','💼','📁','📂','🗂️','📅','📆','🗒️','🗓️','📇','📈','📉','📊','📋','📌','📍','📎','🖇️','📏','📐','✂️','🗃️','🗄️','🗑️','🔒','🔓','🔏','🔐','🔑','🗝️','🔨','🪓','⛏️','⚒️','🛠️','🗡️','⚔️','🔫','🏹','🛡️','🔧','🔩','⚙️','🗜️','⚖️','🦯','🔗','⛓️','🧰','🧲','🧪','🧫','🧬','🔬','🔭','📡','💉','🩸','💊','🩹','🩺','🌡️','🚽','🚰','🚿','🛁','🛀','🧴','🧷','🧹','🧺','🧻','🧼','🧽','🧯','🛒','🚬','⚰️','⚱️','🗿','🚂','🚃','🚄','🚅','🚆','🚇','🚈','🚉','🚊','🚝','🚞','🚋','🚌','🚍','🚎','🚐','🚑','🚒','🚓','🚔','🚕','🚖','🚗','🚘','🚙','🚚','🚛','🚜','🏎️','🏍️','🛵','🦽','🦼','🛺','🚲','🛴','🛹','🛼','🚏','🛣️','🛤️','🛢️','⛽','🚨','🚥','🚦','🛑','🚧','⚓','⛵','🛶','🚤','🛳️','⛴️','🚢','✈️','🛩️','🛫','🛬','🪂','💺','🚁','🚟','🚠','🚡','🛰️','🚀','🛸','🛎️','🧳','⌛','⏳','⌚','⏰','⏱️','⏲️','🕰️','🕛','🕧','🕐','🕜','🕑','🕝','🕒','🕞','🕓','🕟','🕔','🕠','🕕','🕡','🕖','🕢','🕗','🕣','🕘','🕤','🕙','🕥','🕚','🕦','🌑','🌒','🌓','🌔','🌕','🌖','🌗','🌘','🌙','🌚','🌛','🌜','🌡️','☀️','🌝','🌞','🪐','⭐','🌟','🌠','🌌','☁️','⛅','⛈️','🌤️','🌥️','🌦️','🌧️','🌨️','🌩️','🌪️','🌫️','🌬️','🌀','🌈','🌂','☂️','☔','⛱️','⚡','❄️','☃️','⛄','☄️','🔥','💧','🌊']
+};
+
+// Searchable names for the unicode emoji above (generated from the
+// `emoji` Python package's canonical CLDR short names), so the search
+// box has something meaningful to match against — the raw characters
+// themselves obviously aren't searchable text.
+const emojiNames = {
+'😀':'grinning face','😃':'grinning face with big eyes','😄':'grinning face with smiling eyes','😁':'beaming face with smiling eyes','😅':'grinning face with sweat','😂':'face with tears of joy','🤣':'rolling on the floor laughing','😊':'smiling face with smiling eyes','😇':'smiling face with halo','🙂':'slightly smiling face','🙃':'upside-down face','😉':'winking face','😌':'relieved face','😍':'smiling face with heart-eyes','🥰':'smiling face with hearts','😘':'face blowing a kiss','😗':'kissing face',
+'😙':'kissing face with smiling eyes','😚':'kissing face with closed eyes','😋':'face savoring food','😛':'face with tongue','😝':'squinting face with tongue','😜':'winking face with tongue','🤪':'zany face','🤨':'face with raised eyebrow','🧐':'face with monocle','🤓':'nerd face','😎':'smiling face with sunglasses','🥸':'disguised face','🤩':'star-struck','🥳':'partying face','😏':'smirking face','😒':'unamused face','😞':'disappointed face','😔':'pensive face','😟':'worried face','😕':'confused face',
+'🙁':'slightly frowning face','☹️':'frowning face','😣':'persevering face','😖':'confounded face','😫':'tired face','😩':'weary face','🥺':'pleading face','😢':'crying face','😭':'loudly crying face','😤':'face with steam from nose','😠':'angry face','😡':'enraged face','🤬':'face with symbols on mouth','🤯':'exploding head','😳':'flushed face','🥵':'hot face','🥶':'cold face','😱':'face screaming in fear','😨':'fearful face','😰':'anxious face with sweat','😥':'sad but relieved face','😓':'downcast face with sweat',
+'🤗':'smiling face with open hands','🤔':'thinking face','🤭':'face with hand over mouth','🤫':'shushing face','🤥':'lying face','😶':'face without mouth','😐':'neutral face','😑':'expressionless face','😬':'grimacing face','🙄':'face with rolling eyes','😯':'hushed face','😦':'frowning face with open mouth','😧':'anguished face','😮':'face with open mouth','😲':'astonished face','🥱':'yawning face','😴':'sleeping face','🤤':'drooling face','😪':'sleepy face','😵':'face with crossed-out eyes','🤐':'zipper-mouth face',
+'🥴':'woozy face','🤢':'nauseated face','🤮':'face vomiting','🤧':'sneezing face','😷':'face with medical mask','🤒':'face with thermometer','🤕':'face with head-bandage','🤑':'money-mouth face','🤠':'cowboy hat face','😈':'smiling face with horns','👿':'angry face with horns','👹':'ogre','👺':'goblin','🤡':'clown face','💩':'pile of poo','👻':'ghost','💀':'skull','☠️':'skull and crossbones','👽':'alien','👾':'alien monster','🤖':'robot','🎃':'jack-o-lantern','😺':'grinning cat','😸':'grinning cat with smiling eyes',
+'😹':'cat with tears of joy','😻':'smiling cat with heart-eyes','😼':'cat with wry smile','😽':'kissing cat','🙀':'weary cat','😿':'crying cat','😾':'pouting cat','🤲':'palms up together','👐':'open hands','🙌':'raising hands','👏':'clapping hands','🤝':'handshake','👍':'thumbs up','👎':'thumbs down','👊':'oncoming fist','✊':'raised fist','🤛':'left-facing fist','🤜':'right-facing fist','🤞':'crossed fingers','✌️':'victory hand','🤟':'love-you gesture','🤘':'sign of the horns','👌':'OK hand','🤏':'pinching hand',
+'👈':'backhand index pointing left','👉':'backhand index pointing right','👆':'backhand index pointing up','👇':'backhand index pointing down','☝️':'index pointing up','✋':'raised hand','🤚':'raised back of hand','🖐️':'hand with fingers splayed','🖖':'vulcan salute','👋':'waving hand','🤙':'call me hand','💪':'flexed biceps','🦾':'mechanical arm','🖕':'middle finger','✍️':'writing hand','🙏':'folded hands','🦶':'foot','🦵':'leg','🦿':'mechanical leg','💄':'lipstick','💋':'kiss mark','👄':'mouth',
+'🦷':'tooth','👅':'tongue','👂':'ear','🦻':'ear with hearing aid','👃':'nose','👣':'footprints','👁️':'eye','👀':'eyes','🧠':'brain','🫀':'anatomical heart','🫁':'lungs','🦴':'bone','🐶':'dog face','🐱':'cat face','🐭':'mouse face','🐹':'hamster','🐰':'rabbit face','🦊':'fox','🐻':'bear','🐼':'panda','🐨':'koala','🐯':'tiger face','🦁':'lion','🐮':'cow face','🐷':'pig face','🐽':'pig nose','🐸':'frog','🐵':'monkey face','🙈':'see-no-evil monkey','🙉':'hear-no-evil monkey','🙊':'speak-no-evil monkey',
+'🐒':'monkey','🐔':'chicken','🐧':'penguin','🐦':'bird','🐤':'baby chick','🐣':'hatching chick','🐥':'front-facing baby chick','🦆':'duck','🦅':'eagle','🦉':'owl','🦇':'bat','🐺':'wolf','🐗':'boar','🐴':'horse face','🦄':'unicorn','🐝':'honeybee','🐛':'bug','🦋':'butterfly','🐌':'snail','🐞':'lady beetle','🐜':'ant','🦟':'mosquito','🦗':'cricket','🕷️':'spider','🕸️':'spider web','🦂':'scorpion','🐢':'turtle','🐍':'snake','🦎':'lizard','🦖':'T-Rex','🦕':'sauropod','🐙':'octopus','🦑':'squid','🦐':'shrimp',
+'🦞':'lobster','🦀':'crab','🐡':'blowfish','🐠':'tropical fish','🐟':'fish','🐬':'dolphin','🐳':'spouting whale','🐋':'whale','🦈':'shark','🐊':'crocodile','🐅':'tiger','🐆':'leopard','🦓':'zebra','🦍':'gorilla','🦧':'orangutan','🐘':'elephant','🦛':'hippopotamus','🦏':'rhinoceros','🐪':'camel','🐫':'two-hump camel','🦒':'giraffe','🦘':'kangaroo','🐃':'water buffalo','🐂':'ox','🐄':'cow','🐎':'horse','🐖':'pig','🐏':'ram','🐑':'ewe','🦙':'llama','🐐':'goat','🦌':'deer','🐕':'dog','🐩':'poodle','🦮':'guide dog',
+'🐕‍🦺':'service dog','🐈':'cat','🐈‍⬛':'black cat','🐓':'rooster','🦃':'turkey','🦚':'peacock','🦜':'parrot','🦢':'swan','🦩':'flamingo','🕊️':'dove','🐇':'rabbit','🦝':'raccoon','🦨':'skunk','🦡':'badger','🦦':'otter','🦥':'sloth','🐁':'mouse','🐀':'rat','🐿️':'chipmunk','🦔':'hedgehog','🐾':'paw prints','🐉':'dragon','🐲':'dragon face','🌵':'cactus','🎄':'Christmas tree','🌲':'evergreen tree','🌳':'deciduous tree','🌴':'palm tree','🌱':'seedling','🌿':'herb','☘️':'shamrock','🍀':'four leaf clover',
+'🎍':'pine decoration','🎋':'tanabata tree','🍃':'leaf fluttering in wind','🍂':'fallen leaf','🍁':'maple leaf','🍄':'mushroom','🐚':'spiral shell','🌾':'sheaf of rice','💐':'bouquet','🌷':'tulip','🌹':'rose','🥀':'wilted flower','🌺':'hibiscus','🌸':'cherry blossom','🌼':'blossom','🌻':'sunflower','🌞':'sun with face','🌝':'full moon face','🌛':'first quarter moon face','🌜':'last quarter moon face','🌚':'new moon face','🌕':'full moon','🌖':'waning gibbous moon','🌗':'last quarter moon','🌘':'waning crescent moon',
+'🌑':'new moon','🌒':'waxing crescent moon','🌓':'first quarter moon','🌔':'waxing gibbous moon','🌙':'crescent moon','🌎':'globe showing Americas','🌍':'globe showing Europe-Africa','🌏':'globe showing Asia-Australia','🪐':'ringed planet','💫':'dizzy','⭐':'star','🌟':'glowing star','✨':'sparkles','⚡':'high voltage','🔥':'fire','💥':'collision','☄️':'comet','☀️':'sun','🌤️':'sun behind small cloud','⛅':'sun behind cloud','🌥️':'sun behind large cloud','🌦️':'sun behind rain cloud','🌈':'rainbow',
+'☁️':'cloud','🌧️':'cloud with rain','⛈️':'cloud with lightning and rain','🌩️':'cloud with lightning','🌨️':'cloud with snow','❄️':'snowflake','☃️':'snowman','⛄':'snowman without snow','🌬️':'wind face','💨':'dashing away','💧':'droplet','💦':'sweat droplets','☔':'umbrella with rain drops','☂️':'umbrella','🌊':'water wave','🌫️':'fog','🍏':'green apple','🍎':'red apple','🍐':'pear','🍊':'tangerine','🍋':'lemon','🍌':'banana','🍉':'watermelon','🍇':'grapes','🍓':'strawberry','🍈':'melon','🍒':'cherries',
+'🍑':'peach','🍍':'pineapple','🥝':'kiwi fruit','🥥':'coconut','🥑':'avocado','🍆':'eggplant','🍅':'tomato','🌶️':'hot pepper','🥒':'cucumber','🥬':'leafy green','🥦':'broccoli','🧄':'garlic','🧅':'onion','🥜':'peanuts','🌰':'chestnut','🍞':'bread','🥐':'croissant','🥖':'baguette bread','🥨':'pretzel','🥯':'bagel','🥞':'pancakes','🧇':'waffle','🧀':'cheese wedge','🍖':'meat on bone','🍗':'poultry leg','🥩':'cut of meat','🥓':'bacon','🍔':'hamburger','🍟':'french fries','🍕':'pizza','🌭':'hot dog',
+'🥪':'sandwich','🌮':'taco','🌯':'burrito','🥙':'stuffed flatbread','🧆':'falafel','🥚':'egg','🍳':'cooking','🥘':'shallow pan of food','🍲':'pot of food','🥣':'bowl with spoon','🥗':'green salad','🍿':'popcorn','🧈':'butter','🧂':'salt','🥫':'canned food','🍱':'bento box','🍘':'rice cracker','🍙':'rice ball','🍚':'cooked rice','🍛':'curry rice','🍜':'steaming bowl','🍝':'spaghetti','🍠':'roasted sweet potato','🍢':'oden','🍣':'sushi','🍤':'fried shrimp','🍥':'fish cake with swirl','🍡':'dango','🍦':'soft ice cream',
+'🍧':'shaved ice','🍨':'ice cream','🍩':'doughnut','🍪':'cookie','🎂':'birthday cake','🍰':'shortcake','🧁':'cupcake','🥧':'pie','🍫':'chocolate bar','🍬':'candy','🍭':'lollipop','🍮':'custard','🍯':'honey pot','🍼':'baby bottle','🥛':'glass of milk','☕':'hot beverage','🍵':'teacup without handle','🧃':'beverage box','🥤':'cup with straw','🍶':'sake','🍺':'beer mug','🍻':'clinking beer mugs','🥂':'clinking glasses','🍷':'wine glass','🥃':'tumbler glass','🍸':'cocktail glass','🍹':'tropical drink',
+'🧉':'mate','🍾':'bottle with popping cork','🧊':'ice','🥄':'spoon','🍴':'fork and knife','🍽️':'fork and knife with plate','🥡':'takeout box','🥢':'chopsticks','⚽':'soccer ball','🏀':'basketball','🏈':'american football','⚾':'baseball','🥎':'softball','🎾':'tennis','🏐':'volleyball','🏉':'rugby football','🥏':'flying disc','🎱':'pool 8 ball','🪀':'yo-yo','🏓':'ping pong','🏸':'badminton','🏒':'ice hockey','🏑':'field hockey','🥍':'lacrosse','🏏':'cricket game','🥅':'goal net','⛳':'flag in hole',
+'🪁':'kite','🏹':'bow and arrow','🎣':'fishing pole','🤿':'diving mask','🥊':'boxing glove','🥋':'martial arts uniform','🎽':'running shirt','🛹':'skateboard','🛷':'sled','⛸️':'ice skate','🥌':'curling stone','🎿':'skis','⛷️':'skier','🏂':'snowboarder','🏋️':'person lifting weights','🤼':'people wrestling','🤽':'person playing water polo','🤾':'person playing handball','🤺':'person fencing','🏇':'horse racing','🏌️':'person golfing','🏄':'person surfing','🚣':'person rowing boat','🏊':'person swimming',
+'⛹️':'person bouncing ball','🚴':'person biking','🚵':'person mountain biking','🎯':'bullseye','🔮':'crystal ball','🧿':'nazar amulet','🎮':'video game','🕹️':'joystick','🎰':'slot machine','🎲':'game die','🧩':'puzzle piece','🧸':'teddy bear','🪅':'piñata','🪆':'nesting dolls','♠️':'spade suit','♥️':'heart suit','♦️':'diamond suit','♣️':'club suit','♟️':'chess pawn','🃏':'joker','🀄':'mahjong red dragon','🎴':'flower playing cards','🎭':'performing arts','🖼️':'framed picture','🎨':'artist palette',
+'🧵':'thread','🧶':'yarn','🥼':'lab coat','🥽':'goggles','🥾':'hiking boot','🥿':'flat shoe','👟':'running shoe','👞':'man’s shoe','👠':'high-heeled shoe','👡':'woman’s sandal','👢':'woman’s boot','👑':'crown','👒':'woman’s hat','🎩':'top hat','🎓':'graduation cap','🧢':'billed cap','⛑️':'rescue worker’s helmet','📿':'prayer beads','💍':'ring','💎':'gem stone','🔇':'muted speaker','🔈':'speaker low volume','🔉':'speaker medium volume','🔊':'speaker high volume','📢':'loudspeaker','📣':'megaphone',
+'📯':'postal horn','🔔':'bell','🔕':'bell with slash','🎼':'musical score','🎵':'musical note','🎶':'musical notes','🎙️':'studio microphone','🎚️':'level slider','🎛️':'control knobs','🎤':'microphone','🎧':'headphone','📻':'radio','🎷':'saxophone','🎸':'guitar','🎹':'musical keyboard','🎺':'trumpet','🎻':'violin','🪕':'banjo','🥁':'drum','📱':'mobile phone','📲':'mobile phone with arrow','☎️':'telephone','📞':'telephone receiver','📟':'pager','📠':'fax machine','🔋':'battery','🔌':'electric plug',
+'💻':'laptop','🖥️':'desktop computer','🖨️':'printer','⌨️':'keyboard','🖱️':'computer mouse','🖲️':'trackball','💽':'computer disk','💾':'floppy disk','💿':'optical disk','📀':'dvd','🧮':'abacus','🎥':'movie camera','🎞️':'film frames','📽️':'film projector','🎬':'clapper board','📺':'television','📷':'camera','📸':'camera with flash','📹':'video camera','📼':'videocassette','🔍':'magnifying glass tilted left','🔎':'magnifying glass tilted right','🕯️':'candle','💡':'light bulb','🔦':'flashlight',
+'🏮':'red paper lantern','🪔':'diya lamp','📔':'notebook with decorative cover','📕':'closed book','📖':'open book','📗':'green book','📘':'blue book','📙':'orange book','📚':'books','📓':'notebook','📒':'ledger','📃':'page with curl','📜':'scroll','📄':'page facing up','📰':'newspaper','🗞️':'rolled-up newspaper','📑':'bookmark tabs','🔖':'bookmark','🏷️':'label','💰':'money bag','🪙':'coin','💴':'yen banknote','💵':'dollar banknote','💶':'euro banknote','💷':'pound banknote','💸':'money with wings',
+'💳':'credit card','🧾':'receipt','💹':'chart increasing with yen','✉️':'envelope','📧':'e-mail','📨':'incoming envelope','📩':'envelope with arrow','📤':'outbox tray','📥':'inbox tray','📦':'package','📫':'closed mailbox with raised flag','📪':'closed mailbox with lowered flag','📬':'open mailbox with raised flag','📭':'open mailbox with lowered flag','📮':'postbox','🗳️':'ballot box with ballot','✏️':'pencil','✒️':'black nib','🖋️':'fountain pen','🖊️':'pen','🖌️':'paintbrush','🖍️':'crayon',
+'📝':'memo','💼':'briefcase','📁':'file folder','📂':'open file folder','🗂️':'card index dividers','📅':'calendar','📆':'tear-off calendar','🗒️':'spiral notepad','🗓️':'spiral calendar','📇':'card index','📈':'chart increasing','📉':'chart decreasing','📊':'bar chart','📋':'clipboard','📌':'pushpin','📍':'round pushpin','📎':'paperclip','🖇️':'linked paperclips','📏':'straight ruler','📐':'triangular ruler','✂️':'scissors','🗃️':'card file box','🗄️':'file cabinet','🗑️':'wastebasket','🔒':'locked',
+'🔓':'unlocked','🔏':'locked with pen','🔐':'locked with key','🔑':'key','🗝️':'old key','🔨':'hammer','🪓':'axe','⛏️':'pick','⚒️':'hammer and pick','🛠️':'hammer and wrench','🗡️':'dagger','⚔️':'crossed swords','🔫':'water pistol','🛡️':'shield','🔧':'wrench','🔩':'nut and bolt','⚙️':'gear','🗜️':'clamp','⚖️':'balance scale','🦯':'white cane','🔗':'link','⛓️':'chains','🧰':'toolbox','🧲':'magnet','🧪':'test tube','🧫':'petri dish','🧬':'dna','🔬':'microscope','🔭':'telescope','📡':'satellite antenna',
+'💉':'syringe','🩸':'drop of blood','💊':'pill','🩹':'adhesive bandage','🩺':'stethoscope','🌡️':'thermometer','🚽':'toilet','🚰':'potable water','🚿':'shower','🛁':'bathtub','🛀':'person taking bath','🧴':'lotion bottle','🧷':'safety pin','🧹':'broom','🧺':'basket','🧻':'roll of paper','🧼':'soap','🧽':'sponge','🧯':'fire extinguisher','🛒':'shopping cart','🚬':'cigarette','⚰️':'coffin','⚱️':'funeral urn','🗿':'moai','🚂':'locomotive','🚃':'railway car','🚄':'high-speed train','🚅':'bullet train',
+'🚆':'train','🚇':'metro','🚈':'light rail','🚉':'station','🚊':'tram','🚝':'monorail','🚞':'mountain railway','🚋':'tram car','🚌':'bus','🚍':'oncoming bus','🚎':'trolleybus','🚐':'minibus','🚑':'ambulance','🚒':'fire engine','🚓':'police car','🚔':'oncoming police car','🚕':'taxi','🚖':'oncoming taxi','🚗':'automobile','🚘':'oncoming automobile','🚙':'sport utility vehicle','🚚':'delivery truck','🚛':'articulated lorry','🚜':'tractor','🏎️':'racing car','🏍️':'motorcycle','🛵':'motor scooter','🦽':'manual wheelchair',
+'🦼':'motorized wheelchair','🛺':'auto rickshaw','🚲':'bicycle','🛴':'kick scooter','🛼':'roller skate','🚏':'bus stop','🛣️':'motorway','🛤️':'railway track','🛢️':'oil drum','⛽':'fuel pump','🚨':'police car light','🚥':'horizontal traffic light','🚦':'vertical traffic light','🛑':'stop sign','🚧':'construction','⚓':'anchor','⛵':'sailboat','🛶':'canoe','🚤':'speedboat','🛳️':'passenger ship','⛴️':'ferry','🚢':'ship','✈️':'airplane','🛩️':'small airplane','🛫':'airplane departure','🛬':'airplane arrival',
+'🪂':'parachute','💺':'seat','🚁':'helicopter','🚟':'suspension railway','🚠':'mountain cableway','🚡':'aerial tramway','🛰️':'satellite','🚀':'rocket','🛸':'flying saucer','🛎️':'bellhop bell','🧳':'luggage','⌛':'hourglass done','⏳':'hourglass not done','⌚':'watch','⏰':'alarm clock','⏱️':'stopwatch','⏲️':'timer clock','🕰️':'mantelpiece clock','🕛':'twelve o’clock','🕧':'twelve-thirty','🕐':'one o’clock','🕜':'one-thirty','🕑':'two o’clock','🕝':'two-thirty','🕒':'three o’clock','🕞':'three-thirty',
+'🕓':'four o’clock','🕟':'four-thirty','🕔':'five o’clock','🕠':'five-thirty','🕕':'six o’clock','🕡':'six-thirty','🕖':'seven o’clock','🕢':'seven-thirty','🕗':'eight o’clock','🕣':'eight-thirty','🕘':'nine o’clock','🕤':'nine-thirty','🕙':'ten o’clock','🕥':'ten-thirty','🕚':'eleven o’clock','🕦':'eleven-thirty','🌠':'shooting star','🌌':'milky way','🌪️':'tornado','🌀':'cyclone','🌂':'closed umbrella','⛱️':'umbrella on ground'
 };
 
 // Initialize everything after DOM is ready.
@@ -202,7 +245,13 @@ function initializeChat() {
         });
     });
     
+    currentEmojiCategory = 'people';
     loadEmojiCategory('people');
+
+    const emojiSearchInput = document.getElementById('emojiSearch');
+    if (emojiSearchInput) {
+        emojiSearchInput.addEventListener('input', () => searchEmojis(emojiSearchInput.value));
+    }
 }
 
 function sendMessageClick() {
@@ -467,6 +516,11 @@ function toggleEmojiPicker() {
     resetEmojiPickerPosition();
     emojiPickerContext = null;
     picker.classList.remove('hidden');
+    // Clears any leftover search text/results from a previous open (e.g.
+    // if it was last used as a reaction picker) so it comes back showing
+    // whichever tab was last selected.
+    clearEmojiSearchInput();
+    switchEmojiTabProgrammatic(currentEmojiCategory);
 }
 
 function resetEmojiPickerPosition() {
@@ -490,6 +544,8 @@ function hideEmojiPicker() {
 function switchEmojiTab(category) {
     document.querySelectorAll('.emoji-tab').forEach(t => t.classList.remove('active'));
     if (event && event.target) event.target.classList.add('active');
+    currentEmojiCategory = category;
+    clearEmojiSearchInput();
     loadEmojiCategory(category);
 }
 
@@ -501,10 +557,19 @@ function loadEmojiCategory(category) {
     let emojis = [];
     if (category === 'recent') {
         emojis = recentEmojis;
+        if (emojis.length === 0) {
+            grid.innerHTML = '<div class="emoji-empty">No recent emoji yet</div>';
+            return;
+        }
     } else if (category === 'custom') {
+        if (Object.keys(customEmojis).length === 0) {
+            grid.innerHTML = '<div class="emoji-empty">No custom emojis yet</div>';
+            return;
+        }
         Object.entries(customEmojis).forEach(([name, url]) => {
             const item = document.createElement('div');
             item.className = 'emoji-item';
+            item.title = name;
             item.innerHTML = `<img src="${safeUrl(resolveUrl(url))}" alt="${escapeHtml(name)}" style="width: 28px; height: 28px;">`;
             item.onclick = () => insertEmoji(name);
             grid.appendChild(item);
@@ -518,7 +583,76 @@ function loadEmojiCategory(category) {
         const item = document.createElement('div');
         item.className = 'emoji-item';
         item.textContent = emoji;
+        item.title = emojiNames[emoji] || '';
         item.onclick = () => insertEmoji(emoji);
+        grid.appendChild(item);
+    });
+}
+
+function clearEmojiSearchInput() {
+    const searchInput = document.getElementById('emojiSearch');
+    if (searchInput) searchInput.value = '';
+}
+
+// Live filter as the person types. Unicode emoji are matched against the
+// generated `emojiNames` labels (the characters themselves aren't
+// searchable text); custom emojis are matched against their :name:.
+// Matches are pooled across every category at once rather than just
+// whichever tab happens to be selected — that's what makes typing
+// "cat" find 🐱 even while the Food tab is showing.
+function searchEmojis(query) {
+    const grid = document.getElementById('emojiGrid');
+    if (!grid) return;
+    const q = query.trim().toLowerCase();
+
+    if (!q) {
+        document.querySelectorAll('.emoji-tab').forEach(t => t.classList.remove('active'));
+        const activeTab = document.querySelector(`.emoji-tab[onclick="switchEmojiTab('${currentEmojiCategory}')"]`);
+        if (activeTab) activeTab.classList.add('active');
+        loadEmojiCategory(currentEmojiCategory);
+        return;
+    }
+
+    document.querySelectorAll('.emoji-tab').forEach(t => t.classList.remove('active'));
+    grid.innerHTML = '';
+
+    const seen = new Set();
+    const matches = [];
+    Object.values(emojiCategories).forEach(list => {
+        list.forEach(emoji => {
+            if (seen.has(emoji)) return;
+            const name = emojiNames[emoji];
+            if (name && name.includes(q)) {
+                seen.add(emoji);
+                matches.push({ type: 'unicode', emoji, name });
+            }
+        });
+    });
+    Object.entries(customEmojis).forEach(([name, url]) => {
+        if (name.replace(/:/g, '').toLowerCase().includes(q)) {
+            matches.push({ type: 'custom', name, url });
+        }
+    });
+
+    if (matches.length === 0) {
+        grid.innerHTML = '<div class="emoji-empty">No emoji found</div>';
+        return;
+    }
+
+    // Cap results so an extremely broad query (e.g. a single common
+    // letter) doesn't render hundreds of grid items at once.
+    matches.slice(0, 200).forEach(match => {
+        const item = document.createElement('div');
+        item.className = 'emoji-item';
+        if (match.type === 'unicode') {
+            item.textContent = match.emoji;
+            item.title = match.name;
+            item.onclick = () => insertEmoji(match.emoji);
+        } else {
+            item.title = match.name;
+            item.innerHTML = `<img src="${safeUrl(resolveUrl(match.url))}" alt="${escapeHtml(match.name)}" style="width: 28px; height: 28px;">`;
+            item.onclick = () => insertEmoji(match.name);
+        }
         grid.appendChild(item);
     });
 }
@@ -834,8 +968,7 @@ function openReactionPicker(messageId, btnEl) {
     picker.style.right = 'auto';
     picker.style.bottom = 'auto';
 
-    const searchInput = document.getElementById('emojiSearch');
-    if (searchInput) searchInput.value = '';
+    clearEmojiSearchInput();
     switchEmojiTabProgrammatic('recent');
 }
 
@@ -846,6 +979,7 @@ function switchEmojiTabProgrammatic(category) {
     document.querySelectorAll('.emoji-tab').forEach(t => t.classList.remove('active'));
     const tab = document.querySelector(`.emoji-tab[onclick="switchEmojiTab('${category}')"]`);
     if (tab) tab.classList.add('active');
+    currentEmojiCategory = category;
     loadEmojiCategory(category);
 }
 

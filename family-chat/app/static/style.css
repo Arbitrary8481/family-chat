@@ -738,6 +738,14 @@ body {
     transform: scale(1.2);
 }
 
+.emoji-empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+    padding: 24px 12px;
+}
+
 /* GIF Picker */
 .gif-picker {
     position: absolute;
