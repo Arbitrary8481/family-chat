@@ -1,23 +1,4 @@
 #!/usr/bin/env python3
-# eventlet.monkey_patch() has to run before anything else imports the
-# stdlib modules it patches (socket, select, ssl, os, threading, time,
-# ...) — importing e.g. sqlite3 or urllib first would leave those
-# holding references to the real, blocking implementations, defeating
-# the patch for exactly the code that needs it most. This was missing
-# entirely before despite async_mode='eventlet' being requested below,
-# which is a real bug, not a stylistic nicety: without it, ANY blocking
-# call anywhere in a request (a GIPHY search, a Home Assistant
-# notification call, even just serving a file from /uploads/) stalls
-# the single OS thread this whole process runs on — not just that one
-# request, every connected client's request, including everyone else's
-# in-flight image loads. A full page refresh fires off many concurrent
-# /uploads/* requests at once; if the process happens to be mid-stall
-# from something else at that moment, a whole batch of them can time
-# out together, which is exactly "images inconsistently fail to load,
-# all at once, varying by refresh."
-import eventlet
-eventlet.monkey_patch()
-
 import asyncio
 import functools
 import hmac
@@ -48,9 +29,23 @@ logging.basicConfig(
 logger = logging.getLogger('family_chat')
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
+# async_mode='threading' — was 'eventlet' (green threads, requiring
+# eventlet.monkey_patch() at the very top of this file to make blocking
+# calls like sqlite3/urllib cooperative). Eventlet is now
+# maintenance-only upstream and its own docs recommend new/ongoing
+# projects move off it. 'threading' gets the same practical property —
+# one slow request (a GIPHY search, a Home Assistant notification call)
+# doesn't stall every other connected client's requests — using real OS
+# threads instead: CPython releases the GIL during blocking I/O, so
+# other threads keep running regardless. No monkey-patching, no
+# eventlet dependency, nothing implicitly relying on every stdlib call
+# behaving differently than it looks like it does. The tradeoff is
+# lower scalability under very high concurrent connection counts, which
+# doesn't apply here — this is a family chat add-on, not a
+# many-thousands-of-users service.
 # logger=True surfaces Socket.IO's own connect/disconnect/event activity in
 # the log too, which is useful context alongside our own error logging below.
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet', logger=True)
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', logger=True)
 
 # Home Assistant writes add-on options to /data/options.json regardless of
 # base image. This app never read it (run.sh just hardcoded env vars
@@ -1504,4 +1499,15 @@ def handle_delete_message(data):
 
 if __name__ == '__main__':
     init_db()
-    socketio.run(app, host='0.0.0.0', port=8099, debug=False)
+    # threading mode's server is Werkzeug's own — Flask-SocketIO refuses
+    # to start it without this flag, since Werkzeug's server isn't
+    # hardened for handling untrusted traffic directly (no protection
+    # against slow/malformed-request attacks, no production-grade
+    # connection handling). That's an acceptable tradeoff specifically
+    # here: this add-on is never reached directly — Home Assistant's own
+    # ingress proxy is the only thing that ever talks to it (see
+    # config.yaml: ingress-only, no direct port mapping), and that
+    # proxy is the actual internet/LAN-facing component handling
+    # untrusted traffic. If that ever changes (a direct port mapping
+    # gets added), this stops being a safe assumption.
+    socketio.run(app, host='0.0.0.0', port=8099, debug=False, allow_unsafe_werkzeug=True)

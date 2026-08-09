@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.20.0
+
+### Changed
+- **Migrated off eventlet entirely**, in favor of Flask-SocketIO's `threading` async mode. Eventlet is maintenance-only upstream (security/bugfixes only, no new features, and its own docs recommend new/ongoing projects avoid it) — this app now uses real OS threads instead of eventlet's green threads to get the same practical property (a slow request doesn't stall every other connected client), with no monkey-patching and no eventlet dependency at all. Verified with a live server boot, a genuine concurrency test (a 2-second slow request run alongside a fast one, confirming the fast one isn't blocked), and a real Socket.IO client connecting, joining a room, and successfully upgrading to a live WebSocket transport — all in a clean environment with eventlet not even installed.
+- One tradeoff that comes with this: threading mode runs on Werkzeug's own server rather than a dedicated production WSGI server, which normally isn't recommended for handling untrusted traffic directly. That's an acceptable trade here specifically because this add-on is never reached directly — Home Assistant's ingress proxy is the only thing that ever talks to it (no direct port mapping — see config.yaml), and that proxy is the actual internet/LAN-facing component. Documented clearly in code in case that assumption ever needs to be revisited.
+
 ## 2.19.0
 
 ### Security
