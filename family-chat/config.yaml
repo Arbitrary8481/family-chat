@@ -1,5 +1,5 @@
 name: "Family Chat"
-version: "2.7.0"
+version: "2.9.2"
 slug: "family_chat"
 description: "Private Discord-like chat for your family with file sharing and emojis"
 arch:
@@ -12,6 +12,7 @@ ingress_port: 8099
 panel_icon: "mdi:message-text"
 panel_title: "Family Chat"
 init: false
+homeassistant_api: true
 map:
   - share:rw
   - media:rw

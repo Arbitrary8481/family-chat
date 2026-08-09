@@ -117,6 +117,15 @@ body {
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
+    overflow: hidden;
+    transition: width 0.15s ease, opacity 0.15s ease;
+}
+
+.channel-sidebar.collapsed {
+    width: 0;
+    opacity: 0;
+    pointer-events: none;
+    white-space: nowrap;
 }
 
 .server-header {
@@ -243,10 +252,18 @@ body {
     flex-shrink: 0;
 }
 
+.chat-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
 .channel-info {
     display: flex;
     align-items: center;
     gap: 8px;
+    min-width: 0;
 }
 
 .channel-hash {
@@ -287,6 +304,15 @@ body {
 .header-btn:hover {
     background: var(--bg-modifier-hover);
     color: var(--interactive-hover);
+}
+
+.sidebar-toggle-btn {
+    font-size: 16px;
+}
+
+.sidebar-toggle-btn.active {
+    background: var(--bg-modifier-active);
+    color: var(--interactive-active);
 }
 
 /* Messages */
@@ -712,6 +738,14 @@ body {
     transform: scale(1.2);
 }
 
+.emoji-empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+    padding: 24px 12px;
+}
+
 /* GIF Picker */
 .gif-picker {
     position: absolute;
@@ -803,6 +837,17 @@ body {
     padding: 16px 8px;
     flex-shrink: 0;
     overflow-y: auto;
+    overflow-x: hidden;
+    transition: width 0.15s ease, opacity 0.15s ease, padding 0.15s ease;
+}
+
+.members-sidebar.collapsed {
+    width: 0;
+    padding-left: 0;
+    padding-right: 0;
+    opacity: 0;
+    pointer-events: none;
+    white-space: nowrap;
 }
 
 .members-header {
@@ -1190,6 +1235,51 @@ body {
 
 .emoji-upload button {
     flex: 1 1 100%;
+}
+
+/* Settings modal: notifications */
+.settings-toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    cursor: pointer;
+    color: var(--text-normal);
+}
+
+.settings-toggle-label input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--bg-accent);
+    cursor: pointer;
+}
+
+.settings-select {
+    width: 100%;
+    background: var(--bg-tertiary);
+    border: none;
+    border-radius: 4px;
+    padding: 8px 12px;
+    color: var(--text-normal);
+    font-size: 14px;
+}
+
+.notify-channel-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.settings-hint {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.settings-save-status {
+    font-size: 12px;
+    color: var(--success);
+    margin-top: 8px;
 }
 
 .custom-emoji-list {

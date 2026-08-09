@@ -1,5 +1,52 @@
 # Changelog
 
+## 2.9.2
+
+### Added
+- **Per-channel notification subscriptions.** Settings now shows a checkbox for each channel instead of one global on/off switch — you can be notified for #general and #plans but not #memories, for example. Anyone who already had the old all-channels toggle on gets automatically subscribed to every existing channel during the upgrade, so nobody's notifications silently turn off — narrow it down from there.
+
+## 2.9.1
+
+### Fixed
+- **Selecting a device and saving in Settings closed the whole panel, making it look like the device picker had disappeared.** Saving your notification preference no longer closes Settings — it now shows a small "Saved" confirmation next to the buttons instead, so the dropdown stays right there to pick a different device and save again.
+
+## 2.9.0
+
+### Added
+- **Push notifications for new messages, via Home Assistant.** Each person can opt in from Settings (✏️), choosing which of their devices to notify — the list is pulled live from Home Assistant's own `notify.*` services (created automatically by the HA Companion App on each phone), so there's nothing to type by hand. A "Send Test" button lets you confirm you picked the right device before relying on it.
+  - You're never notified about your own messages.
+  - Notifications are scoped to the channel a message was posted in.
+  - No separate push service or API key is needed — this add-on now requests `homeassistant_api` access and calls Home Assistant's own REST API through the supervisor to trigger the notification. **Existing installs need to rebuild the add-on (not just restart it) for this new permission to take effect** — Settings → Add-ons → Family Chat → Rebuild.
+  - Requires the Home Assistant Companion App to be installed and connected on each phone you want to notify; until then that person's device simply won't appear in the list.
+
+## 2.8.4
+
+### Fixed
+- **Messages and reactions were broadcast to every connected browser regardless of which channel they were posted in**, not just people actually viewing that channel — invisible with one person on one device, since you only ever post into the channel you're looking at, but with multiple family members online at once, someone in #general could have messages meant for #memories or #plans appear directly in their view. Both are now scoped server-side to the channel they belong to.
+- **Switching channels joined the new channel's live-update group without ever leaving the old one.** A single browser session that visited several channels over time would end up subscribed to all of them, which would have undermined the fix above the longer a tab stayed open. Switching channels now properly leaves the previous one first.
+
+## 2.8.3
+
+### Fixed
+- **Reacting to a message with a custom emoji showed a bare count with no emoji (e.g. just "1").** Reactions were packed into a single string as `emoji:user` and unpacked by splitting on `:` — but a custom emoji reaction is stored as `:name:`, which already contains colons, so the split landed in the wrong place and corrupted both the emoji and the username. Reactions are now assembled from a separate query instead of a delimited string, so this can't happen regardless of what characters end up in an emoji name or username.
+- **Reactions didn't appear until you reloaded the page.** The client's handler for incoming reaction updates was an empty stub, so reacting (or having someone else react) never updated what was on screen in real time.
+- **Clicking a reaction you'd already placed didn't remove it.** It just added a duplicate row, inflating the count — even though the pill was already visually styled as "active" to suggest it was a toggle. Reacting a second time now actually un-reacts.
+
+## 2.8.2
+
+### Added
+- **The emoji picker's search box now actually works.** Typing filters live across every category at once (so "cat" finds 🐱 even while the Food tab is showing) and matches your custom emojis by name too. Previously the search field was just a dead input. Emoji are matched against ~830 generated keyword names (e.g. 😍 → "smiling face with heart-eyes"), so search understands plain-English terms rather than the raw characters.
+
+## 2.8.1
+
+### Fixed
+- **The 😊 "add reaction" button on messages popped up a plain browser prompt ("Enter emoji:") instead of a real picker.** It now opens the same full emoji picker used by the composer — tabs, search box, and custom emojis — positioned right next to the button you clicked. Picking an emoji reacts with it immediately; clicking the button again (or elsewhere) closes it.
+
+## 2.8.0
+
+### Added
+- **Collapsible sidebars.** New ☰ and 👥 buttons in the chat header collapse/expand the channel list and member list independently. Each sidebar remembers its collapsed state across reloads.
+
 ## 2.7.0
 
 ### Added

@@ -17,7 +17,7 @@ import urllib.error
 from datetime import datetime
 from pathlib import Path
 from flask import Flask, render_template, request, jsonify, send_from_directory, session, redirect, url_for
-from flask_socketio import SocketIO, emit, join_room
+from flask_socketio import SocketIO, emit, join_room, leave_room, rooms
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import eventlet
@@ -86,6 +86,19 @@ GIPHY_API_KEY = get_option('giphy_api_key', 'GIPHY_API_KEY', '')
 if not GIPHY_API_KEY:
     logger.warning('giphy_api_key is not set — the GIF picker will be disabled '
                     'until one is added in the add-on configuration.')
+
+# Supervisor injects this automatically once the add-on has
+# `homeassistant_api: true` in config.yaml, and it's what lets this add-on
+# call Home Assistant's own REST API (proxied through the supervisor at
+# http://supervisor/core/api/...) to trigger notify.* services — no
+# separate push infrastructure of our own, no API key to configure. If
+# that permission hasn't been granted (or the add-on hasn't been rebuilt
+# since it was added), this is simply unset and notifications quietly
+# stay unavailable rather than erroring.
+SUPERVISOR_TOKEN = os.environ.get('SUPERVISOR_TOKEN', '')
+if not SUPERVISOR_TOKEN:
+    logger.warning('SUPERVISOR_TOKEN is not set — Home Assistant notifications will be '
+                    'unavailable until this add-on is rebuilt with homeassistant_api access.')
 
 # Cache-busting token for static assets (CSS/JS). Home Assistant's ingress
 # "soft" panel navigation (clicking the sidebar entry again) can reuse a
@@ -197,6 +210,50 @@ def init_db():
                 ('files', 'shared-files', '📁'),
             ]
         )
+
+    # Per-person notification preference, keyed by the same stable HA user
+    # ID used everywhere else. notify_service is a Home Assistant
+    # notify.* service name (e.g. "mobile_app_johns_iphone") created
+    # automatically by the HA Companion App on that person's phone —
+    # picked from a list fetched from HA rather than typed by hand. Push
+    # delivery itself is entirely Home Assistant's; this add-on only
+    # decides *whether* and *where* to call notify.<service> when a
+    # message comes in — see notify_message_subscribers(). The `enabled`
+    # column is a leftover from before per-channel subscriptions existed
+    # (see notification_channel_subs below) — it's no longer read when
+    # deciding who to notify, only during the one-time migration just
+    # after this table, so it stays here rather than risking an ALTER
+    # TABLE DROP COLUMN against installs already running the old schema.
+    c.execute('''CREATE TABLE IF NOT EXISTS notification_prefs
+                 (user_id TEXT PRIMARY KEY,
+                  enabled INTEGER NOT NULL DEFAULT 0,
+                  notify_service TEXT)''')
+
+    # Which channels each person actually wants a notification for.
+    # Presence of a row is the subscription itself — no separate on/off
+    # flag needed per channel.
+    c.execute('''CREATE TABLE IF NOT EXISTS notification_channel_subs
+                 (user_id TEXT NOT NULL,
+                  channel TEXT NOT NULL,
+                  PRIMARY KEY (user_id, channel))''')
+
+    # One-time migration: anyone who turned on the old all-channels
+    # toggle before per-channel subscriptions existed gets subscribed to
+    # every channel that exists right now, so upgrading doesn't silently
+    # turn notifications off for them — they can narrow it down from
+    # Settings afterward.
+    c.execute('SELECT user_id FROM notification_prefs WHERE enabled = 1')
+    legacy_enabled_users = [row[0] for row in c.fetchall()]
+    if legacy_enabled_users:
+        c.execute('SELECT slug FROM channels')
+        all_slugs = [row[0] for row in c.fetchall()]
+        for user_id in legacy_enabled_users:
+            c.execute('SELECT COUNT(*) FROM notification_channel_subs WHERE user_id = ?', (user_id,))
+            if c.fetchone()[0] == 0 and all_slugs:
+                c.executemany(
+                    'INSERT OR IGNORE INTO notification_channel_subs (user_id, channel) VALUES (?, ?)',
+                    [(user_id, slug) for slug in all_slugs]
+                )
 
     conn.commit()
     conn.close()
@@ -342,19 +399,17 @@ def delete_channel(slug):
 def get_messages(limit=100, channel='general'):
     conn = sqlite3.connect('/data/chat.db')
     c = conn.cursor()
-    c.execute('''SELECT m.*, GROUP_CONCAT(r.emoji || ':' || r.user) as reactions,
-                        ua.alias as current_alias
+    c.execute('''SELECT m.*, ua.alias as current_alias
                  FROM messages m
-                 LEFT JOIN reactions r ON m.id = r.message_id
                  LEFT JOIN user_aliases ua ON ua.user_id = m.sender_id
                  WHERE m.channel = ?
-                 GROUP BY m.id
                  ORDER BY m.timestamp DESC LIMIT ?''', (channel, limit))
     messages = c.fetchall()
-    
+
     # Get columns
     columns = [description[0] for description in c.description]
     result = []
+    message_ids = []
     for row in messages:
         msg = dict(zip(columns, row))
         # If the sender has since set (or been given) an alias, show that
@@ -363,20 +418,30 @@ def get_messages(limit=100, channel='general'):
         if msg.get('current_alias'):
             msg['sender'] = msg['current_alias']
         del msg['current_alias']
-        # Parse reactions
-        if msg['reactions']:
-            reactions = {}
-            for r in msg['reactions'].split(','):
-                if ':' in r:
-                    emoji, user = r.split(':', 1)
-                    if emoji not in reactions:
-                        reactions[emoji] = []
-                    reactions[emoji].append(user)
-            msg['reactions'] = reactions
-        else:
-            msg['reactions'] = {}
+        msg['reactions'] = {}
         result.append(msg)
-    
+        message_ids.append(msg['id'])
+
+    # Reactions used to be folded into the message query with
+    # GROUP_CONCAT(r.emoji || ':' || r.user), then unpacked client-side by
+    # splitting on ':' and ','. That broke as soon as either value could
+    # contain those characters — a reaction using a *custom* emoji is
+    # stored as ":name:", which already contains colons, so splitting on
+    # ':' produced an empty emoji and a mangled username (visible as a
+    # reaction pill showing just a bare count with no emoji). Fetching
+    # reactions as a separate, plain query and assembling them here in
+    # Python sidesteps the whole class of delimiter-collision bugs,
+    # regardless of what characters end up in an emoji name or username.
+    if message_ids:
+        placeholders = ','.join('?' * len(message_ids))
+        c.execute(f'SELECT message_id, emoji, user FROM reactions WHERE message_id IN ({placeholders})',
+                  message_ids)
+        reactions_by_message = {}
+        for message_id, emoji, user in c.fetchall():
+            reactions_by_message.setdefault(message_id, {}).setdefault(emoji, []).append(user)
+        for msg in result:
+            msg['reactions'] = reactions_by_message.get(msg['id'], {})
+
     conn.close()
     return list(reversed(result))
 
@@ -800,6 +865,210 @@ def giphy_search():
         return jsonify({'error': error}), 503
     return jsonify({'gifs': gifs})
 
+# --- Home Assistant notifications ---
+# Push delivery is entirely Home Assistant's own (via the HA Companion
+# App's notify.* services, e.g. notify.mobile_app_johns_iphone) — this
+# add-on just decides whether and where to call one when a message comes
+# in. Requests go through the supervisor's Home Assistant API proxy
+# rather than a direct connection, authenticated with the token the
+# supervisor injects automatically once `homeassistant_api: true` is set.
+HA_API_BASE = 'http://supervisor/core/api'
+
+def ha_api_request(method, path, json_body=None, timeout=5):
+    """Proxy a request to Home Assistant's core REST API. Returns
+    (data, error) — data is None on any failure, with error set to a
+    message safe to show the person (never the token or raw exception)."""
+    if not SUPERVISOR_TOKEN:
+        return None, 'This add-on was not built with Home Assistant API access — add "homeassistant_api: true" to its configuration and rebuild it.'
+
+    url = f'{HA_API_BASE}{path}'
+    headers = {
+        'Authorization': f'Bearer {SUPERVISOR_TOKEN}',
+        'Content-Type': 'application/json',
+    }
+    data = json.dumps(json_body).encode('utf-8') if json_body is not None else None
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read()
+            return (json.loads(body) if body else {}), None
+    except urllib.error.HTTPError as e:
+        logger.warning('Home Assistant API returned HTTP %s for %s %s', e.code, method, path)
+        if e.code in (401, 403):
+            return None, 'Home Assistant rejected this request — the add-on may need to be rebuilt after enabling API access.'
+        return None, 'Home Assistant returned an error for that request.'
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        logger.warning('Home Assistant API unreachable: %s', e)
+        return None, 'Could not reach Home Assistant.'
+    except json.JSONDecodeError as e:
+        logger.warning('Home Assistant API returned unparseable data: %s', e)
+        return None, 'Home Assistant returned an unexpected response.'
+
+def send_ha_notification(notify_service, title, message):
+    """Calls notify.<service> in Home Assistant. notify_service may be
+    given with or without the "notify." prefix. Returns (ok, error)."""
+    service = (notify_service or '').strip()
+    if service.startswith('notify.'):
+        service = service[len('notify.'):]
+    if not service:
+        return False, 'No device selected.'
+    _, error = ha_api_request('POST', f'/services/notify/{service}',
+                               {'title': title, 'message': message})
+    return (error is None), error
+
+def get_notify_service(user_id):
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('SELECT notify_service FROM notification_prefs WHERE user_id = ?', (user_id,))
+    row = c.fetchone()
+    conn.close()
+    return (row[0] if row else '') or ''
+
+def set_notify_service(user_id, notify_service):
+    notify_service = (notify_service or '').strip()[:100]
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('''INSERT INTO notification_prefs (user_id, enabled, notify_service) VALUES (?, 0, ?)
+                 ON CONFLICT(user_id) DO UPDATE SET notify_service = excluded.notify_service''',
+              (user_id, notify_service))
+    conn.commit()
+    conn.close()
+
+def get_subscribed_channels(user_id):
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('SELECT channel FROM notification_channel_subs WHERE user_id = ?', (user_id,))
+    channels = [row[0] for row in c.fetchall()]
+    conn.close()
+    return channels
+
+def set_subscribed_channels(user_id, channels):
+    # Silently drop anything that isn't a real channel slug, rather than
+    # erroring — the request body is client-supplied, and a stale channel
+    # (deleted since the page loaded) shouldn't block saving the rest.
+    valid_slugs = {ch['slug'] for ch in get_channels()}
+    channels = [ch for ch in (channels or []) if ch in valid_slugs]
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('DELETE FROM notification_channel_subs WHERE user_id = ?', (user_id,))
+    if channels:
+        c.executemany('INSERT INTO notification_channel_subs (user_id, channel) VALUES (?, ?)',
+                       [(user_id, ch) for ch in channels])
+    conn.commit()
+    conn.close()
+
+def get_subscribers_for_channel(channel, exclude_user_id=None):
+    """(user_id, notify_service) for everyone subscribed to this specific
+    channel who's also picked a device — excluding the given user, since
+    a sender shouldn't be notified about their own message."""
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('''SELECT s.user_id, p.notify_service
+                 FROM notification_channel_subs s
+                 JOIN notification_prefs p ON p.user_id = s.user_id
+                 WHERE s.channel = ?''', (channel,))
+    rows = c.fetchall()
+    conn.close()
+    return [(uid, svc) for uid, svc in rows if svc and uid != exclude_user_id]
+
+def summarize_message_for_notification(content, msg_type, file_info):
+    content = (content or '').strip()
+    if content:
+        return content if len(content) <= 200 else content[:197] + '…'
+    if msg_type == 'gif':
+        return 'Sent a GIF'
+    if msg_type == 'image':
+        return 'Sent a photo'
+    if msg_type == 'video':
+        return 'Sent a video'
+    if msg_type == 'file':
+        name = (file_info or {}).get('filename')
+        return f'Shared {name}' if name else 'Shared a file'
+    return 'Sent a message'
+
+def notify_message_subscribers(channel, sender, sender_id, content, msg_type, file_info):
+    """Best-effort — a slow or failed notification should never affect
+    message delivery in the chat itself, which has already happened by
+    the time this is called."""
+    if not SUPERVISOR_TOKEN:
+        return
+    subscribers = get_subscribers_for_channel(channel, exclude_user_id=sender_id)
+    if not subscribers:
+        return
+
+    channel_obj = next((c for c in get_channels() if c['slug'] == channel), None)
+    channel_name = channel_obj['name'] if channel_obj else channel
+    title = f'{sender} in #{channel_name}'
+    body = summarize_message_for_notification(content, msg_type, file_info)
+
+    for user_id, notify_service in subscribers:
+        ok, error = send_ha_notification(notify_service, title, body)
+        if not ok:
+            logger.warning('Notification to %s via %s failed: %s', user_id, notify_service, error)
+
+@app.route('/api/notify/services')
+def api_notify_services():
+    """notify.* services currently registered in Home Assistant — mainly
+    one per device with the HA Companion App installed (e.g.
+    notify.mobile_app_johns_iphone) — so settings can offer a dropdown
+    instead of making someone type a service name by hand."""
+    data, error = ha_api_request('GET', '/services')
+    if error:
+        return jsonify({'error': error}), 503
+    services = []
+    for domain_entry in data or []:
+        if domain_entry.get('domain') == 'notify':
+            services = sorted(domain_entry.get('services', {}).keys())
+            break
+    return jsonify({'services': services})
+
+@app.route('/api/notify/prefs')
+def api_get_notify_prefs():
+    ha_user_id = request.headers.get('X-Remote-User-Id')
+    if not ha_user_id:
+        return jsonify({'error': 'Not accessed through Home Assistant'}), 403
+    return jsonify({
+        'notify_service': get_notify_service(ha_user_id),
+        'channels': get_subscribed_channels(ha_user_id),
+    })
+
+@app.route('/api/notify/prefs', methods=['POST'])
+def api_set_notify_prefs():
+    # Same shape as /api/my-alias: the target is always the requester's
+    # own HA user ID from the ingress headers, never taken from the
+    # request body, so this can only ever change your own preference.
+    ha_user_id = request.headers.get('X-Remote-User-Id')
+    if not ha_user_id:
+        return jsonify({'error': 'Not accessed through Home Assistant'}), 403
+    data = request.get_json(silent=True) or {}
+    notify_service = data.get('notify_service', '')
+    channels = data.get('channels', [])
+    if not isinstance(channels, list):
+        channels = []
+    if channels and not (notify_service or '').strip():
+        return jsonify({'error': 'Choose a device before subscribing to any channels.'}), 400
+    set_notify_service(ha_user_id, notify_service)
+    set_subscribed_channels(ha_user_id, channels)
+    return jsonify({'success': True})
+
+@app.route('/api/notify/test', methods=['POST'])
+def api_notify_test():
+    ha_user_id = request.headers.get('X-Remote-User-Id')
+    if not ha_user_id:
+        return jsonify({'error': 'Not accessed through Home Assistant'}), 403
+    data = request.get_json(silent=True) or {}
+    notify_service = (data.get('notify_service') or '').strip()
+    if not notify_service:
+        return jsonify({'error': 'Choose a device first.'}), 400
+    _, sender = resolve_ha_identity()
+    ok, error = send_ha_notification(
+        notify_service, 'Family Chat',
+        f'Test notification for {sender or "you"} — this is what new messages will look like.'
+    )
+    if not ok:
+        return jsonify({'error': error}), 503
+    return jsonify({'success': True})
+
 def log_socket_errors(handler):
     """Socket.IO event handlers don't go through Flask's normal error
     handling — an unhandled exception in one can otherwise just vanish
@@ -829,6 +1098,17 @@ def handle_connect(auth=None):
 @log_socket_errors
 def on_join(data):
     room = data.get('room', 'general')
+    # Switching channels previously only ever *joined* the new room and
+    # never left the old one — a session that visited every channel over
+    # time would end up subscribed to all of them simultaneously, so
+    # messages posted anywhere would land in whichever channel you
+    # happened to be looking at. Every socket's own default room is its
+    # sid, which must stay untouched; leave everything else before
+    # joining the requested channel so a connection is only ever in the
+    # one channel room it's actually viewing.
+    for r in list(rooms()):
+        if r != request.sid:
+            leave_room(r)
     join_room(room)
     emit('joined', {'room': room})
 
@@ -868,7 +1148,13 @@ def handle_message(data):
         'type': msg_type,
         'file': file_info,
         'reactions': {}
-    }, broadcast=True)
+    }, room=channel)
+
+    # In-app delivery above has already happened — this reaches people
+    # who subscribed to push notifications, whether or not the chat is
+    # even open on their phone right now. Deliberately last: never let a
+    # slow/failed notification delay the message actually showing up.
+    notify_message_subscribers(channel, sender, sender_id, content, msg_type, file_info)
 
 @socketio.on('add_reaction')
 @log_socket_errors
@@ -876,20 +1162,44 @@ def handle_reaction(data):
     message_id = data.get('message_id')
     emoji = data.get('emoji')
     _, user = resolve_ha_identity()
-    
-    if message_id and emoji and user:
-        conn = sqlite3.connect('/data/chat.db')
-        c = conn.cursor()
+
+    if not (message_id and emoji and user):
+        return
+
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+
+    c.execute('SELECT channel FROM messages WHERE id = ?', (message_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return
+    channel = row[0]
+
+    # A reaction click is a toggle: clicking the same emoji you've
+    # already placed on this message removes it again — this is what the
+    # "active"/highlighted pill styling in the UI has always implied, but
+    # the server previously just inserted a new row every time, so a
+    # second click silently added a duplicate instead of un-reacting.
+    c.execute('SELECT id FROM reactions WHERE message_id = ? AND emoji = ? AND user = ?',
+              (message_id, emoji, user))
+    existing = c.fetchone()
+    if existing:
+        c.execute('DELETE FROM reactions WHERE id = ?', (existing[0],))
+        added = False
+    else:
         c.execute('INSERT INTO reactions (message_id, emoji, user) VALUES (?, ?, ?)',
                   (message_id, emoji, user))
-        conn.commit()
-        conn.close()
-        
-        emit('reaction_added', {
-            'message_id': message_id,
-            'emoji': emoji,
-            'user': user
-        }, broadcast=True)
+        added = True
+    conn.commit()
+    conn.close()
+
+    emit('reaction_updated', {
+        'message_id': message_id,
+        'emoji': emoji,
+        'user': user,
+        'added': added
+    }, room=channel)
 
 if __name__ == '__main__':
     init_db()
