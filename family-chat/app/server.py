@@ -48,7 +48,6 @@ logging.basicConfig(
 logger = logging.getLogger('family_chat')
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
-app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max
 # logger=True surfaces Socket.IO's own connect/disconnect/event activity in
 # the log too, which is useful context alongside our own error logging below.
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet', logger=True)
@@ -87,15 +86,60 @@ else:
     _SECRET_KEY_FILE.write_text(new_secret)
     app.config['SECRET_KEY'] = new_secret
 
+# Signed cookies (the session cookie, which is what the admin panel and
+# nothing else in this app relies on) should never be sent over plain
+# HTTP to a different site, or be readable by page JavaScript.
+# SESSION_COOKIE_SECURE is deliberately left at Flask's default (off)
+# rather than forced on: Home Assistant's ingress commonly terminates
+# TLS upstream and proxies to this add-on over plain HTTP internally, so
+# forcing Secure here would silently break the admin session entirely
+# on the (very common) HA setup that isn't itself served over HTTPS.
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
 # Configuration
 THEME = get_option('theme', 'THEME', 'dark')
-MAX_FILE_SIZE = int(os.environ.get('MAX_FILE_SIZE', '25')) * 1024 * 1024
+# Was previously read straight from an env var, bypassing get_option
+# entirely — meaning the max_file_size option in the add-on's own
+# configuration screen was silently ignored no matter what it was set
+# to, and (see MAX_CONTENT_LENGTH below) wasn't actually enforced
+# anywhere regardless.
+MAX_FILE_SIZE = int(get_option('max_file_size', 'MAX_FILE_SIZE', 25)) * 1024 * 1024
+# Flask rejects any request body over this size outright (413), before
+# ever reading it into memory — this is what actually makes
+# max_file_size mean something, rather than every upload being capped
+# at a hardcoded 100MB regardless of what's configured. The padding
+# accounts for multipart form overhead (boundaries, headers, the other
+# non-file fields in the request) on top of the file content itself.
+app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE + (1 * 1024 * 1024)
 
 ADMIN_PASSWORD = get_option('admin_password', 'ADMIN_PASSWORD', 'changeme')
 ADMIN_PASSWORD_HASH = generate_password_hash(ADMIN_PASSWORD)
 if ADMIN_PASSWORD == 'changeme':
     logger.warning('admin_password is still set to the default "changeme". '
                     'Set it in the add-on configuration.')
+
+# Very small in-memory brute-force guard for the admin login form —
+# previously unlimited, meaning an automated script could try passwords
+# as fast as the network/CPU allowed. Deliberately NOT scoped per-IP:
+# this app sits behind Home Assistant's ingress proxy, which may or may
+# not forward the real client address depending on setup, so per-IP
+# tracking could either do nothing (if every request looks like it's
+# from the same internal proxy address) or accidentally lock out the
+# whole family sharing one apparent address. There's exactly one admin
+# password shared by trusted family members anyway, so a global cooldown
+# after repeated failures is an acceptable trade-off: it meaningfully
+# raises the bar against automated guessing, at the cost of (rarely)
+# also delaying a legitimate next attempt for a few minutes.
+_admin_login_failures = []
+_ADMIN_LOGIN_MAX_FAILURES = 10
+_ADMIN_LOGIN_WINDOW_SECONDS = 300
+
+def _admin_login_rate_limited():
+    cutoff = datetime.now().timestamp() - _ADMIN_LOGIN_WINDOW_SECONDS
+    while _admin_login_failures and _admin_login_failures[0] < cutoff:
+        _admin_login_failures.pop(0)
+    return len(_admin_login_failures) >= _ADMIN_LOGIN_MAX_FAILURES
 
 # GIPHY API key, kept server-side only — the browser talks to /api/giphy/*
 # on this server, which forwards to GIPHY with the key attached. The key
@@ -641,6 +685,14 @@ def require_admin(view):
         return view(*args, **kwargs)
     return wrapped
 
+@app.errorhandler(413)
+def handle_too_large(e):
+    # Without this, an over-limit upload gets Werkzeug's default HTML
+    # error page instead of the JSON the upload UI actually knows how to
+    # show as an error message.
+    limit_mb = MAX_FILE_SIZE // (1024 * 1024)
+    return jsonify({'error': f'File is too large — the limit is {limit_mb}MB.'}), 413
+
 @app.errorhandler(Exception)
 def handle_uncaught_exception(e):
     logger.exception('Unhandled exception on %s %s', request.method, request.path)
@@ -833,11 +885,20 @@ def admin_set_owner():
 
 @app.route('/admin/login', methods=['POST'])
 def admin_login():
+    if _admin_login_rate_limited():
+        logger.warning('Admin login blocked — too many recent failed attempts.')
+        return ingress_redirect(url_for('admin_panel', error='Too many failed attempts. Try again in a few minutes.'))
+
     password = request.form.get('password', '')
     # Constant-time-safe comparison via check_password_hash (hmac.compare_digest internally)
     if check_password_hash(ADMIN_PASSWORD_HASH, password):
+        _admin_login_failures.clear()
         session['is_admin'] = True
         return ingress_redirect(url_for('admin_panel'))
+
+    _admin_login_failures.append(datetime.now().timestamp())
+    logger.warning('Failed admin login attempt (%d in the last %d minutes)',
+                    len(_admin_login_failures), _ADMIN_LOGIN_WINDOW_SECONDS // 60)
     return ingress_redirect(url_for('admin_panel', error='Incorrect password'))
 
 @app.route('/admin/logout', methods=['POST'])
@@ -878,6 +939,15 @@ def get_emojis():
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
+    # Every other state-changing route in this app independently checks
+    # for a resolvable Home Assistant identity rather than relying
+    # solely on "well, ingress gates the whole app anyway" — this route
+    # was the one exception. Being consistent about it is cheap and
+    # means this route degrades the same way the rest of the app does if
+    # that outer assumption (no direct port exposure — see config.yaml)
+    # were ever accidentally changed.
+    if not request.headers.get('X-Remote-User-Id'):
+        return jsonify({'error': 'Not accessed through Home Assistant'}), 403
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
     
@@ -910,6 +980,8 @@ def upload_file():
 
 @app.route('/api/emoji/upload', methods=['POST'])
 def upload_emoji():
+    if not request.headers.get('X-Remote-User-Id'):
+        return jsonify({'error': 'Not accessed through Home Assistant'}), 403
     if 'file' not in request.files or 'name' not in request.form:
         return jsonify({'error': 'Missing file or name'}), 400
     
@@ -926,7 +998,16 @@ def upload_emoji():
     if ext not in ['png', 'jpg', 'jpeg', 'gif', 'webp']:
         return jsonify({'error': 'Only images allowed for emojis'}), 400
     
-    filename = f"emoji_{name}_{int(datetime.now().timestamp())}.{ext}"
+    # `name` is client-supplied and was, until now, dropped straight into
+    # the filename with no sanitization beyond stripping ':' — the emoji_
+    # prefix happens to make this not currently exploitable as a path
+    # traversal (the OS requires each intermediate directory in a '../'
+    # chain to actually exist, which "emoji_<garbage>" never does), but
+    # relying on that is fragile and inconsistent with /api/upload, which
+    # correctly uses secure_filename(). This closes it properly instead
+    # of depending on that OS behavior remaining true.
+    safe_name = secure_filename(name) or 'emoji'
+    filename = f"emoji_{safe_name}_{int(datetime.now().timestamp())}.{ext}"
     file_path = UPLOAD_FOLDER / filename
     file.save(file_path)
     
@@ -1062,6 +1143,22 @@ def send_ha_notification(notify_service, title, message):
         service = service[len('notify.'):]
     if not service:
         return False, 'No device selected.'
+    # notify_service ultimately comes from client-supplied JSON (see
+    # api_set_notify_prefs/api_notify_test below) and gets interpolated
+    # straight into the path of a privileged, server-side request to
+    # Home Assistant's own API — one made with this add-on's Supervisor
+    # token, not the requesting person's own credentials. Without this,
+    # a value like "../../states" or "../homeassistant/restart" would be
+    # sent as part of that URL essentially unvalidated; whether it can
+    # actually escape the /services/notify/ prefix depends on internals
+    # of Supervisor's own request routing that this add-on has no
+    # control over and shouldn't have to trust. A strict allowlist here
+    # closes that off entirely regardless of how that routing behaves —
+    # real HA service/entity name segments are only ever lowercase
+    # letters, digits, and underscores, so anything else is rejected
+    # outright rather than attempting to sanitize it.
+    if not re.fullmatch(r'[a-zA-Z0-9_]+', service):
+        return False, 'Invalid device.'
     _, error = ha_api_request('POST', f'/services/notify/{service}',
                                {'title': title, 'message': message})
     return (error is None), error
@@ -1076,6 +1173,13 @@ def get_notify_service(user_id):
 
 def set_notify_service(user_id, notify_service):
     notify_service = (notify_service or '').strip()[:100]
+    # Same allowlist as send_ha_notification, enforced here too so an
+    # invalid value can't even be saved in the first place — this isn't
+    # purely redundant with the check at call time: rejecting early
+    # gives the person an immediate, specific error instead of a
+    # notification that silently never arrives.
+    if notify_service and not re.fullmatch(r'(notify\.)?[a-zA-Z0-9_]+', notify_service):
+        notify_service = ''
     conn = sqlite3.connect('/data/chat.db')
     c = conn.cursor()
     c.execute('''INSERT INTO notification_prefs (user_id, enabled, notify_service) VALUES (?, 0, ?)
@@ -1200,12 +1304,17 @@ def api_set_notify_prefs():
     if not ha_user_id:
         return jsonify({'error': 'Not accessed through Home Assistant'}), 403
     data = request.get_json(silent=True) or {}
-    notify_service = data.get('notify_service', '')
+    notify_service = (data.get('notify_service') or '').strip()
     channels = data.get('channels', [])
     if not isinstance(channels, list):
         channels = []
-    if channels and not (notify_service or '').strip():
+    if channels and not notify_service:
         return jsonify({'error': 'Choose a device before subscribing to any channels.'}), 400
+    # Real HA service names (what the dropdown in Settings is actually
+    # populated with) only ever look like this — anything else here
+    # didn't come from that dropdown.
+    if notify_service and not re.fullmatch(r'(notify\.)?[a-zA-Z0-9_]+', notify_service):
+        return jsonify({'error': 'That device selection is not valid.'}), 400
     set_notify_service(ha_user_id, notify_service)
     set_subscribed_channels(ha_user_id, channels)
     return jsonify({'success': True})
@@ -1279,7 +1388,7 @@ def handle_message(data):
     # still claim to be a different family member by editing the socket
     # message, defeating the point of removing the manual picker.
     sender_id, sender = resolve_ha_identity()
-    content = data.get('content')
+    content = (data.get('content') or '').strip()
     channel = data.get('channel', 'general')
     msg_type = data.get('type', 'text')
     file_info = data.get('file', None)
@@ -1287,6 +1396,18 @@ def handle_message(data):
     if not sender:
         logger.warning('send_message from a request with no resolvable HA identity (sender_id=%s)', sender_id)
         emit('server_error', {'message': "Couldn't identify you as a Home Assistant user — try reloading the page."})
+        return
+
+    # Nothing previously capped message length — an unbounded socket
+    # payload gets stored as-is and broadcast to everyone in the
+    # channel, then re-fetched on every future page load by every
+    # member, so this is both a storage-bloat and bandwidth concern, not
+    # just a display one. 4000 characters is generous for a chat message
+    # while still being a hard ceiling.
+    if len(content) > 4000:
+        emit('server_error', {'message': 'That message is too long (4000 characters max).'})
+        return
+    if not content and not file_info:
         return
 
     file_url = file_info.get('url') if file_info else None

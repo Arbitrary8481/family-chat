@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.19.0
+
+### Security
+A full security review of the whole add-on. Fixed, in order of severity:
+
+- **CVE-2025-58068**: `eventlet` (the actual WSGI server this app runs on) was pinned to 0.35.2, vulnerable to HTTP request smuggling. This app's entire identity model depends on Home Assistant's ingress proxy correctly sanitizing the `X-Remote-User-*` headers before forwarding requests — request smuggling is exactly the class of bug that can defeat that kind of front-end sanitization. Bumped to `>=0.40.3` and verified with a live server boot plus a full regression pass.
+- **Unvalidated input reaching a privileged server-side API call**: the device name for push notifications went straight from client-supplied JSON into the URL path of a request made with this add-on's own Home Assistant API token — a crafted value could have targeted a completely different part of Home Assistant's API than intended. Fixed with strict allowlist validation, both where the value is saved and immediately before it's ever used to build a request.
+- **`max_file_size` wasn't actually enforced.** It was computed from the add-on's configuration but never used — every upload was capped by a hardcoded 100MB regardless of what was configured. Now genuinely enforced via Flask's request-size limit, with a clean error message instead of a raw server error page when exceeded.
+- **File upload routes had no identity check**, unlike every other state-changing route in the app. Not currently reachable by anyone outside Home Assistant (this add-on exposes no direct port), but inconsistent with the rest of the app's defense-in-depth and now fixed to match.
+- **No brute-force protection on the admin login form.** Password comparison was already constant-time, but attempts were completely unlimited. Now locks out after 10 failed attempts for 5 minutes.
+- **Custom emoji upload built its filename from unsanitized user input**, unlike the main upload route's correct use of `secure_filename()`. Confirmed this wasn't currently exploitable (the OS requires each intermediate directory in a traversal attempt to actually exist, which it never would here) — fixed anyway rather than relying on that.
+- **Message length had no server-side limit.** A malicious or misbehaving client could post an arbitrarily large message, stored and re-sent to everyone on every future page load. Capped at 4000 characters.
+- Session cookie hardening made explicit (`HttpOnly`, `SameSite=Lax`) rather than relying on Flask's version-dependent defaults.
+- A single-character avatar initial was inserted into the page without escaping — confirmed not practically exploitable (it's mathematically impossible to form a complete HTML tag from one character), but fixed for consistency with the rest of the codebase's escaping discipline.
+
 ## 2.18.1
 
 ### Fixed

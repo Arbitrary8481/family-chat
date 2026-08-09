@@ -376,7 +376,7 @@ function addMessage(data) {
         : '';
 
     messageDiv.innerHTML = `
-        <div class="message-avatar">${data.sender[0]}</div>
+        <div class="message-avatar">${escapeHtml(data.sender[0])}</div>
         <div class="message-content">
             <div class="message-header">
                 <span class="message-author">${escapeHtml(data.sender)}</span>
