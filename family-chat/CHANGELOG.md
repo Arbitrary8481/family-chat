@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.18.1
+
+### Fixed
+- **The real remaining cause of "images/messages load inconsistently on refresh, but a hard refresh always works."** The main page itself (`index.html`, served from `/`) had *no* cache-control header at all — the previous fix only covered `/static/` and `/api/`. A stale cached copy of the page references a stale cache-busted script.js URL, which can itself be served from an old cached copy — so a normal refresh could load an inconsistent mix of old and new files depending on exactly what the browser (or Home Assistant's ingress iframe) happened to have cached at that moment, while a hard refresh always bypasses all of that and gets the current version, which matches exactly what was reported. Every response from this add-on — the page, the scripts, the API, uploaded files — is now explicitly `no-store`, not just `no-cache`: given this is now the second stale-caching report through the ingress iframe specifically, `no-cache`'s revalidation doesn't seem to be reliably honored there, so this goes with the strictly stronger directive rather than continuing to rely on that.
+
 ## 2.18.0
 
 ### Fixed

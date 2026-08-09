@@ -591,24 +591,29 @@ def ingress_redirect(path):
     return redirect(prefix + path)
 
 @app.after_request
-def set_static_cache_headers(response):
-    if request.path.startswith('/static/'):
-        # "no-cache" still lets the browser cache the file, but forces it
-        # to revalidate with the server (a cheap conditional GET) instead
-        # of silently reusing a stale copy — which is what was causing
-        # stale CSS to stick around across Home Assistant's ingress "soft"
-        # panel reloads until a manual refresh.
-        response.headers['Cache-Control'] = 'no-cache'
-    elif request.path.startswith('/api/'):
-        # API responses are live application state — message history,
-        # reactions, channel lists — that's expected to differ from one
-        # request to the next. jsonify() sets no cache headers at all by
-        # default, which leaves the door open for a browser (or any
-        # proxy sitting in the request path, and Home Assistant's
-        # ingress always is one) to cache a GET response heuristically.
-        # 'no-store' rules that out entirely rather than relying on
-        # conditional-revalidation being handled correctly everywhere.
-        response.headers['Cache-Control'] = 'no-store'
+def set_cache_headers(response):
+    # Every response from this add-on is either the live document itself
+    # or something that can change from one moment to the next (a
+    # message list, a script that just got updated, an uploaded file
+    # that could theoretically be re-uploaded under the same name after
+    # a delete) — none of it should ever be served from a cache.
+    #
+    # This used to be narrower: only /static/ got a header at all (just
+    # "no-cache", which still permits caching *with* revalidation), and
+    # the main document (index.html, served from "/") got nothing.
+    # That gap is a real bug, not just theoretical — it's the second
+    # time a "stale content through Home Assistant's ingress iframe,
+    # only a hard refresh fixes it" report has come up in this app's
+    # history (the first was the GIF button not appearing after it
+    # shipped). Whatever's happening in that iframe layer isn't reliably
+    # honoring "no-cache" revalidation, so this goes with the strictly
+    # stronger "no-store" — never keep a copy at all, anywhere, full
+    # stop — rather than continuing to rely on revalidation working
+    # correctly through a proxy layer we don't control. The performance
+    # cost of that (every asset re-downloaded in full on every load,
+    # rather than a cheap conditional GET) is negligible at this app's
+    # scale and is a small price for actually eliminating the bug class.
+    response.headers['Cache-Control'] = 'no-store'
     return response
 
 def resolve_ha_identity():
