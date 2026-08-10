@@ -90,6 +90,21 @@ else:
     _SECRET_KEY_FILE.write_text(new_secret)
     app.config['SECRET_KEY'] = new_secret
 
+# CodeQL flags the write above as "clear-text storage of sensitive
+# information," and its literal suggestion (encrypt it) doesn't really
+# apply here — this *is* the key; encrypting it would just mean
+# persisting a second key to decrypt the first, which moves the problem
+# rather than solving it. What actually matters for a signing key like
+# this is restricting who can read the file at the OS level: only the
+# owning user, not any other process on the host or anyone with read
+# access to a filesystem-level backup. Applied unconditionally (not just
+# when the file is first created) so it also retroactively covers a file
+# an older version of this add-on already created before this existed.
+try:
+    _SECRET_KEY_FILE.chmod(0o600)
+except OSError as e:
+    logger.warning('Could not restrict permissions on %s: %s', _SECRET_KEY_FILE, e)
+
 # Signed cookies (the session cookie, which is what the admin panel and
 # nothing else in this app relies on) should never be sent over plain
 # HTTP to a different site, or be readable by page JavaScript.
@@ -632,9 +647,23 @@ def ingress_redirect(path):
     original prefix via the X-Ingress-Path header so we can rebuild the
     correct absolute URL. If the header is missing (e.g. direct, non-ingress
     access) or looks malformed, fall back to the plain path.
+
+    The validation below is stricter than it looks like it needs to be:
+    a prefix has to be a plain relative path, nothing else. The previous
+    version only checked for a leading '/' and rejected ':', which
+    blocks "http://evil.com" but not "//evil.com" — browsers treat a
+    Location starting with "//" as a protocol-relative URL pointing at
+    a different host entirely, using whatever scheme the current page
+    loaded over. That string starts with '/' and contains no ':', so it
+    sailed straight through the old check. Backslashes are normalized
+    first too, since browsers commonly treat them as equivalent to
+    forward slashes in a URL even though Python's urlparse does not —
+    "/\\evil.com" wouldn't otherwise be recognized as the "//evil.com"
+    it becomes once a browser gets hold of it.
     """
-    prefix = request.headers.get('X-Ingress-Path', '')
-    if not prefix.startswith('/') or ':' in prefix:
+    prefix = request.headers.get('X-Ingress-Path', '').replace('\\', '/')
+    parsed = urllib.parse.urlparse(prefix)
+    if not prefix.startswith('/') or prefix.startswith('//') or parsed.netloc or parsed.scheme:
         prefix = ''
     return redirect(prefix + path)
 

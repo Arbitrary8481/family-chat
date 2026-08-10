@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.21.11
+
+### Security
+- **Open redirect via the `X-Ingress-Path` header (CodeQL: `py/url-redirection`).** The existing validation (must start with `/`, must not contain `:`) blocked absolute URLs like `http://evil.com`, but not protocol-relative ones like `//evil.com` — that string starts with `/` and has no colon, so it passed straight through. Browsers treat a redirect `Location` starting with `//` as pointing at a different host entirely, using whichever scheme the current page loaded over — a working open-redirect vector despite technically satisfying the old check. Fixed with a proper validation: reject anything with a `//` prefix, a URL scheme, or a host component (via `urlparse`), and normalize backslashes first, since browsers treat them as equivalent to forward slashes even though Python's `urlparse` does not. Verified directly against the real endpoint with `//evil.com`, `/\\evil.com`, `http://evil.com`, and `https://evil.com` — all now fall back to the safe in-app path — while confirming legitimate ingress prefixes and direct (no-header) access still work exactly as before.
+
+## 2.21.10
+
+### Security
+- **CodeQL flagged the Flask session secret being written to disk unencrypted.** The literal suggestion (encrypt it) doesn't really apply to a signing key — encrypting it would just mean persisting a second key to decrypt the first, moving the problem rather than solving it. The actual, practical mitigation is restricting who can read the file at the OS level, which was missing: the file is now written with `0600` permissions (owner read/write only, nobody else). Applied retroactively too — an existing install's secret file (created by an older version, without this restriction) gets it applied on next start, without regenerating the secret itself, which would have invalidated everyone's session.
+
 ## 2.21.9
 
 ### Security
