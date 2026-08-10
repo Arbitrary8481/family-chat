@@ -130,6 +130,12 @@
                     </button>
                     {% endif %}
 
+                    {% if calendar_enabled %}
+                    <button class="calendar-btn" onclick="openCalendarModal()" title="Add a calendar event">
+                        📅
+                    </button>
+                    {% endif %}
+
                     <button class="emoji-btn" onclick="toggleEmojiPicker()" title="Add emoji">
                         😊
                     </button>
@@ -362,6 +368,66 @@
                 <button class="btn btn-primary" onclick="runSearch()">Search</button>
             </div>
             <div id="searchResults" class="search-results"></div>
+        </div>
+    </div>
+
+    <!-- Calendar: creates a real event on one of Home Assistant's own
+         calendars (calendar.create_event) and posts a confirmation card
+         into whichever channel is chosen — not a calendar of its own,
+         just a form in front of the one(s) already in Home Assistant. -->
+    <div class="modal hidden" id="calendarModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>📅 Add to Calendar</h3>
+                <button class="close-btn" onclick="closeCalendarModal()">×</button>
+            </div>
+            <div class="settings-section">
+                <label for="calEventTitle" class="form-label">Title</label>
+                <input type="text" id="calEventTitle" class="settings-select" maxlength="200" placeholder="Dentist appointment">
+
+                <label class="settings-toggle-label" style="margin-top: 14px;">
+                    <input type="checkbox" id="calEventAllDay" onchange="toggleCalendarAllDay()">
+                    All-day event
+                </label>
+
+                <div id="calEventTimedFields" class="calendar-date-row">
+                    <div>
+                        <label for="calEventStartDateTime" class="form-label">Starts</label>
+                        <input type="datetime-local" id="calEventStartDateTime" class="settings-select">
+                    </div>
+                    <div>
+                        <label for="calEventEndDateTime" class="form-label">Ends</label>
+                        <input type="datetime-local" id="calEventEndDateTime" class="settings-select">
+                    </div>
+                </div>
+                <div id="calEventAllDayFields" class="calendar-date-row hidden">
+                    <div>
+                        <label for="calEventStartDate" class="form-label">Starts</label>
+                        <input type="date" id="calEventStartDate" class="settings-select">
+                    </div>
+                    <div>
+                        <label for="calEventEndDate" class="form-label">Ends <span class="settings-hint">(optional — for multi-day)</span></label>
+                        <input type="date" id="calEventEndDate" class="settings-select">
+                    </div>
+                </div>
+
+                <label for="calEventLocation" class="form-label">Location <span class="settings-hint">(optional)</span></label>
+                <input type="text" id="calEventLocation" class="settings-select" maxlength="200">
+
+                <label for="calEventDescription" class="form-label">Notes <span class="settings-hint">(optional)</span></label>
+                <input type="text" id="calEventDescription" class="settings-select" maxlength="2000">
+
+                <label for="calEventCalendar" class="form-label">Calendar</label>
+                <select id="calEventCalendar" class="settings-select">
+                    <option value="">Loading calendars…</option>
+                </select>
+
+                <label for="calEventChannelSelect" class="form-label">Post confirmation to</label>
+                <select id="calEventChannelSelect" class="settings-select"></select>
+
+                <button class="btn btn-primary" onclick="submitCalendarEvent()" style="width:100%; margin-top:14px;">Add to Calendar</button>
+                <p id="calendarEventStatus" class="settings-save-status hidden"></p>
+            </div>
         </div>
     </div>
 

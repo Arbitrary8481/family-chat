@@ -619,7 +619,7 @@ body {
     min-height: 44px;
 }
 
-.attach-btn, .emoji-btn, .gif-btn, .send-btn {
+.attach-btn, .emoji-btn, .gif-btn, .calendar-btn, .send-btn {
     background: transparent;
     border: none;
     color: var(--text-muted);
@@ -633,9 +633,13 @@ body {
     flex-shrink: 0;
 }
 
-.attach-btn:hover, .emoji-btn:hover, .gif-btn:hover {
+.attach-btn:hover, .emoji-btn:hover, .gif-btn:hover, .calendar-btn:hover {
     color: var(--interactive-hover);
     background: var(--bg-modifier-hover);
+}
+
+.calendar-btn {
+    font-size: 18px;
 }
 
 .gif-btn {
@@ -1422,6 +1426,55 @@ body {
 }
 
 .settings-hint {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.form-label {
+    display: block;
+    font-size: 13px;
+    color: var(--text-muted);
+    margin: 12px 0 6px;
+}
+
+.form-label:first-child {
+    margin-top: 0;
+}
+
+.calendar-date-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+/* Calendar event confirmation card — its own distinct rendering in the
+   message feed, same reasoning as images/GIFs getting their own look
+   instead of just showing as a plain link or line of text. */
+.calendar-event-card {
+    display: flex;
+    gap: 12px;
+    margin-top: 6px;
+    padding: 12px;
+    max-width: 360px;
+    background: var(--bg-tertiary);
+    border-left: 3px solid var(--bg-accent);
+    border-radius: 4px;
+}
+
+.calendar-event-icon {
+    font-size: 24px;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.calendar-event-title {
+    font-weight: 600;
+    color: var(--text-normal);
+    margin-bottom: 2px;
+}
+
+.calendar-event-when,
+.calendar-event-location {
     font-size: 13px;
     color: var(--text-muted);
 }

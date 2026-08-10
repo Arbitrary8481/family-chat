@@ -22,7 +22,7 @@ import traceback
 import urllib.request
 import urllib.parse
 import urllib.error
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from flask import Flask, render_template, request, jsonify, send_from_directory, session, redirect, url_for
 from flask_socketio import SocketIO, emit, join_room, leave_room, rooms
@@ -803,7 +803,8 @@ def index():
                           is_owner=is_owner(auto_user_id),
                           server_name=server_identity['name'],
                           server_icon=server_identity['icon'],
-                          giphy_enabled=bool(GIPHY_API_KEY))
+                          giphy_enabled=bool(GIPHY_API_KEY),
+                          calendar_enabled=bool(SUPERVISOR_TOKEN))
 
 @app.route('/api/channels')
 def api_channels():
@@ -852,7 +853,7 @@ def api_search():
     conn = sqlite3.connect('/data/chat.db')
     c = conn.cursor()
     c.execute('''SELECT m.id, m.sender, m.content, m.timestamp, m.channel,
-                        ua.alias as current_alias
+                        ua.alias as current_alias, m.message_type
                  FROM messages m
                  LEFT JOIN user_aliases ua ON ua.user_id = m.sender_id
                  WHERE m.content LIKE ? ESCAPE '\\'
@@ -863,12 +864,16 @@ def api_search():
 
     channels_by_slug = {ch['slug']: ch for ch in get_channels()}
     results = []
-    for msg_id, sender, content, timestamp, channel, alias in rows:
+    for msg_id, sender, content, timestamp, channel, alias, message_type in rows:
         ch = channels_by_slug.get(channel)
+        # content is a JSON payload for calendar_event messages, not
+        # display text (see api_create_calendar_event()) — would
+        # otherwise show as raw JSON in search results.
+        display_content = summarize_message_for_notification(content, message_type, None) if message_type == 'calendar_event' else content
         results.append({
             'id': msg_id,
             'sender': alias or sender,
-            'content': content,
+            'content': display_content,
             'timestamp': timestamp,
             'channel': channel,
             'channel_name': ch['name'] if ch else channel,
@@ -1338,6 +1343,28 @@ def get_subscribers_for_channel(channel, exclude_user_id=None):
     return [(uid, svc) for uid, svc in rows if svc and uid != exclude_user_id]
 
 def summarize_message_for_notification(content, msg_type, file_info):
+    if msg_type == 'calendar_event':
+        # content is a JSON payload here, not display text (see
+        # api_create_calendar_event()) — has to be handled before the
+        # generic `if content:` branch below, which would otherwise just
+        # return the raw JSON as the notification body.
+        try:
+            event = json.loads(content)
+        except (json.JSONDecodeError, TypeError):
+            return 'Added a calendar event'
+        when = event.get('start', '')
+        if event.get('all_day') and when:
+            try:
+                when = datetime.strptime(when, '%Y-%m-%d').strftime('%a, %b %-d')
+            except ValueError:
+                pass
+        elif when:
+            try:
+                when = datetime.strptime(when, '%Y-%m-%d %H:%M:%S').strftime('%a, %b %-d · %-I:%M %p')
+            except ValueError:
+                pass
+        title = event.get('title', 'Untitled event')
+        return f'📅 Added: {title} — {when}' if when else f'📅 Added: {title}'
     content = (content or '').strip()
     if content:
         return content if len(content) <= 200 else content[:197] + '…'
@@ -1448,6 +1475,135 @@ def api_notify_test():
     if not ok:
         return jsonify({'error': error}), 503
     return jsonify({'success': True})
+
+# --- Calendar ---
+# Creates real events on Home Assistant's own calendars via
+# calendar.create_event — the same ha_api_request() plumbing already
+# used for notify.* calls, just a different service. No separate
+# integration or credentials of its own.
+
+def get_calendar_entities():
+    """Every calendar.* entity currently registered in Home Assistant,
+    with a friendly display name. Used both to populate the calendar
+    picker and — just as importantly — as the allowlist a submitted
+    entity_id gets checked against before ever being used in a
+    privileged HA API call (same reasoning as send_ha_notification():
+    never trust a client-supplied identifier, even one that only ever
+    came from a dropdown populated with real values)."""
+    data, error = ha_api_request('GET', '/states')
+    if error:
+        return None, error
+    calendars = []
+    for state in data or []:
+        entity_id = state.get('entity_id', '')
+        if entity_id.startswith('calendar.'):
+            name = (state.get('attributes') or {}).get('friendly_name') or entity_id
+            calendars.append({'entity_id': entity_id, 'name': name})
+    calendars.sort(key=lambda c: c['name'].lower())
+    return calendars, None
+
+@app.route('/api/calendars')
+def api_calendars():
+    calendars, error = get_calendar_entities()
+    if error:
+        return jsonify({'error': error}), 503
+    return jsonify({'calendars': calendars})
+
+@app.route('/api/calendar/create-event', methods=['POST'])
+def api_create_calendar_event():
+    ha_user_id = request.headers.get('X-Remote-User-Id')
+    if not ha_user_id:
+        return jsonify({'error': 'Not accessed through Home Assistant'}), 403
+    _, sender = resolve_ha_identity()
+
+    data = request.get_json(silent=True) or {}
+    entity_id = (data.get('entity_id') or '').strip()
+    title = (data.get('title') or '').strip()[:200]
+    all_day = bool(data.get('all_day'))
+    start = (data.get('start') or '').strip()
+    end = (data.get('end') or '').strip()
+    location = (data.get('location') or '').strip()[:200]
+    description = (data.get('description') or '').strip()[:2000]
+    channel = (data.get('channel') or '').strip()
+
+    if not title:
+        return jsonify({'error': 'Give the appointment a title.'}), 400
+    if not start:
+        return jsonify({'error': 'Choose a start date.' if all_day else 'Choose a start date and time.'}), 400
+
+    # entity_id and channel are both validated against the real, current
+    # lists rather than trusted as-is — see get_calendar_entities()'s
+    # docstring for why.
+    calendars, cal_error = get_calendar_entities()
+    if cal_error:
+        return jsonify({'error': cal_error}), 503
+    if entity_id not in {c['entity_id'] for c in calendars}:
+        return jsonify({'error': 'Choose a valid calendar.'}), 400
+
+    valid_channels = {c['slug'] for c in get_channels()}
+    if channel not in valid_channels:
+        channel = 'general'
+
+    event_body = {'entity_id': entity_id, 'summary': title}
+    if location:
+        event_body['location'] = location
+    if description:
+        event_body['description'] = description
+
+    if all_day:
+        # HA's end date is exclusive (a single-day all-day event on
+        # 2024-03-10 needs an end date of 2024-03-11) — if the form only
+        # collected a start date (the common case: a one-day event), the
+        # end is computed here rather than requiring the person to
+        # understand and manually enter "the day after."
+        if not end:
+            try:
+                start_date = datetime.strptime(start, '%Y-%m-%d')
+                end = (start_date + timedelta(days=1)).strftime('%Y-%m-%d')
+            except ValueError:
+                return jsonify({'error': 'Invalid start date.'}), 400
+        event_body['start_date'] = start
+        event_body['end_date'] = end
+    else:
+        if not end:
+            return jsonify({'error': 'Choose an end time.'}), 400
+        event_body['start_date_time'] = start
+        event_body['end_date_time'] = end
+
+    _, error = ha_api_request('POST', '/services/calendar/create_event', event_body)
+    if error:
+        return jsonify({'error': error}), 503
+
+    # Posts the same way any other message does — saved, then broadcast
+    # to whichever channel's room it belongs to — except this request
+    # came in over plain HTTP, not an active socket connection, so it
+    # uses socketio.emit() (the SocketIO instance's own method) rather
+    # than the bare emit() imported from flask_socketio, which only
+    # works from inside an actual @socketio.on(...) handler's request
+    # context. content is a small JSON payload, not display text — the
+    # client renders it as a card; see buildCalendarEventHtml() in
+    # script.js. summarize_message_for_notification() and the search
+    # endpoint both know how to turn this same payload into a plain-text
+    # summary for contexts that can't render the card.
+    event_payload = {
+        'title': title, 'all_day': all_day, 'start': start, 'end': end, 'location': location,
+    }
+    msg_id = save_message(sender, json.dumps(event_payload), channel, 'calendar_event', sender_id=ha_user_id)
+    socketio.emit('new_message', {
+        'id': msg_id,
+        'sender': sender,
+        'sender_id': ha_user_id,
+        'avatar_url': get_avatar(ha_user_id) if ha_user_id else None,
+        'content': json.dumps(event_payload),
+        'timestamp': datetime.now().isoformat(),
+        'channel': channel,
+        'type': 'calendar_event',
+        'file': None,
+        'reactions': {}
+    }, room=channel)
+    notify_message_subscribers(channel, sender, ha_user_id, json.dumps(event_payload), 'calendar_event', None)
+
+    return jsonify({'success': True, 'channel': channel})
 
 def log_socket_errors(handler):
     """Socket.IO event handlers don't go through Flask's normal error

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.23.0
+
+### Added
+- **Calendar events.** A 📅 button in the message composer (always available, not tied to any one channel) opens a form to add a real event to one of Home Assistant's own calendars — title, all-day or a specific time range, location, and notes — using the same `calendar.create_event` action you'd otherwise trigger from an automation or the Calendar dashboard. No separate calendar of its own; it's a form in front of the one(s) already in Home Assistant, picked from a live dropdown of whatever calendar entities exist. On success it posts a small confirmation card into whichever channel you choose (defaults to the one you're currently viewing) — shows up instantly for everyone the same way any other message does, works with search, and triggers push notifications the same way too. Requires this add-on's existing `homeassistant_api` access (same permission the notification feature already uses) — the button is hidden until that's available. Both the target calendar and the target channel are validated server-side against Home Assistant's and this app's own current lists before ever being used, not just trusted from the request.
+
 ## 2.22.0
 
 ### Added
