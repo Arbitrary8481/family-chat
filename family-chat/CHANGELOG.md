@@ -1,13 +1,11 @@
 # Changelog
 
-<<<<<<< Updated upstream
 =======
 ## 2.22.0
 
 ### Added
 - **Avatars.** Settings → Profile now has an "Upload photo" button next to your display name — pick a PNG, JPG, GIF, or WEBP and it replaces the initial-letter circle everywhere: the sidebar user panel, the member list, and every message you've sent (past and future alike), the same "looked up at read time, applies retroactively" approach the existing display-name alias already uses. A "Remove" button reverts to the plain initial. Self-service only, same as your alias — an admin can't set someone else's avatar for them. Old avatar files are cleaned up from disk automatically when replaced or removed.
 
->>>>>>> Stashed changes
 ## 2.21.11
 
 ### Security
