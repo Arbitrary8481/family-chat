@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.21.7
+
+### Fixed
+- **Opening the channel drawer on mobile garbled the header text** — the previous fix (raising the header above the drawer so its toggle button stayed clickable) caused the header to visually overlap the drawer's own "🏠 [server name]" heading, since both occupied the same strip at the top of the screen. Reverted that approach in favor of a proper fix: a dedicated ✕ close button now lives inside the drawer itself, next to the settings pencil in the user panel at the bottom. The header goes back to sitting normally behind the drawer (no more text collision), and closing the drawer no longer depends on being able to see or tap anything in the header while it's open — the close button, tapping the dimmed backdrop, or picking a channel all still work.
+
 ## 2.21.6
 
 ### Fixed

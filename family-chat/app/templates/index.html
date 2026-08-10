@@ -44,6 +44,18 @@
                         <span class="user-status">🏠 At Home</span>
                     </div>
                 </div>
+                <!-- Closes the drawer from inside it, on mobile — this
+                     lives here rather than in the header specifically
+                     to avoid colliding with the drawer's own "server
+                     name" heading at the top (see the <768px CSS for
+                     why). Hidden on desktop, where the sidebar isn't a
+                     drawer that needs closing this way. -->
+                <button class="header-btn drawer-close-btn" onclick="toggleChannelSidebar()" title="Close channel list" id="drawerCloseBtn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
                 <button class="header-btn" onclick="openMySettings()" title="Settings">✏️</button>
             </div>
         </div>

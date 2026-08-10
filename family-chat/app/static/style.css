@@ -149,6 +149,10 @@ body {
     flex: 1;
 }
 
+.drawer-close-btn {
+    display: none;
+}
+
 .avatar {
     width: 32px;
     height: 32px;
@@ -1550,17 +1554,23 @@ body {
 }
 
 @media (max-width: 768px) {
-    /* The header (and specifically its toggle button) must stay above
-       the drawer, not below it — without this, opening the drawer
-       covers the very button you'd tap to close it again, since the
-       drawer is a full-height overlay starting from the left edge and
-       the header had no z-index of its own (defaulting below the
-       drawer's 200). This is almost certainly why the toggle button
-       appeared to vanish: it didn't disappear, the open drawer was
-       rendered on top of it. */
-    .chat-header {
-        position: relative;
-        z-index: 250;
+    /* Raising the header above the drawer (an earlier attempt at this)
+       fixed the toggle button being covered while open, but caused a
+       worse problem: the header now overlapped the drawer's own
+       "🏠 server name" heading, since both occupy the exact same
+       48px-tall strip at the top of the screen once the drawer is open
+       — the two headings rendered on top of each other, garbled and
+       unreadable. The actual fix is below: a second close control lives
+       inside the drawer itself (next to the settings pencil, in the
+       user panel), so the header doesn't need to fight the drawer for
+       the same space at all — it can go back to sitting normally below
+       it, and closing the drawer no longer depends on being able to
+       see/tap anything in the header while it's open. */
+
+    .drawer-close-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
 
     /* The channel sidebar becomes a slide-over drawer rather than
