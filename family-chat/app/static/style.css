@@ -51,65 +51,6 @@ body {
     width: 100vw;
 }
 
-/* Server List */
-.server-list {
-    width: 72px;
-    background: var(--bg-tertiary);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 12px 0;
-    gap: 8px;
-    flex-shrink: 0;
-}
-
-.server-icon {
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    background: var(--bg-primary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    overflow: hidden;
-    position: relative;
-}
-
-.server-icon:hover, .server-icon.active {
-    border-radius: 16px;
-    background: var(--bg-accent);
-    transform: translateY(-2px);
-}
-
-.server-initial {
-    font-size: 20px;
-    font-weight: 700;
-    color: white;
-}
-
-.server-divider {
-    width: 32px;
-    height: 2px;
-    background: var(--bg-secondary);
-    border-radius: 1px;
-    margin: 4px 0;
-}
-
-.add-server {
-    color: var(--channels-default);
-    font-size: 24px;
-    background: var(--bg-primary);
-    border: 2px dashed var(--channels-default);
-}
-
-.add-server:hover {
-    color: var(--interactive-hover);
-    border-color: var(--success);
-    background: rgba(59, 165, 93, 0.2);
-}
-
 /* Channel Sidebar */
 .channel-sidebar {
     width: 240px;
@@ -126,6 +67,10 @@ body {
     opacity: 0;
     pointer-events: none;
     white-space: nowrap;
+}
+
+.sidebar-backdrop {
+    display: none;
 }
 
 .server-header {
@@ -204,6 +149,10 @@ body {
     flex: 1;
 }
 
+.drawer-close-btn {
+    display: none;
+}
+
 .avatar {
     width: 32px;
     height: 32px;
@@ -215,6 +164,17 @@ body {
     color: white;
     font-size: 14px;
     background: linear-gradient(135deg, var(--bg-accent) 0%, #7289da 100%);
+    overflow: hidden;
+}
+
+/* Applies inside any of the various avatar containers (.avatar,
+   .member-avatar, .message-avatar) once a person has set a real photo —
+   fills the circle completely, hiding the gradient/initial behind it. */
+.avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
 }
 
 .user-details {
@@ -341,6 +301,9 @@ body {
     padding: 8px;
     border-radius: 4px;
     font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     transition: all 0.2s;
 }
 
@@ -414,6 +377,8 @@ body {
     flex-shrink: 0;
     font-size: 16px;
     cursor: pointer;
+    overflow: hidden;
+    background: linear-gradient(135deg, var(--bg-accent) 0%, #7289da 100%);
 }
 
 .message-content {
@@ -944,6 +909,7 @@ body {
     font-weight: 600;
     font-size: 14px;
     position: relative;
+    overflow: hidden;
 }
 
 .member-avatar::after {
@@ -1466,6 +1432,25 @@ body {
     margin-top: 8px;
 }
 
+.avatar-settings-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.avatar-preview {
+    width: 64px;
+    height: 64px;
+    font-size: 24px;
+    flex-shrink: 0;
+}
+
+.avatar-settings-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
 .custom-emoji-list {
     padding: 16px;
     display: grid;
@@ -1593,22 +1578,73 @@ body {
     .members-sidebar {
         display: none;
     }
+    /* Nothing left for this to toggle once the sidebar itself is
+       force-hidden above — leaving it visible just invites tapping a
+       button that visibly does nothing. */
+    #membersSidebarToggle {
+        display: none;
+    }
 }
 
 @media (max-width: 768px) {
-    .server-list {
-        width: 60px;
+    /* Raising the header above the drawer (an earlier attempt at this)
+       fixed the toggle button being covered while open, but caused a
+       worse problem: the header now overlapped the drawer's own
+       "🏠 server name" heading, since both occupy the exact same
+       48px-tall strip at the top of the screen once the drawer is open
+       — the two headings rendered on top of each other, garbled and
+       unreadable. The actual fix is below: a second close control lives
+       inside the drawer itself (next to the settings pencil, in the
+       user panel), so the header doesn't need to fight the drawer for
+       the same space at all — it can go back to sitting normally below
+       it, and closing the drawer no longer depends on being able to
+       see/tap anything in the header while it's open. */
+
+    .drawer-close-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
+
+    /* The channel sidebar becomes a slide-over drawer rather than
+       sharing horizontal space with the chat — there simply isn't
+       enough width on a phone to show both at once without either
+       squeezing messages down to nothing or making the sidebar too
+       narrow to read. This reuses the exact same .collapsed class and
+       toggleChannelSidebar()/☰ button that already exist for the
+       desktop inline-collapse behavior; only how "collapsed" is drawn
+       changes here.
+       Previously this was a *different*, dead mechanism (.channel-sidebar.open,
+       toggled by nothing) left over from before that shared system
+       existed — the sidebar was permanently stuck off-screen with no
+       way to open it at all on any phone-width screen. */
     .channel-sidebar {
-        position: absolute;
-        left: -240px;
-        height: 100%;
-        z-index: 100;
-        transition: left 0.3s;
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: 240px;
+        z-index: 200;
+        opacity: 1;
+        transform: translateX(0);
+        transition: transform 0.2s ease;
+        box-shadow: 4px 0 16px rgba(0,0,0,0.3);
     }
-    .channel-sidebar.open {
-        left: 60px;
+    .channel-sidebar.collapsed {
+        width: 240px;
+        opacity: 1;
+        pointer-events: none;
+        transform: translateX(-100%);
     }
+
+    .sidebar-backdrop:not(.hidden) {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.5);
+        z-index: 150;
+    }
+
     .emoji-picker, .gif-picker {
         width: calc(100vw - 32px);
         right: 16px;
@@ -1629,5 +1665,26 @@ body {
        longer eats a third of a phone-width modal with English words. */
     .settings-tab-label {
         display: none;
+    }
+
+    /* The subtitle next to the channel name is decorative, static text
+       ("Family communication center") that never changes — worth
+       showing when there's room, not worth the space it costs on a
+       phone-width header that's already carrying a sidebar toggle,
+       channel name, and four more icon buttons. */
+    .channel-topic {
+        display: none;
+    }
+}
+
+/* Reaction/delete buttons on a message were only ever revealed via
+   :hover — completely inaccessible on any touch device, since tapping a
+   message doesn't produce a hover state the way a mouse does. Shown
+   permanently instead wherever hovering isn't the primary input method
+   (hover: none catches touchscreens generally, the width fallback
+   catches anything that media feature doesn't detect reliably). */
+@media (hover: none), (max-width: 768px) {
+    .message-actions {
+        opacity: 1;
     }
 }

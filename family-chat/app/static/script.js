@@ -30,7 +30,7 @@ let emojiPickerContext = null;
 
 // Standard emoji categories
 const emojiCategories = {
-    people: ['😀','😃','😄','😁','😅','😂','🤣','😊','😇','🙂','🙃','😉','😌','😍','🥰','😘','😗','😙','😚','😋','😛','😝','😜','🤪','🤨','🧐','🤓','😎','🥸','🤩','🥳','😏','😒','😞','😔','😟','😕','🙁','☹️','😣','😖','😫','😩','🥺','😢','😭','😤','😠','😡','🤬','🤯','😳','🥵','🥶','😱','😨','😰','😥','😓','🤗','🤔','🤭','🤫','🤥','😶','😐','😑','😬','🙄','😯','😦','😧','😮','😲','🥱','😴','🤤','😪','😵','🤐','🥴','🤢','🤮','🤧','😷','🤒','🤕','🤑','🤠','😈','👿','👹','👺','🤡','💩','👻','💀','☠️','👽','👾','🤖','🎃','😺','😸','😹','😻','😼','😽','🙀','😿','😾','🤲','👐','🙌','👏','🤝','👍','👎','👊','✊','🤛','🤜','🤞','✌️','🤟','🤘','👌','🤏','👈','👉','👆','👇','☝️','✋','🤚','🖐️','🖖','👋','🤙','💪','🦾','🖕','✍️','🙏','🦶','🦵','🦿','💄','💋','👄','🦷','👅','👂','🦻','👃','👣','👁️','👀','🧠','🫀','🫁','🦴','🦷','👀'],
+    people: ['😀','😃','😄','😁','😅','😂','🤣','😊','😇','🙂','🙃','😉','😌','😍','🥰','😘','😗','😙','😚','😋','😛','😝','😜','🤪','🤨','🧐','🤓','😎','🥸','🤩','🥳','😏','😒','😞','😔','😟','😕','🙁','☹️','😣','😖','😫','😩','🥺','😢','😭','😤','😠','😡','🤬','🤯','😳','🥵','🥶','😱','😨','😰','😥','😓','🤗','🤔','🤭','🤫','🤥','😶','😐','😑','😬','🙄','😯','😦','😧','😮','😲','🥱','😴','🤤','😪','😵','🤐','🥴','🤢','🤮','🤧','😷','🤒','🤕','🤑','🤠','😈','👿','👹','👺','🤡','💩','👻','💀','☠️','👽','👾','🤖','🎃','😺','😸','😹','😻','😼','😽','🙀','😿','😾','🤲','👐','🙌','👏','🤝','👍','👎','👊','✊','🤛','🤜','🤞','✌️','🤟','🤘','👌','🤏','👈','👉','👆','👇','☝️','✋','🤚','🖐️','🖖','👋','🤙','💪','🦾','🖕','✍️','🙏','🦶','🦵','🦿','💄','💋','👄','🦷','👅','👂','🦻','👃','👣','👁️','👀','🧠','🫀','🫁','🦴','🦷','👀','💯'],
     nature: ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐽','🐸','🐵','🙈','🙉','🙊','🐒','🐔','🐧','🐦','🐤','🐣','🐥','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🐛','🦋','🐌','🐞','🐜','🦟','🦗','🕷️','🕸️','🦂','🐢','🐍','🦎','🦖','🦕','🐙','🦑','🦐','🦞','🦀','🐡','🐠','🐟','🐬','🐳','🐋','🦈','🐊','🐅','🐆','🦓','🦍','🦧','🐘','🦛','🦏','🐪','🐫','🦒','🦘','🐃','🐂','🐄','🐎','🐖','🐏','🐑','🦙','🐐','🦌','🐕','🐩','🦮','🐕‍🦺','🐈','🐈‍⬛','🐓','🦃','🦚','🦜','🦢','🦩','🕊️','🐇','🦝','🦨','🦡','🦦','🦥','🐁','🐀','🐿️','🦔','🐾','🐉','🐲','🌵','🎄','🌲','🌳','🌴','🌱','🌿','☘️','🍀','🎍','🎋','🍃','🍂','🍁','🍄','🐚','🌾','💐','🌷','🌹','🥀','🌺','🌸','🌼','🌻','🌞','🌝','🌛','🌜','🌚','🌕','🌖','🌗','🌘','🌑','🌒','🌓','🌔','🌙','🌎','🌍','🌏','🪐','💫','⭐','🌟','✨','⚡','🔥','💥','☄️','☀️','🌤️','⛅','🌥️','🌦️','🌈','☁️','🌧️','⛈️','🌩️','🌨️','❄️','☃️','⛄','🌬️','💨','💧','💦','☔','☂️','🌊','🌫️'],
     food: ['🍏','🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🍈','🍒','🍑','🍍','🥝','🥥','🥑','🍆','🍅','🌶️','🥒','🥬','🥦','🧄','🧅','🍄','🥜','🌰','🍞','🥐','🥖','🥨','🥯','🥞','🧇','🧀','🍖','🍗','🥩','🥓','🍔','🍟','🍕','🌭','🥪','🌮','🌯','🥙','🧆','🥚','🍳','🥘','🍲','🥣','🥗','🍿','🧈','🧂','🥫','🍱','🍘','🍙','🍚','🍛','🍜','🍝','🍠','🍢','🍣','🍤','🍥','🍡','🍦','🍧','🍨','🍩','🍪','🎂','🍰','🧁','🥧','🍫','🍬','🍭','🍮','🍯','🍼','🥛','☕','🍵','🧃','🥤','🍶','🍺','🍻','🥂','🍷','🥃','🍸','🍹','🧉','🍾','🧊','🥄','🍴','🍽️','🥣','🥡','🥢','🧂'],
     activities: ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🪀','🏓','🏸','🏒','🏑','🥍','🏏','🥅','⛳','🪁','🏹','🎣','🤿','🥊','🥋','🎽','🛹','🛷','⛸️','🥌','🎿','⛷️','🏂','🏋️','🤼','🤽','🤾','🤺','🏇','⛷️','🏂','🏌️','🏄','🚣','🏊','⛹️','🏋️','🚴','🚵','🎽','🎿','🛷','🥅','⛳','🎣','🎽','🎿','🎯','🎱','🔮','🧿','🎮','🕹️','🎰','🎲','🧩','🧸','🪅','🪆','♠️','♥️','♦️','♣️','♟️','🃏','🀄','🎴','🎭','🖼️','🎨','🧵','🧶','🥼','🥽','🥾','🥿','👟','👞','🥾','🥿','👠','👡','👢','👑','👒','🎩','🎓','🧢','⛑️','📿','💄','💍','💎','🔇','🔈','🔉','🔊','📢','📣','📯','🔔','🔕','🎼','🎵','🎶','🎙️','🎚️','🎛️','🎤','🎧','📻','🎷','🎸','🎹','🎺','🎻','🪕','🥁','📱','📲','☎️','📞','📟','📠','🔋','🔌','💻','🖥️','🖨️','⌨️','🖱️','🖲️','💽','💾','💿','📀','🧮','🎥','🎞️','📽️','🎬','📺','📷','📸','📹','📼','🔍','🔎','🕯️','💡','🔦','🏮','🪔','📔','📕','📖','📗','📘','📙','📚','📓','📒','📃','📜','📄','📰','🗞️','📑','🔖','🏷️','💰','🪙','💴','💵','💶','💷','💸','💳','🧾','💹','✉️','📧','📨','📩','📤','📥','📦','📫','📪','📬','📭','📮','🗳️','✏️','✒️','🖋️','🖊️','🖌️','🖍️','📝','💼','📁','📂','🗂️','📅','📆','🗒️','🗓️','📇','📈','📉','📊','📋','📌','📍','📎','🖇️','📏','📐','✂️','🗃️','🗄️','🗑️','🔒','🔓','🔏','🔐','🔑','🗝️','🔨','🪓','⛏️','⚒️','🛠️','🗡️','⚔️','🔫','🏹','🛡️','🔧','🔩','⚙️','🗜️','⚖️','🦯','🔗','⛓️','🧰','🧲','🧪','🧫','🧬','🔬','🔭','📡','💉','🩸','💊','🩹','🩺','🌡️','🚽','🚰','🚿','🛁','🛀','🧴','🧷','🧹','🧺','🧻','🧼','🧽','🧯','🛒','🚬','⚰️','⚱️','🗿','🚂','🚃','🚄','🚅','🚆','🚇','🚈','🚉','🚊','🚝','🚞','🚋','🚌','🚍','🚎','🚐','🚑','🚒','🚓','🚔','🚕','🚖','🚗','🚘','🚙','🚚','🚛','🚜','🏎️','🏍️','🛵','🦽','🦼','🛺','🚲','🛴','🛹','🛼','🚏','🛣️','🛤️','🛢️','⛽','🚨','🚥','🚦','🛑','🚧','⚓','⛵','🛶','🚤','🛳️','⛴️','🚢','✈️','🛩️','🛫','🛬','🪂','💺','🚁','🚟','🚠','🚡','🛰️','🚀','🛸','🛎️','🧳','⌛','⏳','⌚','⏰','⏱️','⏲️','🕰️','🕛','🕧','🕐','🕜','🕑','🕝','🕒','🕞','🕓','🕟','🕔','🕠','🕕','🕡','🕖','🕢','🕗','🕣','🕘','🕤','🕙','🕥','🕚','🕦','🌑','🌒','🌓','🌔','🌕','🌖','🌗','🌘','🌙','🌚','🌛','🌜','🌡️','☀️','🌝','🌞','🪐','⭐','🌟','🌠','🌌','☁️','⛅','⛈️','🌤️','🌥️','🌦️','🌧️','🌨️','🌩️','🌪️','🌫️','🌬️','🌀','🌈','🌂','☂️','☔','⛱️','⚡','❄️','☃️','⛄','☄️','🔥','💧','🌊']
@@ -72,7 +72,8 @@ const emojiNames = {
 '🚆':'train','🚇':'metro','🚈':'light rail','🚉':'station','🚊':'tram','🚝':'monorail','🚞':'mountain railway','🚋':'tram car','🚌':'bus','🚍':'oncoming bus','🚎':'trolleybus','🚐':'minibus','🚑':'ambulance','🚒':'fire engine','🚓':'police car','🚔':'oncoming police car','🚕':'taxi','🚖':'oncoming taxi','🚗':'automobile','🚘':'oncoming automobile','🚙':'sport utility vehicle','🚚':'delivery truck','🚛':'articulated lorry','🚜':'tractor','🏎️':'racing car','🏍️':'motorcycle','🛵':'motor scooter','🦽':'manual wheelchair',
 '🦼':'motorized wheelchair','🛺':'auto rickshaw','🚲':'bicycle','🛴':'kick scooter','🛼':'roller skate','🚏':'bus stop','🛣️':'motorway','🛤️':'railway track','🛢️':'oil drum','⛽':'fuel pump','🚨':'police car light','🚥':'horizontal traffic light','🚦':'vertical traffic light','🛑':'stop sign','🚧':'construction','⚓':'anchor','⛵':'sailboat','🛶':'canoe','🚤':'speedboat','🛳️':'passenger ship','⛴️':'ferry','🚢':'ship','✈️':'airplane','🛩️':'small airplane','🛫':'airplane departure','🛬':'airplane arrival',
 '🪂':'parachute','💺':'seat','🚁':'helicopter','🚟':'suspension railway','🚠':'mountain cableway','🚡':'aerial tramway','🛰️':'satellite','🚀':'rocket','🛸':'flying saucer','🛎️':'bellhop bell','🧳':'luggage','⌛':'hourglass done','⏳':'hourglass not done','⌚':'watch','⏰':'alarm clock','⏱️':'stopwatch','⏲️':'timer clock','🕰️':'mantelpiece clock','🕛':'twelve o’clock','🕧':'twelve-thirty','🕐':'one o’clock','🕜':'one-thirty','🕑':'two o’clock','🕝':'two-thirty','🕒':'three o’clock','🕞':'three-thirty',
-'🕓':'four o’clock','🕟':'four-thirty','🕔':'five o’clock','🕠':'five-thirty','🕕':'six o’clock','🕡':'six-thirty','🕖':'seven o’clock','🕢':'seven-thirty','🕗':'eight o’clock','🕣':'eight-thirty','🕘':'nine o’clock','🕤':'nine-thirty','🕙':'ten o’clock','🕥':'ten-thirty','🕚':'eleven o’clock','🕦':'eleven-thirty','🌠':'shooting star','🌌':'milky way','🌪️':'tornado','🌀':'cyclone','🌂':'closed umbrella','⛱️':'umbrella on ground'
+'🕓':'four o’clock','🕟':'four-thirty','🕔':'five o’clock','🕠':'five-thirty','🕕':'six o’clock','🕡':'six-thirty','🕖':'seven o’clock','🕢':'seven-thirty','🕗':'eight o’clock','🕣':'eight-thirty','🕘':'nine o’clock','🕤':'nine-thirty','🕙':'ten o’clock','🕥':'ten-thirty','🕚':'eleven o’clock','🕦':'eleven-thirty','🌠':'shooting star','🌌':'milky way','🌪️':'tornado','🌀':'cyclone','🌂':'closed umbrella','⛱️':'umbrella on ground',
+'💯':'hundred points'
 };
 
 // Initialize everything after DOM is ready.
@@ -91,7 +92,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const usernameEl = document.getElementById('currentUsername');
         const avatarEl = document.getElementById('currentAvatar');
         if (usernameEl) usernameEl.textContent = currentUser;
-        if (avatarEl) avatarEl.textContent = currentUser[0];
+        if (avatarEl) avatarEl.innerHTML = avatarInnerHtml(window.AUTO_CHAT_USER_AVATAR, currentUser);
 
         initializeChat();
     }
@@ -132,7 +133,7 @@ function resolveUrl(url) {
 // localStorage, so reloading (or reopening the ingress panel) doesn't
 // snap it back open.
 const SIDEBAR_CONFIG = {
-    channel: { id: 'channelSidebar', toggleId: 'channelSidebarToggle', storageKey: 'channelSidebarCollapsed' },
+    channel: { id: 'channelSidebar', toggleId: 'channelSidebarToggle', storageKey: 'channelSidebarCollapsed', backdropId: 'channelSidebarBackdrop' },
     members: { id: 'membersSidebar', toggleId: 'membersSidebarToggle', storageKey: 'membersSidebarCollapsed' }
 };
 
@@ -146,14 +147,31 @@ function setSidebarCollapsed(which, collapsed) {
         btn.classList.toggle('active', collapsed);
         btn.setAttribute('aria-pressed', String(!collapsed));
     }
+    // Only the channel sidebar becomes a mobile overlay drawer (see the
+    // <768px media query) — the backdrop dims the chat behind it and
+    // gives a tap-outside-to-close target, same as any other overlay in
+    // this app. It's invisible/inert at wider widths regardless.
+    if (cfg.backdropId) {
+        const backdrop = document.getElementById(cfg.backdropId);
+        if (backdrop) backdrop.classList.toggle('hidden', collapsed);
+    }
     try { localStorage.setItem(cfg.storageKey, collapsed ? '1' : '0'); } catch (e) {}
 }
 
 function restoreSidebarState() {
     Object.keys(SIDEBAR_CONFIG).forEach(which => {
         const cfg = SIDEBAR_CONFIG[which];
-        let collapsed = false;
-        try { collapsed = localStorage.getItem(cfg.storageKey) === '1'; } catch (e) {}
+        let collapsed;
+        try { collapsed = localStorage.getItem(cfg.storageKey); } catch (e) { collapsed = null; }
+        if (collapsed === null) {
+            // No explicit preference saved yet — default to collapsed on
+            // phone-width screens so a first-time mobile visitor lands
+            // on the actual chat, not a sidebar drawer covering it.
+            // Unchanged (expanded) on desktop, matching prior behavior.
+            collapsed = window.innerWidth <= 768;
+        } else {
+            collapsed = collapsed === '1';
+        }
         setSidebarCollapsed(which, collapsed);
     });
 }
@@ -376,7 +394,7 @@ function addMessage(data) {
         : '';
 
     messageDiv.innerHTML = `
-        <div class="message-avatar">${escapeHtml(data.sender[0])}</div>
+        <div class="message-avatar">${avatarInnerHtml(data.avatar_url, data.sender)}</div>
         <div class="message-content">
             <div class="message-header">
                 <span class="message-author">${escapeHtml(data.sender)}</span>
@@ -542,6 +560,17 @@ function linkifyText(text) {
     }
     result += escapeHtml(text.slice(lastIndex));
     return result;
+}
+
+// Shared by every place an avatar circle gets rendered client-side (chat
+// messages; the "me" panel and settings preview refresh after an
+// upload) — a real photo if the person has set one, else the same
+// first-letter-of-name fallback this app has always shown.
+function avatarInnerHtml(avatarUrl, name) {
+    if (avatarUrl) {
+        return `<img src="${safeUrl(resolveUrl(avatarUrl))}" alt="" class="avatar-img">`;
+    }
+    return escapeHtml((name || '?')[0]);
 }
 
 function safeUrl(url) {
@@ -862,6 +891,14 @@ function switchChannel(slug, onLoaded) {
     currentChannel = slug;
     try { localStorage.setItem('lastChannel', currentChannel); } catch (e) {}
 
+    // On phone-width screens the channel sidebar is a slide-over drawer
+    // (see the <768px media query) — picking a channel from it should
+    // close it afterward the way any mobile nav drawer would, rather
+    // than leaving it covering the very channel you just switched to.
+    if (window.innerWidth <= 768) {
+        setSidebarCollapsed('channel', true);
+    }
+
     // A different channel is a fresh view, always landing at the bottom
     // (see below) — any unseen count from the channel just left doesn't
     // carry over.
@@ -1048,6 +1085,7 @@ function openMySettings() {
             const hint = document.getElementById('myHaNameHint');
             if (input) input.value = me.alias || '';
             if (hint) hint.textContent = `(your Home Assistant name is "${me.ha_name}")`;
+            setAvatarPreview(me.avatar_url);
         })
         .catch(() => {});
 
@@ -1301,6 +1339,60 @@ function saveMyAlias() {
         .catch(() => {
             alert("Couldn't save your display name. Please try again.");
         });
+}
+
+// Current avatar as last loaded from /api/me — lets removeMyAvatar() know
+// whether there's actually anything to remove without a round-trip.
+let myCurrentAvatarUrl = '';
+
+function setAvatarPreview(avatarUrl) {
+    myCurrentAvatarUrl = avatarUrl || '';
+    const preview = document.getElementById('myAvatarPreview');
+    const removeBtn = document.getElementById('removeAvatarBtn');
+    if (preview) preview.innerHTML = avatarInnerHtml(myCurrentAvatarUrl, currentUser);
+    if (removeBtn) removeBtn.classList.toggle('hidden', !myCurrentAvatarUrl);
+}
+
+function uploadMyAvatar(event) {
+    const fileInput = event.target;
+    const file = fileInput.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    fetch(apiUrl('/api/my-avatar'), {
+        method: 'POST',
+        body: formData
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+            // Reload so the new photo applies everywhere at once — the
+            // sidebar, the header, and every past message you've sent —
+            // same reasoning as saveMyAlias() above.
+            location.reload();
+        })
+        .catch(() => alert("Couldn't upload your avatar. Please try again."))
+        .finally(() => { fileInput.value = ''; });
+}
+
+function removeMyAvatar() {
+    if (!myCurrentAvatarUrl) return;
+
+    fetch(apiUrl('/api/my-avatar'), { method: 'DELETE' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+            location.reload();
+        })
+        .catch(() => alert("Couldn't remove your avatar. Please try again."));
 }
 
 function loadCustomEmojiList() {
