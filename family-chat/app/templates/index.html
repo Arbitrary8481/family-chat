@@ -14,17 +14,18 @@
 </head>
 <body>
     <div class="app-container">
-        <!-- Server List -->
-        <div class="server-list">
-            <div class="server-icon active" title="Home">
-                <span class="server-initial">H</span>
-            </div>
-        </div>
+        <!-- Dims/blocks the chat behind the channel sidebar when it's
+             open as a mobile slide-over drawer (see the <768px media
+             query in style.css) — tapping it closes the drawer, same as
+             tapping outside any other overlay in this app. Invisible
+             and inert at wider widths, where the sidebar sits inline
+             instead of overlaying anything. -->
+        <div class="sidebar-backdrop hidden" id="channelSidebarBackdrop" onclick="toggleChannelSidebar()"></div>
 
         <!-- Channel List -->
         <div class="channel-sidebar" id="channelSidebar">
             <div class="server-header">
-                <h3>🏠 Family Home</h3>
+                <h3>{{ server_icon }} {{ server_name }}</h3>
             </div>
             <div class="channel-list">
                 <div class="category">TEXT CHANNELS</div>
@@ -52,7 +53,10 @@
             <div class="chat-header">
                 <div class="chat-header-left">
                     <button class="header-btn sidebar-toggle-btn" onclick="toggleChannelSidebar()" title="Toggle channel list" id="channelSidebarToggle">
-                        ☰
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="4" width="18" height="16" rx="2"/>
+                            <line x1="9" y1="4" x2="9" y2="20"/>
+                        </svg>
                     </button>
                     <div class="channel-info">
                         <span class="channel-hash">{{ channels[0].icon if channels else '#' }}</span>
@@ -76,6 +80,16 @@
                     <p>Stay connected with your family 👨‍👩‍👧‍👦</p>
                 </div>
             </div>
+
+            <!-- Jump-to-bottom: hidden until you scroll up away from the
+                 newest message, or a new message arrives while you're not
+                 there. -->
+            <button class="scroll-to-bottom-btn hidden" id="scrollToBottomBtn" onclick="jumpToBottom()" title="Jump to latest messages">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 16l-6-6h12l-6 6z"/>
+                </svg>
+                <span class="scroll-to-bottom-badge hidden" id="scrollToBottomBadge">0</span>
+            </button>
 
             <!-- Typing indicator -->
             <div class="typing-indicator hidden" id="typingIndicator">

@@ -35,11 +35,78 @@
             padding: 32px;
             box-shadow: 0 8px 24px rgba(0,0,0,0.4);
         }
+        .panel.admin-panel-wide {
+            max-width: 680px;
+            padding: 0;
+            overflow: hidden;
+        }
+        .admin-panel-wide .panel-inner {
+            padding: 32px 32px 0;
+        }
+        .admin-body {
+            display: flex;
+            margin-top: 24px;
+            min-height: 420px;
+        }
+        .admin-tabs {
+            width: 180px;
+            flex-shrink: 0;
+            background: var(--bg-tertiary);
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            padding: 12px;
+        }
+        .admin-tab {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            padding: 10px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            text-align: left;
+            width: auto;
+            margin-top: 0;
+            font-weight: 400;
+            transition: all 0.15s;
+        }
+        .admin-tab:hover {
+            background: rgba(255,255,255,0.06);
+            color: var(--text-normal);
+        }
+        .admin-tab.active {
+            background: var(--bg-accent);
+            color: white;
+        }
+        .admin-tab span {
+            font-size: 16px;
+        }
+        .admin-tab-panels {
+            flex: 1;
+            padding: 24px 32px 32px;
+            min-width: 0;
+            overflow-y: auto;
+            max-height: 70vh;
+        }
+        .admin-tab-panel {
+            display: none;
+        }
+        .admin-tab-panel.active {
+            display: block;
+        }
+        @media (max-width: 600px) {
+            .panel.admin-panel-wide { max-width: 100%; }
+            .admin-body { flex-direction: column; }
+            .admin-tabs { width: 100%; flex-direction: row; overflow-x: auto; }
+            .admin-tab-panels { padding: 20px; }
+        }
         .section-title {
             font-size: 15px;
-            margin: 28px 0 4px;
-            padding-top: 20px;
-            border-top: 1px solid var(--bg-tertiary);
+            margin: 0 0 4px;
         }
         select {
             width: 100%;
@@ -167,7 +234,7 @@
     </style>
 </head>
 <body>
-    <div class="panel">
+    <div class="panel{% if logged_in %} admin-panel-wide{% endif %}">
         {% if not logged_in %}
             <h1>🔒 Admin Login</h1>
             <p class="subtitle">Enter the admin password to manage Family Chat settings.</p>
@@ -178,6 +245,7 @@
                 <button type="submit">Log In</button>
             </form>
         {% else %}
+        <div class="panel-inner">
             <div class="logout-row">
                 <h1 style="margin:0;">⚙️ Admin</h1>
                 <form method="post" action="./admin/logout">
@@ -186,64 +254,117 @@
             </div>
             <p class="subtitle">Manage channels. Who can chat is entirely automatic — anyone who opens this from the Home Assistant sidebar signs in as themselves, using their own Home Assistant name.</p>
             {% if saved == '1' %}<div class="message success">Saved. Reload the chat to see changes.</div>{% endif %}
+        </div>
 
-            <h2 class="section-title" style="margin-top:0; padding-top:0; border-top:none;">Channels</h2>
-            {% if channel_error %}<div class="message error">{{ channel_error }}</div>{% endif %}
-            <div class="channel-manage-list">
-                {% for ch in channels %}
-                <div class="channel-row">
-                    <span class="channel-row-label">{{ ch.icon }} {{ ch.name }}</span>
-                    <form method="post" action="./admin/channels/delete">
-                        <input type="hidden" name="slug" value="{{ ch.slug }}">
-                        <button type="submit" class="delete-btn" title="Delete channel"{% if channels|length <= 1 %} disabled{% endif %}>✕</button>
+        <div class="admin-body">
+            <div class="admin-tabs">
+                <button class="admin-tab{% if active_tab == 'chatname' %} active{% endif %}" data-tab="chatname" onclick="switchAdminTab('chatname')">
+                    <span>🏠</span> Chat Name
+                </button>
+                <button class="admin-tab{% if active_tab == 'channels' %} active{% endif %}" data-tab="channels" onclick="switchAdminTab('channels')">
+                    <span>#️⃣</span> Channels
+                </button>
+                <button class="admin-tab{% if active_tab == 'owner' %} active{% endif %}" data-tab="owner" onclick="switchAdminTab('owner')">
+                    <span>👑</span> Server Owner
+                </button>
+                <button class="admin-tab{% if active_tab == 'aliases' %} active{% endif %}" data-tab="aliases" onclick="switchAdminTab('aliases')">
+                    <span>🏷️</span> Display Names
+                </button>
+            </div>
+
+            <div class="admin-tab-panels">
+                <!-- Chat Name -->
+                <div class="admin-tab-panel{% if active_tab == 'chatname' %} active{% endif %}" id="adminTab-chatname">
+                    <h2 class="section-title">Chat Name</h2>
+                    <p class="subtitle">Shown at the top of the channel sidebar, in the upper-left of the chat.</p>
+                    <form method="post" action="./admin/server-name/set">
+                        <label for="server_icon">Icon</label>
+                        <input type="text" id="server_icon" name="server_icon" maxlength="8" value="{{ server_identity.icon }}" style="max-width: 80px;">
+                        <label for="server_name">Name</label>
+                        <input type="text" id="server_name" name="server_name" maxlength="40" value="{{ server_identity.name }}" required>
+                        <button type="submit">Save Name</button>
                     </form>
                 </div>
-                {% endfor %}
+
+                <!-- Channels -->
+                <div class="admin-tab-panel{% if active_tab == 'channels' %} active{% endif %}" id="adminTab-channels">
+                    <h2 class="section-title">Channels</h2>
+                    {% if channel_error %}<div class="message error">{{ channel_error }}</div>{% endif %}
+                    <div class="channel-manage-list">
+                        {% for ch in channels %}
+                        <div class="channel-row">
+                            <span class="channel-row-label">{{ ch.icon }} {{ ch.name }}</span>
+                            <form method="post" action="./admin/channels/delete">
+                                <input type="hidden" name="slug" value="{{ ch.slug }}">
+                                <button type="submit" class="delete-btn" title="Delete channel"{% if channels|length <= 1 %} disabled{% endif %}>✕</button>
+                            </form>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <p class="hint">Adding a channel is self-service now — anyone can do it from the chat's own Settings (✏️) → Channels tab. Deleting one here just hides it from the sidebar — its messages aren't deleted, and reappear if a channel with the same name is added again later. At least one channel must always exist.</p>
+                </div>
+
+                <!-- Server Owner -->
+                <div class="admin-tab-panel{% if active_tab == 'owner' %} active{% endif %}" id="adminTab-owner">
+                    <h2 class="section-title">Server Owner</h2>
+                    <p class="subtitle">
+                        The owner can delete any message and manage channels directly from the chat's own Settings —
+                        without needing the admin password. Only one at a time; leave it unset and only an admin
+                        session (this login) has those powers.
+                    </p>
+                    {% if ha_accounts %}
+                    <form method="post" action="./admin/owner/set">
+                        <label for="owner_user_id">Owner</label>
+                        <select id="owner_user_id" name="owner_user_id">
+                            <option value="">— No owner set —</option>
+                            {% for a in ha_accounts %}
+                            <option value="{{ a.user_id }}"{% if a.user_id == current_owner_id %} selected{% endif %}>
+                                {{ a.alias or a.ha_name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit">Save Owner</button>
+                    </form>
+                    {% else %}
+                    <p class="hint">No Home Assistant users detected yet. Open the chat from the Home Assistant sidebar first, then come back here.</p>
+                    {% endif %}
+                </div>
+
+                <!-- Display Names -->
+                <div class="admin-tab-panel{% if active_tab == 'aliases' %} active{% endif %}" id="adminTab-aliases">
+                    <h2 class="section-title">Display Names</h2>
+                    <p class="subtitle">
+                        Everyone can set their own display name from the settings menu (✏️) in the chat.
+                        From here you can change anyone's, or clear one back to their real Home Assistant name.
+                        Renaming updates all of that person's previous messages too, not just new ones.
+                    </p>
+                    {% if ha_accounts %}
+                    <form method="post" action="./admin/aliases">
+                        {% for a in ha_accounts %}
+                        <label for="alias_{{ a.user_id }}">{{ a.ha_name }}</label>
+                        <input type="text" id="alias_{{ a.user_id }}" name="alias_{{ a.user_id }}"
+                               maxlength="30" value="{{ a.alias }}" placeholder="{{ a.ha_name }}">
+                        {% endfor %}
+                        <button type="submit">Save Display Names</button>
+                    </form>
+                    {% else %}
+                    <p class="hint">No Home Assistant users detected yet. Open the chat from the Home Assistant sidebar first, then come back here.</p>
+                    {% endif %}
+                </div>
             </div>
-            <p class="hint">Adding a channel is self-service now — anyone can do it from the chat's own Settings (✏️) → Channels tab. Deleting one here just hides it from the sidebar — its messages aren't deleted, and reappear if a channel with the same name is added again later. At least one channel must always exist.</p>
-
-            <h2 class="section-title">Server Owner</h2>
-            <p class="subtitle">
-                The owner can delete any message and manage channels directly from the chat's own Settings —
-                without needing the admin password. Only one at a time; leave it unset and only an admin
-                session (this login) has those powers.
-            </p>
-            {% if ha_accounts %}
-            <form method="post" action="./admin/owner/set">
-                <label for="owner_user_id">Owner</label>
-                <select id="owner_user_id" name="owner_user_id">
-                    <option value="">— No owner set —</option>
-                    {% for a in ha_accounts %}
-                    <option value="{{ a.user_id }}"{% if a.user_id == current_owner_id %} selected{% endif %}>
-                        {{ a.alias or a.ha_name }}
-                    </option>
-                    {% endfor %}
-                </select>
-                <button type="submit">Save Owner</button>
-            </form>
-            {% else %}
-            <p class="hint">No Home Assistant users detected yet. Open the chat from the Home Assistant sidebar first, then come back here.</p>
-            {% endif %}
-
-            <h2 class="section-title">Display Names</h2>
-            <p class="subtitle">
-                Everyone can set their own display name from the settings menu (✏️) in the chat.
-                From here you can change anyone's, or clear one back to their real Home Assistant name.
-                Renaming updates all of that person's previous messages too, not just new ones.
-            </p>
-            {% if ha_accounts %}
-            <form method="post" action="./admin/aliases">
-                {% for a in ha_accounts %}
-                <label for="alias_{{ a.user_id }}">{{ a.ha_name }}</label>
-                <input type="text" id="alias_{{ a.user_id }}" name="alias_{{ a.user_id }}"
-                       maxlength="30" value="{{ a.alias }}" placeholder="{{ a.ha_name }}">
-                {% endfor %}
-                <button type="submit">Save Display Names</button>
-            </form>
-            {% else %}
-            <p class="hint">No Home Assistant users detected yet. Open the chat from the Home Assistant sidebar first, then come back here.</p>
-            {% endif %}
+        </div>
         {% endif %}
     </div>
+
+    <script>
+        function switchAdminTab(tab) {
+            document.querySelectorAll('.admin-tab').forEach(t => {
+                t.classList.toggle('active', t.dataset.tab === tab);
+            });
+            document.querySelectorAll('.admin-tab-panel').forEach(p => {
+                p.classList.toggle('active', p.id === `adminTab-${tab}`);
+            });
+        }
+    </script>
 </body>
 </html>
