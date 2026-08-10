@@ -14,13 +14,12 @@
 </head>
 <body>
     <div class="app-container">
-        <!-- Dims/blocks the chat behind the channel sidebar when it's
-             open as a mobile slide-over drawer (see the <768px media
-             query in style.css) — tapping it closes the drawer, same as
-             tapping outside any other overlay in this app. Invisible
-             and inert at wider widths, where the sidebar sits inline
-             instead of overlaying anything. -->
-        <div class="sidebar-backdrop hidden" id="channelSidebarBackdrop" onclick="toggleChannelSidebar()"></div>
+        <!-- Server List -->
+        <div class="server-list">
+            <div class="server-icon active" title="Home">
+                <span class="server-initial">H</span>
+            </div>
+        </div>
 
         <!-- Channel List -->
         <div class="channel-sidebar" id="channelSidebar">
@@ -44,18 +43,6 @@
                         <span class="user-status">🏠 At Home</span>
                     </div>
                 </div>
-                <!-- Closes the drawer from inside it, on mobile — this
-                     lives here rather than in the header specifically
-                     to avoid colliding with the drawer's own "server
-                     name" heading at the top (see the <768px CSS for
-                     why). Hidden on desktop, where the sidebar isn't a
-                     drawer that needs closing this way. -->
-                <button class="header-btn drawer-close-btn" onclick="toggleChannelSidebar()" title="Close channel list" id="drawerCloseBtn">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="18" y1="6" x2="6" y2="18"/>
-                        <line x1="6" y1="6" x2="18" y2="18"/>
-                    </svg>
-                </button>
                 <button class="header-btn" onclick="openMySettings()" title="Settings">✏️</button>
             </div>
         </div>
@@ -65,10 +52,7 @@
             <div class="chat-header">
                 <div class="chat-header-left">
                     <button class="header-btn sidebar-toggle-btn" onclick="toggleChannelSidebar()" title="Toggle channel list" id="channelSidebarToggle">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="3" y="4" width="18" height="16" rx="2"/>
-                            <line x1="9" y1="4" x2="9" y2="20"/>
-                        </svg>
+                        ☰
                     </button>
                     <div class="channel-info">
                         <span class="channel-hash">{{ channels[0].icon if channels else '#' }}</span>
@@ -179,15 +163,15 @@
             <div class="members-header">👨‍👩‍👧‍👦 FAMILY — {{ members|length }}</div>
             {% for m in members %}
             <div class="member online" data-user="{{ m.name }}">
-                <div class="member-avatar" style="{% if not m.avatar %}background: {{ loop.cycle(
+                <div class="member-avatar" style="background: {{ loop.cycle(
                     'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                     'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
                     'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
                     'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
                     'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
                     'linear-gradient(135deg, #30cfd0 0%, #330867 100%)'
-                ) }};{% endif %}">
-                    {% if m.avatar %}<img src="./{{ m.avatar[1:] }}" alt="" class="avatar-img">{% else %}{{ m.name[0] }}{% endif %}
+                ) }};">
+                    {{ m.name[0] }}
                 </div>
                 <div class="member-info">
                     <div class="member-name">{{ m.name }}</div>
@@ -248,22 +232,6 @@
                 <div class="settings-panels">
                     <!-- Profile -->
                     <div class="settings-panel active" id="settingsPanel-profile">
-                        <div class="settings-section">
-                            <label style="display:block; font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">
-                                Avatar
-                            </label>
-                            <div class="avatar-settings-row">
-                                <div class="avatar avatar-preview" id="myAvatarPreview"></div>
-                                <div class="avatar-settings-actions">
-                                    <input type="file" id="avatarFileInput" accept="image/png,image/jpeg,image/gif,image/webp" hidden onchange="uploadMyAvatar(event)">
-                                    <button class="btn btn-secondary" onclick="document.getElementById('avatarFileInput').click()">Upload photo</button>
-                                    <button class="btn btn-secondary" id="removeAvatarBtn" onclick="removeMyAvatar()">Remove</button>
-                                </div>
-                            </div>
-                            <p style="font-size: 12px; color: var(--text-muted); margin-top: 12px;">
-                                PNG, JPG, GIF, or WEBP. This changes your photo everywhere, including messages you've already sent.
-                            </p>
-                        </div>
                         <div class="settings-section">
                             <label for="myAliasInput" style="display:block; font-size: 13px; color: var(--text-muted); margin-bottom: 6px;">
                                 Display name <span id="myHaNameHint"></span>
@@ -402,7 +370,6 @@
     <script>
         window.AUTO_CHAT_USER = {{ auto_user|tojson }};
         window.AUTO_CHAT_USER_ID = {{ auto_user_id|tojson }};
-        window.AUTO_CHAT_USER_AVATAR = {{ auto_avatar|tojson }};
         window.IS_ADMIN = {{ is_admin|tojson }};
         window.IS_OWNER = {{ is_owner|tojson }};
         window.DEFAULT_CHANNEL = {{ (channels[0].slug if channels else 'general')|tojson }};

@@ -1,12 +1,4 @@
 #!/usr/bin/env python3
-# eventlet.monkey_patch() has to run before anything else imports the
-# stdlib modules it patches (socket, select, ssl, os, threading, time,
-# ...) — importing e.g. sqlite3 or urllib first would leave those
-# holding references to the real, blocking implementations, defeating
-# the patch for exactly the code that needs it most.
-import eventlet
-eventlet.monkey_patch()
-
 import asyncio
 import functools
 import hmac
@@ -37,24 +29,23 @@ logging.basicConfig(
 logger = logging.getLogger('family_chat')
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
-# async_mode='eventlet' — briefly switched to 'threading' (2.20.0) to
-# get off eventlet, which is deprecated upstream, but that broke real
-# functionality: Flask-SocketIO's threading mode runs on Werkzeug's
-# plain dev server, which has no native WebSocket support at all —
-# every client falls back to HTTP long-polling, visible in the log as
-# the same session id making a new /socket.io/ request every ~150ms,
-# eventually followed by "Session is disconnected". Confirmed directly
-# by Flask-SocketIO's own maintainer: threading mode works "without
-# WebSocket for now." Eventlet's own WSGI server has genuine WebSocket
-# support built in, which is what this app actually needs for real-time
-# delivery to feel real-time rather than constant re-polling. Back on
-# eventlet until there's a properly-tested alternative that doesn't
-# regress this (e.g. threading mode + the simple-websocket package,
-# which the same discussion mentions but with mixed reliability reports
-# — not something to switch to without dedicated testing first).
+# async_mode='threading' — was 'eventlet' (green threads, requiring
+# eventlet.monkey_patch() at the very top of this file to make blocking
+# calls like sqlite3/urllib cooperative). Eventlet is now
+# maintenance-only upstream and its own docs recommend new/ongoing
+# projects move off it. 'threading' gets the same practical property —
+# one slow request (a GIPHY search, a Home Assistant notification call)
+# doesn't stall every other connected client's requests — using real OS
+# threads instead: CPython releases the GIL during blocking I/O, so
+# other threads keep running regardless. No monkey-patching, no
+# eventlet dependency, nothing implicitly relying on every stdlib call
+# behaving differently than it looks like it does. The tradeoff is
+# lower scalability under very high concurrent connection counts, which
+# doesn't apply here — this is a family chat add-on, not a
+# many-thousands-of-users service.
 # logger=True surfaces Socket.IO's own connect/disconnect/event activity in
 # the log too, which is useful context alongside our own error logging below.
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet', logger=True)
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', logger=True)
 
 # Home Assistant writes add-on options to /data/options.json regardless of
 # base image. This app never read it (run.sh just hardcoded env vars
@@ -89,21 +80,6 @@ else:
     _SECRET_KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
     _SECRET_KEY_FILE.write_text(new_secret)
     app.config['SECRET_KEY'] = new_secret
-
-# CodeQL flags the write above as "clear-text storage of sensitive
-# information," and its literal suggestion (encrypt it) doesn't really
-# apply here — this *is* the key; encrypting it would just mean
-# persisting a second key to decrypt the first, which moves the problem
-# rather than solving it. What actually matters for a signing key like
-# this is restricting who can read the file at the OS level: only the
-# owning user, not any other process on the host or anyone with read
-# access to a filesystem-level backup. Applied unconditionally (not just
-# when the file is first created) so it also retroactively covers a file
-# an older version of this add-on already created before this existed.
-try:
-    _SECRET_KEY_FILE.chmod(0o600)
-except OSError as e:
-    logger.warning('Could not restrict permissions on %s: %s', _SECRET_KEY_FILE, e)
 
 # Signed cookies (the session cookie, which is what the admin panel and
 # nothing else in this app relies on) should never be sent over plain
@@ -203,10 +179,9 @@ INLINE_CSS = _STYLE_CSS_PATH.read_text() if _STYLE_CSS_PATH.exists() else ''
 UPLOAD_FOLDER = Path('/data/uploads')
 UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
 ALLOWED_EXTENSIONS = {
-    'png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4', 'webm', 'mp3',
+    'png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4', 'webm', 'mp3', 
     'wav', 'pdf', 'txt', 'md', 'doc', 'docx'
 }
-ALLOWED_AVATAR_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -241,12 +216,6 @@ def init_db():
     # ones — see get_messages() and resolve_ha_identity().
     c.execute('''CREATE TABLE IF NOT EXISTS user_aliases
                  (user_id TEXT PRIMARY KEY, alias TEXT NOT NULL)''')
-
-    # Self-service avatars, same keying and same "looked up at read time"
-    # reasoning as user_aliases above — setting a new avatar picture
-    # updates it on every past message too, not just future ones.
-    c.execute('''CREATE TABLE IF NOT EXISTS user_avatars
-                 (user_id TEXT PRIMARY KEY, avatar_url TEXT NOT NULL)''')
 
     # Custom emojis table
     c.execute('''CREATE TABLE IF NOT EXISTS custom_emojis
@@ -416,20 +385,19 @@ def get_known_people():
     name (or username as a fallback)."""
     conn = sqlite3.connect('/data/chat.db')
     c = conn.cursor()
-    c.execute('''SELECT h.user_id, h.display_name, h.username, ua.alias, av.avatar_url
+    c.execute('''SELECT h.user_id, h.display_name, h.username, ua.alias
                  FROM ha_users h
                  LEFT JOIN user_aliases ua ON ua.user_id = h.user_id
-                 LEFT JOIN user_avatars av ON av.user_id = h.user_id
                  ORDER BY h.last_seen DESC''')
     rows = c.fetchall()
     conn.close()
     seen = set()
     people = []
-    for user_id, display_name, username, alias, avatar_url in rows:
+    for user_id, display_name, username, alias in rows:
         name = (alias or '').strip() or (display_name or '').strip() or (username or '').strip()
         if name and name not in seen:
             seen.add(name)
-            people.append({'name': name, 'avatar': avatar_url})
+            people.append(name)
     return people
 
 def get_alias(user_id):
@@ -453,49 +421,6 @@ def set_alias(user_id, alias):
         c.execute('DELETE FROM user_aliases WHERE user_id = ?', (user_id,))
     conn.commit()
     conn.close()
-
-def get_avatar(user_id):
-    conn = sqlite3.connect('/data/chat.db')
-    c = conn.cursor()
-    c.execute('SELECT avatar_url FROM user_avatars WHERE user_id = ?', (user_id,))
-    row = c.fetchone()
-    conn.close()
-    return row[0] if row else None
-
-def remove_upload(file_url):
-    """Deletes a file this app previously saved under UPLOAD_FOLDER, given
-    its public /uploads/... URL. No-ops for anything else (e.g. an
-    external GIPHY URL) — and resolves the path to confirm it can't have
-    climbed outside the upload folder before deleting anything from disk."""
-    if not file_url or not file_url.startswith('/uploads/'):
-        return
-    candidate = (UPLOAD_FOLDER / file_url[len('/uploads/'):]).resolve()
-    if candidate.is_relative_to(UPLOAD_FOLDER.resolve()) and candidate.exists():
-        try:
-            candidate.unlink()
-        except OSError as e:
-            logger.warning('Could not remove upload %s: %s', file_url, e)
-
-def set_avatar(user_id, avatar_url):
-    old_avatar_url = get_avatar(user_id)
-    conn = sqlite3.connect('/data/chat.db')
-    c = conn.cursor()
-    c.execute('''INSERT INTO user_avatars (user_id, avatar_url) VALUES (?, ?)
-                 ON CONFLICT(user_id) DO UPDATE SET avatar_url = excluded.avatar_url''',
-              (user_id, avatar_url))
-    conn.commit()
-    conn.close()
-    if old_avatar_url and old_avatar_url != avatar_url:
-        remove_upload(old_avatar_url)
-
-def delete_avatar(user_id):
-    old_avatar_url = get_avatar(user_id)
-    conn = sqlite3.connect('/data/chat.db')
-    c = conn.cursor()
-    c.execute('DELETE FROM user_avatars WHERE user_id = ?', (user_id,))
-    conn.commit()
-    conn.close()
-    remove_upload(old_avatar_url)
 
 def get_known_ha_accounts():
     """Every HA account that's visited, with their real HA name and
@@ -564,10 +489,9 @@ def delete_channel(slug):
 def get_messages(limit=100, channel='general'):
     conn = sqlite3.connect('/data/chat.db')
     c = conn.cursor()
-    c.execute('''SELECT m.*, ua.alias as current_alias, av.avatar_url
+    c.execute('''SELECT m.*, ua.alias as current_alias
                  FROM messages m
                  LEFT JOIN user_aliases ua ON ua.user_id = m.sender_id
-                 LEFT JOIN user_avatars av ON av.user_id = m.sender_id
                  WHERE m.channel = ?
                  ORDER BY m.timestamp DESC LIMIT ?''', (channel, limit))
     messages = c.fetchall()
@@ -654,7 +578,18 @@ def delete_message(message_id, requester_id, can_manage):
     conn.commit()
     conn.close()
 
-    remove_upload(file_url)
+    # Only ever remove a file that's actually one of our own uploads
+    # (GIF messages point at an external GIPHY URL, which must never be
+    # touched here) — and resolve it to confirm it can't have climbed
+    # outside the upload folder before deleting anything from disk.
+    if file_url and file_url.startswith('/uploads/'):
+        candidate = (UPLOAD_FOLDER / file_url[len('/uploads/'):]).resolve()
+        if candidate.is_relative_to(UPLOAD_FOLDER.resolve()) and candidate.exists():
+            try:
+                candidate.unlink()
+            except OSError as e:
+                logger.warning('Could not remove file for deleted message %s: %s', message_id, e)
+
     return channel, None
 
 def get_custom_emojis():
@@ -688,23 +623,9 @@ def ingress_redirect(path):
     original prefix via the X-Ingress-Path header so we can rebuild the
     correct absolute URL. If the header is missing (e.g. direct, non-ingress
     access) or looks malformed, fall back to the plain path.
-
-    The validation below is stricter than it looks like it needs to be:
-    a prefix has to be a plain relative path, nothing else. The previous
-    version only checked for a leading '/' and rejected ':', which
-    blocks "http://evil.com" but not "//evil.com" — browsers treat a
-    Location starting with "//" as a protocol-relative URL pointing at
-    a different host entirely, using whatever scheme the current page
-    loaded over. That string starts with '/' and contains no ':', so it
-    sailed straight through the old check. Backslashes are normalized
-    first too, since browsers commonly treat them as equivalent to
-    forward slashes in a URL even though Python's urlparse does not —
-    "/\\evil.com" wouldn't otherwise be recognized as the "//evil.com"
-    it becomes once a browser gets hold of it.
     """
-    prefix = request.headers.get('X-Ingress-Path', '').replace('\\', '/')
-    parsed = urllib.parse.urlparse(prefix)
-    if not prefix.startswith('/') or prefix.startswith('//') or parsed.netloc or parsed.scheme:
+    prefix = request.headers.get('X-Ingress-Path', '')
+    if not prefix.startswith('/') or ':' in prefix:
         prefix = ''
     return redirect(prefix + path)
 
@@ -791,14 +712,13 @@ def index():
     server_identity = get_server_identity()
 
     return render_template('index.html',
-                          members=get_known_people(),
+                          members=[{'name': n} for n in get_known_people()],
                           theme=THEME,
                           asset_version=ASSET_VERSION,
                           inline_css=INLINE_CSS,
                           channels=get_channels(),
                           auto_user=auto_user,
                           auto_user_id=auto_user_id,
-                          auto_avatar=get_avatar(auto_user_id) if auto_user_id else None,
                           is_admin=bool(session.get('is_admin')),
                           is_owner=is_owner(auto_user_id),
                           server_name=server_identity['name'],
@@ -914,7 +834,6 @@ def api_me():
     return jsonify({
         'ha_name': ha_name,
         'alias': get_alias(ha_user_id) or '',
-        'avatar_url': get_avatar(ha_user_id) or '',
     })
 
 @app.route('/api/my-alias', methods=['POST'])
@@ -928,42 +847,6 @@ def api_set_my_alias():
         return jsonify({'error': 'Not accessed through Home Assistant'}), 403
     data = request.get_json(silent=True) or {}
     set_alias(ha_user_id, data.get('alias', ''))
-    return jsonify({'success': True})
-
-@app.route('/api/my-avatar', methods=['POST'])
-def api_set_my_avatar():
-    # Same shape as /api/my-alias: the target is always the requester's
-    # own HA user ID from the ingress headers, never taken from the
-    # request body, so this can only ever change your own avatar.
-    ha_user_id = request.headers.get('X-Remote-User-Id')
-    if not ha_user_id:
-        return jsonify({'error': 'Not accessed through Home Assistant'}), 403
-    if 'file' not in request.files or request.files['file'].filename == '':
-        return jsonify({'error': 'No image selected'}), 400
-
-    file = request.files['file']
-    ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
-    if ext not in ALLOWED_AVATAR_EXTENSIONS:
-        return jsonify({'error': 'Avatar must be a PNG, JPG, GIF, or WEBP image.'}), 400
-
-    # Namespaced by the requester's own HA user ID (not client-supplied)
-    # and timestamped, same collision-avoidance approach as /api/upload —
-    # this is what makes a fresh upload actually replace the old avatar
-    # everywhere it's shown, rather than getting cached under an
-    # already-seen filename.
-    safe_id = secure_filename(ha_user_id) or 'user'
-    filename = f"avatar_{safe_id}_{int(datetime.now().timestamp())}.{ext}"
-    file.save(UPLOAD_FOLDER / filename)
-    avatar_url = f'/uploads/{filename}'
-    set_avatar(ha_user_id, avatar_url)
-    return jsonify({'success': True, 'avatar_url': avatar_url})
-
-@app.route('/api/my-avatar', methods=['DELETE'])
-def api_delete_my_avatar():
-    ha_user_id = request.headers.get('X-Remote-User-Id')
-    if not ha_user_id:
-        return jsonify({'error': 'Not accessed through Home Assistant'}), 403
-    delete_avatar(ha_user_id)
     return jsonify({'success': True})
 
 @app.route('/admin')
@@ -1535,7 +1418,6 @@ def handle_message(data):
         'id': msg_id,
         'sender': sender,
         'sender_id': sender_id,
-        'avatar_url': get_avatar(sender_id) if sender_id else None,
         'content': content,
         'timestamp': datetime.now().isoformat(),
         'channel': channel,
@@ -1617,4 +1499,15 @@ def handle_delete_message(data):
 
 if __name__ == '__main__':
     init_db()
-    socketio.run(app, host='0.0.0.0', port=8099, debug=False)
+    # threading mode's server is Werkzeug's own — Flask-SocketIO refuses
+    # to start it without this flag, since Werkzeug's server isn't
+    # hardened for handling untrusted traffic directly (no protection
+    # against slow/malformed-request attacks, no production-grade
+    # connection handling). That's an acceptable tradeoff specifically
+    # here: this add-on is never reached directly — Home Assistant's own
+    # ingress proxy is the only thing that ever talks to it (see
+    # config.yaml: ingress-only, no direct port mapping), and that
+    # proxy is the actual internet/LAN-facing component handling
+    # untrusted traffic. If that ever changes (a direct port mapping
+    # gets added), this stops being a safe assumption.
+    socketio.run(app, host='0.0.0.0', port=8099, debug=False, allow_unsafe_werkzeug=True)
