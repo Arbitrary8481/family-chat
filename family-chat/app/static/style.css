@@ -51,83 +51,6 @@ body {
     width: 100vw;
 }
 
-/* Server List */
-.server-list {
-    width: 72px;
-    background: var(--bg-tertiary);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 12px 0;
-    gap: 8px;
-    flex-shrink: 0;
-}
-
-.server-icon {
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    background: var(--bg-primary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    overflow: hidden;
-    position: relative;
-}
-
-.server-icon:hover, .server-icon.active {
-    border-radius: 16px;
-    background: var(--bg-accent);
-    transform: translateY(-2px);
-}
-
-/* channel-drawer-toggle is shared by both toggle buttons (header +
-   server-list rail) purely so JS can keep their "is the drawer open"
-   active-state in sync — it must NOT control visibility/layout itself,
-   or it would hide the header button on desktop too. Only the
-   server-list rail button (further scoped below) is mobile-only. */
-.channel-drawer-toggle.active {
-    background: var(--bg-accent);
-    border-radius: 16px;
-}
-
-#serverListChannelToggle {
-    display: none;
-    border: none;
-    color: var(--text-normal);
-    font-size: 18px;
-    cursor: pointer;
-}
-
-.server-initial {
-    font-size: 20px;
-    font-weight: 700;
-    color: white;
-}
-
-.server-divider {
-    width: 32px;
-    height: 2px;
-    background: var(--bg-secondary);
-    border-radius: 1px;
-    margin: 4px 0;
-}
-
-.add-server {
-    color: var(--channels-default);
-    font-size: 24px;
-    background: var(--bg-primary);
-    border: 2px dashed var(--channels-default);
-}
-
-.add-server:hover {
-    color: var(--interactive-hover);
-    border-color: var(--success);
-    background: rgba(59, 165, 93, 0.2);
-}
-
 /* Channel Sidebar */
 .channel-sidebar {
     width: 240px;
@@ -1624,16 +1547,6 @@ body {
 }
 
 @media (max-width: 768px) {
-    .server-list {
-        width: 60px;
-    }
-
-    #serverListChannelToggle {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
     /* The channel sidebar becomes a slide-over drawer rather than
        sharing horizontal space with the chat — there simply isn't
        enough width on a phone to show both at once without either
@@ -1650,7 +1563,7 @@ body {
         position: fixed;
         top: 0;
         bottom: 0;
-        left: 60px;
+        left: 0;
         width: 240px;
         z-index: 200;
         opacity: 1;

@@ -14,23 +14,6 @@
 </head>
 <body>
     <div class="app-container">
-        <!-- Server List -->
-        <div class="server-list">
-            <div class="server-icon active" title="Home">
-                <span class="server-initial">H</span>
-            </div>
-            <!-- Persistent, always-visible way to open/close the channel
-                 drawer on mobile — the header also has a toggle (☰ next
-                 to the channel name), but this one lives on a rail that
-                 never scrolls out of view or gets covered by anything,
-                 so it's the more reliable/discoverable of the two on a
-                 phone. Hidden on desktop, where the sidebar isn't a
-                 drawer needing this at all. -->
-            <button class="server-icon channel-drawer-toggle" onclick="toggleChannelSidebar()" title="Toggle channel list" id="serverListChannelToggle">
-                ☰
-            </button>
-        </div>
-
         <!-- Dims/blocks the chat behind the channel sidebar when it's
              open as a mobile slide-over drawer (see the <768px media
              query in style.css) — tapping it closes the drawer, same as
@@ -69,7 +52,7 @@
         <div class="chat-container">
             <div class="chat-header">
                 <div class="chat-header-left">
-                    <button class="header-btn sidebar-toggle-btn channel-drawer-toggle" onclick="toggleChannelSidebar()" title="Toggle channel list" id="channelSidebarToggle">
+                    <button class="header-btn sidebar-toggle-btn" onclick="toggleChannelSidebar()" title="Toggle channel list" id="channelSidebarToggle">
                         ☰
                     </button>
                     <div class="channel-info">

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.21.4
+
+### Removed
+- **The Discord-style "server picker" rail** (the narrow strip with the Home icon on the far left) — this app only ever has the one workspace, so it never did anything besides take up space. Removed entirely, along with several related CSS rules that turned out to be fully dead code already (`.server-divider`, `.add-server` — styled for elements that were never actually in the page). The channel sidebar now sits flush against the left edge on both desktop and mobile; the mobile drawer's toggle button lives solely in the header now.
+
+## 2.21.3
+
+### Changed
+- **The server-list rail (Home icon + channel toggle) now collapses to zero width on mobile along with the channel drawer**, instead of permanently reserving 60px whether the drawer was open or not. Collapsed = the chat gets the full screen width, no dead space; opening the drawer (from the header's ☰, which stays reachable either way) brings the rail back alongside it, same as before.
+
 ## 2.21.2
 
 ### Added

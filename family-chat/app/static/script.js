@@ -132,7 +132,7 @@ function resolveUrl(url) {
 // localStorage, so reloading (or reopening the ingress panel) doesn't
 // snap it back open.
 const SIDEBAR_CONFIG = {
-    channel: { id: 'channelSidebar', toggleClass: 'channel-drawer-toggle', storageKey: 'channelSidebarCollapsed', backdropId: 'channelSidebarBackdrop' },
+    channel: { id: 'channelSidebar', toggleId: 'channelSidebarToggle', storageKey: 'channelSidebarCollapsed', backdropId: 'channelSidebarBackdrop' },
     members: { id: 'membersSidebar', toggleId: 'membersSidebarToggle', storageKey: 'membersSidebarCollapsed' }
 };
 
@@ -140,24 +140,11 @@ function setSidebarCollapsed(which, collapsed) {
     const cfg = SIDEBAR_CONFIG[which];
     if (!cfg) return;
     const el = document.getElementById(cfg.id);
+    const btn = document.getElementById(cfg.toggleId);
     if (el) el.classList.toggle('collapsed', collapsed);
-    // The channel sidebar has two toggle buttons — one in the header,
-    // one on the server-list rail (the rail one is mobile-only, always
-    // visible regardless of scroll position, and doesn't get covered by
-    // anything, so it's the more reliable of the two on a phone) — both
-    // share the toggleClass and should reflect open/closed state
-    // together rather than just whichever one was actually clicked.
-    if (cfg.toggleClass) {
-        document.querySelectorAll(`.${cfg.toggleClass}`).forEach(btn => {
-            btn.classList.toggle('active', collapsed);
-            btn.setAttribute('aria-pressed', String(!collapsed));
-        });
-    } else if (cfg.toggleId) {
-        const btn = document.getElementById(cfg.toggleId);
-        if (btn) {
-            btn.classList.toggle('active', collapsed);
-            btn.setAttribute('aria-pressed', String(!collapsed));
-        }
+    if (btn) {
+        btn.classList.toggle('active', collapsed);
+        btn.setAttribute('aria-pressed', String(!collapsed));
     }
     // Only the channel sidebar becomes a mobile overlay drawer (see the
     // <768px media query) — the backdrop dims the chat behind it and
