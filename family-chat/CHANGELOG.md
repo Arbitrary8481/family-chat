@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.21.2
+
+### Added
+- **A second, persistent way to open/close the channel drawer on mobile** — a ☰ button on the server-list rail (the narrow always-visible bar on the far left), alongside the existing one in the header. It stays put regardless of scroll position and can't get covered by anything, making it a more reliable target than the header button alone. Both buttons now stay in sync and reflect whether the drawer is currently open. Desktop is unaffected — this button only appears on phone-width screens.
+
 ## 2.21.1
 
 ### Fixed
