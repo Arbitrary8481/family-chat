@@ -132,7 +132,7 @@ function resolveUrl(url) {
 // localStorage, so reloading (or reopening the ingress panel) doesn't
 // snap it back open.
 const SIDEBAR_CONFIG = {
-    channel: { id: 'channelSidebar', toggleId: 'channelSidebarToggle', storageKey: 'channelSidebarCollapsed', backdropId: 'channelSidebarBackdrop' },
+    channel: { id: 'channelSidebar', toggleId: 'channelSidebarToggle', storageKey: 'channelSidebarCollapsed' },
     members: { id: 'membersSidebar', toggleId: 'membersSidebarToggle', storageKey: 'membersSidebarCollapsed' }
 };
 
@@ -146,31 +146,14 @@ function setSidebarCollapsed(which, collapsed) {
         btn.classList.toggle('active', collapsed);
         btn.setAttribute('aria-pressed', String(!collapsed));
     }
-    // Only the channel sidebar becomes a mobile overlay drawer (see the
-    // <768px media query) — the backdrop dims the chat behind it and
-    // gives a tap-outside-to-close target, same as any other overlay in
-    // this app. It's invisible/inert at wider widths regardless.
-    if (cfg.backdropId) {
-        const backdrop = document.getElementById(cfg.backdropId);
-        if (backdrop) backdrop.classList.toggle('hidden', collapsed);
-    }
     try { localStorage.setItem(cfg.storageKey, collapsed ? '1' : '0'); } catch (e) {}
 }
 
 function restoreSidebarState() {
     Object.keys(SIDEBAR_CONFIG).forEach(which => {
         const cfg = SIDEBAR_CONFIG[which];
-        let collapsed;
-        try { collapsed = localStorage.getItem(cfg.storageKey); } catch (e) { collapsed = null; }
-        if (collapsed === null) {
-            // No explicit preference saved yet — default to collapsed on
-            // phone-width screens so a first-time mobile visitor lands
-            // on the actual chat, not a sidebar drawer covering it.
-            // Unchanged (expanded) on desktop, matching prior behavior.
-            collapsed = window.innerWidth <= 768;
-        } else {
-            collapsed = collapsed === '1';
-        }
+        let collapsed = false;
+        try { collapsed = localStorage.getItem(cfg.storageKey) === '1'; } catch (e) {}
         setSidebarCollapsed(which, collapsed);
     });
 }
@@ -214,18 +197,8 @@ function initializeChat() {
     });
     
     socket.on('new_message', function(data) {
-        const container = document.getElementById('messagesContainer');
-        const wasNearBottom = isNearBottom(container);
-
         addMessage(data);
-
-        if (wasNearBottom) {
-            scrollToBottom();
-        } else {
-            unseenMessageCount++;
-            updateScrollToBottomBadge();
-            updateScrollToBottomButton();
-        }
+        scrollToBottom();
         
         if (data.type === 'image' || data.type === 'gif' || (data.file && data.file.mime_type && data.file.mime_type.startsWith('image/'))) {
             addToSharedMedia(resolveUrl(data.file.url));
@@ -252,16 +225,6 @@ function initializeChat() {
         .then(messages => {
             messages.forEach(msg => addMessage(msg));
             scrollToBottomRobust();
-        })
-        .catch(err => {
-            // Previously silent — a failed fetch here (network blip,
-            // server hiccup) looked exactly like an empty channel, with
-            // no indication anything had gone wrong.
-            console.error('Failed to load message history:', err);
-            const container = document.getElementById('messagesContainer');
-            if (container) {
-                container.innerHTML = '<div class="welcome-message"><h1>Couldn\'t load messages</h1><p>Check your connection and try reloading.</p></div>';
-            }
         });
     
     fetch(apiUrl('/api/emojis'))
@@ -342,12 +305,11 @@ function addMessage(data) {
     let contentHtml = `<div class="message-text">${linkifyText(data.content || '')}</div>`;
     
     if (data.file || data.file_url) {
-        const rawFileName = data.file?.filename || data.file_name || '';
         const fileUrl = safeUrl(resolveUrl(data.file?.url || data.file_url));
-        const fileName = escapeHtml(rawFileName);
-        const mimeType = escapeHtml(data.file?.mime_type || data.mime_type || '');
+        const fileName = escapeHtml(data.file?.filename || data.file_name);
+        const mimeType = escapeHtml(data.file?.mime_type || data.mime_type);
         
-        if (looksLikeImageFile(mimeType, rawFileName)) {
+        if (mimeType && mimeType.startsWith('image/')) {
             contentHtml += `
                 <div class="message-image" onclick="openImageViewer('${fileUrl}')">
                     <img src="${fileUrl}" alt="${fileName}" loading="lazy">
@@ -393,7 +355,7 @@ function addMessage(data) {
         : '';
 
     messageDiv.innerHTML = `
-        <div class="message-avatar">${escapeHtml(data.sender[0])}</div>
+        <div class="message-avatar">${data.sender[0]}</div>
         <div class="message-content">
             <div class="message-header">
                 <span class="message-author">${escapeHtml(data.sender)}</span>
@@ -580,18 +542,6 @@ function formatFileSize(bytes) {
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
-// Browsers don't always supply a Content-Type for an upload — some OS/
-// browser/file-type combinations leave it blank, which would otherwise
-// silently downgrade a real image to a generic file-attachment block
-// (icon + filename, no preview) even though it's perfectly viewable.
-// When there's no mime type to go on, fall back to the file extension
-// rather than assuming "not an image".
-function looksLikeImageFile(mimeType, filename) {
-    if (mimeType) return mimeType.startsWith('image/');
-    const ext = (filename || '').split('.').pop().toLowerCase();
-    return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext);
 }
 
 function getFileIcon(mimeType) {
@@ -879,22 +829,6 @@ function switchChannel(slug, onLoaded) {
     currentChannel = slug;
     try { localStorage.setItem('lastChannel', currentChannel); } catch (e) {}
 
-    // On phone-width screens the channel sidebar is a slide-over drawer
-    // (see the <768px media query) — picking a channel from it should
-    // close it afterward the way any mobile nav drawer would, rather
-    // than leaving it covering the very channel you just switched to.
-    if (window.innerWidth <= 768) {
-        setSidebarCollapsed('channel', true);
-    }
-
-    // A different channel is a fresh view, always landing at the bottom
-    // (see below) — any unseen count from the channel just left doesn't
-    // carry over.
-    unseenMessageCount = 0;
-    updateScrollToBottomBadge();
-    const scrollBtn = document.getElementById('scrollToBottomBtn');
-    if (scrollBtn) scrollBtn.classList.add('hidden');
-
     const channelEl = document.getElementById('currentChannel');
     const welcomeEl = document.getElementById('welcomeChannel');
     const inputEl = document.getElementById('messageInput');
@@ -930,13 +864,6 @@ function switchChannel(slug, onLoaded) {
                 onLoaded();
             } else {
                 scrollToBottomRobust();
-            }
-        })
-        .catch(err => {
-            console.error('Failed to load message history:', err);
-            const container = document.getElementById('messagesContainer');
-            if (container) {
-                container.innerHTML = '<div class="welcome-message"><h1>Couldn\'t load messages</h1><p>Check your connection and try reloading.</p></div>';
             }
         });
 }
@@ -1514,57 +1441,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!messagesContainer) return;
     messagesContainer.addEventListener('scroll', () => {
         if (emojiPickerContext) hideEmojiPicker();
-        updateScrollToBottomButton();
     });
 });
-
-// --- Jump to bottom ---
-// Also changes what happens when a new message arrives (see the
-// new_message handler): previously every incoming message force-scrolled
-// everyone to the bottom, which yanked the view out from under anyone who
-// had scrolled up to read earlier messages. Now that only happens if you
-// were already at the bottom — otherwise the message still arrives, but
-// you stay where you are and this button lights up instead.
-let unseenMessageCount = 0;
-const SCROLL_BOTTOM_THRESHOLD = 80; // px of slack still counted as "at the bottom"
-
-function isNearBottom(container) {
-    if (!container) return true;
-    return container.scrollHeight - container.scrollTop - container.clientHeight <= SCROLL_BOTTOM_THRESHOLD;
-}
-
-function updateScrollToBottomButton() {
-    const container = document.getElementById('messagesContainer');
-    const btn = document.getElementById('scrollToBottomBtn');
-    if (!container || !btn) return;
-
-    if (isNearBottom(container)) {
-        btn.classList.add('hidden');
-        unseenMessageCount = 0;
-        updateScrollToBottomBadge();
-    } else {
-        btn.classList.remove('hidden');
-    }
-}
-
-function updateScrollToBottomBadge() {
-    const badge = document.getElementById('scrollToBottomBadge');
-    if (!badge) return;
-    if (unseenMessageCount > 0) {
-        badge.textContent = unseenMessageCount > 99 ? '99+' : String(unseenMessageCount);
-        badge.classList.remove('hidden');
-    } else {
-        badge.classList.add('hidden');
-    }
-}
-
-function jumpToBottom() {
-    scrollToBottom();
-    unseenMessageCount = 0;
-    updateScrollToBottomBadge();
-    const btn = document.getElementById('scrollToBottomBtn');
-    if (btn) btn.classList.add('hidden');
-}
 
 // --- GIF picker (GIPHY) ---
 // The picker loads trending GIFs on first open, then re-queries as the
