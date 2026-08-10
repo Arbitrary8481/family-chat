@@ -64,4 +64,4 @@ Everything else — the chat's display name, channels, the server owner, and ind
 
 ## Support
 
-This is a self-hosted, family-run project. I will work on it when I can. If you find an issue, open an issue here on GitHub and I will see what I can do.
+This is a self-hosted, family-run project — there's no formal support channel. Check the add-on log (Settings → Add-ons → Family Chat → Log) if something isn't working as expected; several of the trickier bugs found so far have left a clear trace there.

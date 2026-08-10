@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.21.9
+
+### Security
+- **Flask bumped to `>=3.1.3`**, addressing a cache-poisoning-adjacent issue where accessing `session` via certain patterns (the `in` operator, checking keys without values) could skip setting the `Vary: Cookie` header a caching proxy needs to avoid serving one person's cached page to someone else. Checked first: this app was never actually exploitable by it — every response already gets an explicit `Cache-Control: no-store` (from an earlier security pass), which independently blocks the caching this bug relies on, and the app only ever accesses `session` via `.get()`, never the vulnerable key-only pattern. Bumped anyway rather than leave a known-fixed CVE sitting in a pinned version doing nothing for anyone.
+- **This surfaced a real, unrelated breaking incompatibility**: `flask-socketio==5.3.6` (pinned exactly, not a minimum) turned out to be fundamentally broken against Flask 3.1.3's internal session handling — a real-time connection would fail outright (`AttributeError: property 'session' of 'RequestContext' object has no setter`), not something a REST-only smoke test would ever catch. Bumped to `flask-socketio>=5.6.1` to fix it, and verified with an actual live Socket.IO client end to end (genuine WebSocket transport, room join, message round-trip, held-open stability, clean disconnect) against a completely fresh install — not just confirming the server process starts.
+
+## 2.21.8
+
+### Security
+- **python-socketio bumped to `>=5.16.2`**, addressing two CVEs: the pickle-deserialization RCE fixed in 5.14.0 (this app runs single-server with no message queue, so it was never actually exploitable here, but the fix is free) and a more recent memory-exhaustion DoS (5.16.2) where a client could submit a binary message, deliberately withhold its attachments, and leave the partial message held in server memory indefinitely — the fix requires binary packets to come from an authenticated client and cleans up any partial message left behind when a client disconnects. Verified with a live Socket.IO connection (real WebSocket transport, room join, message round-trip, clean disconnect) against a completely fresh install of the updated dependency set.
+
 ## 2.21.7
 
 ### Fixed
