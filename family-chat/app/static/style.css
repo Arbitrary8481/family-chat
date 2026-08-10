@@ -164,6 +164,17 @@ body {
     color: white;
     font-size: 14px;
     background: linear-gradient(135deg, var(--bg-accent) 0%, #7289da 100%);
+    overflow: hidden;
+}
+
+/* Applies inside any of the various avatar containers (.avatar,
+   .member-avatar, .message-avatar) once a person has set a real photo —
+   fills the circle completely, hiding the gradient/initial behind it. */
+.avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
 }
 
 .user-details {
@@ -366,6 +377,8 @@ body {
     flex-shrink: 0;
     font-size: 16px;
     cursor: pointer;
+    overflow: hidden;
+    background: linear-gradient(135deg, var(--bg-accent) 0%, #7289da 100%);
 }
 
 .message-content {
@@ -896,6 +909,7 @@ body {
     font-weight: 600;
     font-size: 14px;
     position: relative;
+    overflow: hidden;
 }
 
 .member-avatar::after {
@@ -1416,6 +1430,25 @@ body {
     font-size: 12px;
     color: var(--success);
     margin-top: 8px;
+}
+
+.avatar-settings-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.avatar-preview {
+    width: 64px;
+    height: 64px;
+    font-size: 24px;
+    flex-shrink: 0;
+}
+
+.avatar-settings-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
 }
 
 .custom-emoji-list {

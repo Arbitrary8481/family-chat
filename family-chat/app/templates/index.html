@@ -179,15 +179,15 @@
             <div class="members-header">👨‍👩‍👧‍👦 FAMILY — {{ members|length }}</div>
             {% for m in members %}
             <div class="member online" data-user="{{ m.name }}">
-                <div class="member-avatar" style="background: {{ loop.cycle(
+                <div class="member-avatar" style="{% if not m.avatar %}background: {{ loop.cycle(
                     'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                     'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
                     'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
                     'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
                     'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
                     'linear-gradient(135deg, #30cfd0 0%, #330867 100%)'
-                ) }};">
-                    {{ m.name[0] }}
+                ) }};{% endif %}">
+                    {% if m.avatar %}<img src="./{{ m.avatar[1:] }}" alt="" class="avatar-img">{% else %}{{ m.name[0] }}{% endif %}
                 </div>
                 <div class="member-info">
                     <div class="member-name">{{ m.name }}</div>
@@ -248,6 +248,22 @@
                 <div class="settings-panels">
                     <!-- Profile -->
                     <div class="settings-panel active" id="settingsPanel-profile">
+                        <div class="settings-section">
+                            <label style="display:block; font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">
+                                Avatar
+                            </label>
+                            <div class="avatar-settings-row">
+                                <div class="avatar avatar-preview" id="myAvatarPreview"></div>
+                                <div class="avatar-settings-actions">
+                                    <input type="file" id="avatarFileInput" accept="image/png,image/jpeg,image/gif,image/webp" hidden onchange="uploadMyAvatar(event)">
+                                    <button class="btn btn-secondary" onclick="document.getElementById('avatarFileInput').click()">Upload photo</button>
+                                    <button class="btn btn-secondary" id="removeAvatarBtn" onclick="removeMyAvatar()">Remove</button>
+                                </div>
+                            </div>
+                            <p style="font-size: 12px; color: var(--text-muted); margin-top: 12px;">
+                                PNG, JPG, GIF, or WEBP. This changes your photo everywhere, including messages you've already sent.
+                            </p>
+                        </div>
                         <div class="settings-section">
                             <label for="myAliasInput" style="display:block; font-size: 13px; color: var(--text-muted); margin-bottom: 6px;">
                                 Display name <span id="myHaNameHint"></span>
@@ -386,6 +402,7 @@
     <script>
         window.AUTO_CHAT_USER = {{ auto_user|tojson }};
         window.AUTO_CHAT_USER_ID = {{ auto_user_id|tojson }};
+        window.AUTO_CHAT_USER_AVATAR = {{ auto_avatar|tojson }};
         window.IS_ADMIN = {{ is_admin|tojson }};
         window.IS_OWNER = {{ is_owner|tojson }};
         window.DEFAULT_CHANNEL = {{ (channels[0].slug if channels else 'general')|tojson }};

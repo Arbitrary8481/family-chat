@@ -203,9 +203,10 @@ INLINE_CSS = _STYLE_CSS_PATH.read_text() if _STYLE_CSS_PATH.exists() else ''
 UPLOAD_FOLDER = Path('/data/uploads')
 UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
 ALLOWED_EXTENSIONS = {
-    'png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4', 'webm', 'mp3', 
+    'png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4', 'webm', 'mp3',
     'wav', 'pdf', 'txt', 'md', 'doc', 'docx'
 }
+ALLOWED_AVATAR_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -240,6 +241,12 @@ def init_db():
     # ones — see get_messages() and resolve_ha_identity().
     c.execute('''CREATE TABLE IF NOT EXISTS user_aliases
                  (user_id TEXT PRIMARY KEY, alias TEXT NOT NULL)''')
+
+    # Self-service avatars, same keying and same "looked up at read time"
+    # reasoning as user_aliases above — setting a new avatar picture
+    # updates it on every past message too, not just future ones.
+    c.execute('''CREATE TABLE IF NOT EXISTS user_avatars
+                 (user_id TEXT PRIMARY KEY, avatar_url TEXT NOT NULL)''')
 
     # Custom emojis table
     c.execute('''CREATE TABLE IF NOT EXISTS custom_emojis
@@ -409,19 +416,20 @@ def get_known_people():
     name (or username as a fallback)."""
     conn = sqlite3.connect('/data/chat.db')
     c = conn.cursor()
-    c.execute('''SELECT h.user_id, h.display_name, h.username, ua.alias
+    c.execute('''SELECT h.user_id, h.display_name, h.username, ua.alias, av.avatar_url
                  FROM ha_users h
                  LEFT JOIN user_aliases ua ON ua.user_id = h.user_id
+                 LEFT JOIN user_avatars av ON av.user_id = h.user_id
                  ORDER BY h.last_seen DESC''')
     rows = c.fetchall()
     conn.close()
     seen = set()
     people = []
-    for user_id, display_name, username, alias in rows:
+    for user_id, display_name, username, alias, avatar_url in rows:
         name = (alias or '').strip() or (display_name or '').strip() or (username or '').strip()
         if name and name not in seen:
             seen.add(name)
-            people.append(name)
+            people.append({'name': name, 'avatar': avatar_url})
     return people
 
 def get_alias(user_id):
@@ -445,6 +453,49 @@ def set_alias(user_id, alias):
         c.execute('DELETE FROM user_aliases WHERE user_id = ?', (user_id,))
     conn.commit()
     conn.close()
+
+def get_avatar(user_id):
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('SELECT avatar_url FROM user_avatars WHERE user_id = ?', (user_id,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+def remove_upload(file_url):
+    """Deletes a file this app previously saved under UPLOAD_FOLDER, given
+    its public /uploads/... URL. No-ops for anything else (e.g. an
+    external GIPHY URL) — and resolves the path to confirm it can't have
+    climbed outside the upload folder before deleting anything from disk."""
+    if not file_url or not file_url.startswith('/uploads/'):
+        return
+    candidate = (UPLOAD_FOLDER / file_url[len('/uploads/'):]).resolve()
+    if candidate.is_relative_to(UPLOAD_FOLDER.resolve()) and candidate.exists():
+        try:
+            candidate.unlink()
+        except OSError as e:
+            logger.warning('Could not remove upload %s: %s', file_url, e)
+
+def set_avatar(user_id, avatar_url):
+    old_avatar_url = get_avatar(user_id)
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('''INSERT INTO user_avatars (user_id, avatar_url) VALUES (?, ?)
+                 ON CONFLICT(user_id) DO UPDATE SET avatar_url = excluded.avatar_url''',
+              (user_id, avatar_url))
+    conn.commit()
+    conn.close()
+    if old_avatar_url and old_avatar_url != avatar_url:
+        remove_upload(old_avatar_url)
+
+def delete_avatar(user_id):
+    old_avatar_url = get_avatar(user_id)
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('DELETE FROM user_avatars WHERE user_id = ?', (user_id,))
+    conn.commit()
+    conn.close()
+    remove_upload(old_avatar_url)
 
 def get_known_ha_accounts():
     """Every HA account that's visited, with their real HA name and
@@ -513,9 +564,10 @@ def delete_channel(slug):
 def get_messages(limit=100, channel='general'):
     conn = sqlite3.connect('/data/chat.db')
     c = conn.cursor()
-    c.execute('''SELECT m.*, ua.alias as current_alias
+    c.execute('''SELECT m.*, ua.alias as current_alias, av.avatar_url
                  FROM messages m
                  LEFT JOIN user_aliases ua ON ua.user_id = m.sender_id
+                 LEFT JOIN user_avatars av ON av.user_id = m.sender_id
                  WHERE m.channel = ?
                  ORDER BY m.timestamp DESC LIMIT ?''', (channel, limit))
     messages = c.fetchall()
@@ -602,18 +654,7 @@ def delete_message(message_id, requester_id, can_manage):
     conn.commit()
     conn.close()
 
-    # Only ever remove a file that's actually one of our own uploads
-    # (GIF messages point at an external GIPHY URL, which must never be
-    # touched here) — and resolve it to confirm it can't have climbed
-    # outside the upload folder before deleting anything from disk.
-    if file_url and file_url.startswith('/uploads/'):
-        candidate = (UPLOAD_FOLDER / file_url[len('/uploads/'):]).resolve()
-        if candidate.is_relative_to(UPLOAD_FOLDER.resolve()) and candidate.exists():
-            try:
-                candidate.unlink()
-            except OSError as e:
-                logger.warning('Could not remove file for deleted message %s: %s', message_id, e)
-
+    remove_upload(file_url)
     return channel, None
 
 def get_custom_emojis():
@@ -750,13 +791,14 @@ def index():
     server_identity = get_server_identity()
 
     return render_template('index.html',
-                          members=[{'name': n} for n in get_known_people()],
+                          members=get_known_people(),
                           theme=THEME,
                           asset_version=ASSET_VERSION,
                           inline_css=INLINE_CSS,
                           channels=get_channels(),
                           auto_user=auto_user,
                           auto_user_id=auto_user_id,
+                          auto_avatar=get_avatar(auto_user_id) if auto_user_id else None,
                           is_admin=bool(session.get('is_admin')),
                           is_owner=is_owner(auto_user_id),
                           server_name=server_identity['name'],
@@ -872,6 +914,7 @@ def api_me():
     return jsonify({
         'ha_name': ha_name,
         'alias': get_alias(ha_user_id) or '',
+        'avatar_url': get_avatar(ha_user_id) or '',
     })
 
 @app.route('/api/my-alias', methods=['POST'])
@@ -885,6 +928,42 @@ def api_set_my_alias():
         return jsonify({'error': 'Not accessed through Home Assistant'}), 403
     data = request.get_json(silent=True) or {}
     set_alias(ha_user_id, data.get('alias', ''))
+    return jsonify({'success': True})
+
+@app.route('/api/my-avatar', methods=['POST'])
+def api_set_my_avatar():
+    # Same shape as /api/my-alias: the target is always the requester's
+    # own HA user ID from the ingress headers, never taken from the
+    # request body, so this can only ever change your own avatar.
+    ha_user_id = request.headers.get('X-Remote-User-Id')
+    if not ha_user_id:
+        return jsonify({'error': 'Not accessed through Home Assistant'}), 403
+    if 'file' not in request.files or request.files['file'].filename == '':
+        return jsonify({'error': 'No image selected'}), 400
+
+    file = request.files['file']
+    ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
+    if ext not in ALLOWED_AVATAR_EXTENSIONS:
+        return jsonify({'error': 'Avatar must be a PNG, JPG, GIF, or WEBP image.'}), 400
+
+    # Namespaced by the requester's own HA user ID (not client-supplied)
+    # and timestamped, same collision-avoidance approach as /api/upload —
+    # this is what makes a fresh upload actually replace the old avatar
+    # everywhere it's shown, rather than getting cached under an
+    # already-seen filename.
+    safe_id = secure_filename(ha_user_id) or 'user'
+    filename = f"avatar_{safe_id}_{int(datetime.now().timestamp())}.{ext}"
+    file.save(UPLOAD_FOLDER / filename)
+    avatar_url = f'/uploads/{filename}'
+    set_avatar(ha_user_id, avatar_url)
+    return jsonify({'success': True, 'avatar_url': avatar_url})
+
+@app.route('/api/my-avatar', methods=['DELETE'])
+def api_delete_my_avatar():
+    ha_user_id = request.headers.get('X-Remote-User-Id')
+    if not ha_user_id:
+        return jsonify({'error': 'Not accessed through Home Assistant'}), 403
+    delete_avatar(ha_user_id)
     return jsonify({'success': True})
 
 @app.route('/admin')
@@ -1456,6 +1535,7 @@ def handle_message(data):
         'id': msg_id,
         'sender': sender,
         'sender_id': sender_id,
+        'avatar_url': get_avatar(sender_id) if sender_id else None,
         'content': content,
         'timestamp': datetime.now().isoformat(),
         'channel': channel,

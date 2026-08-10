@@ -91,7 +91,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const usernameEl = document.getElementById('currentUsername');
         const avatarEl = document.getElementById('currentAvatar');
         if (usernameEl) usernameEl.textContent = currentUser;
-        if (avatarEl) avatarEl.textContent = currentUser[0];
+        if (avatarEl) avatarEl.innerHTML = avatarInnerHtml(window.AUTO_CHAT_USER_AVATAR, currentUser);
 
         initializeChat();
     }
@@ -393,7 +393,7 @@ function addMessage(data) {
         : '';
 
     messageDiv.innerHTML = `
-        <div class="message-avatar">${escapeHtml(data.sender[0])}</div>
+        <div class="message-avatar">${avatarInnerHtml(data.avatar_url, data.sender)}</div>
         <div class="message-content">
             <div class="message-header">
                 <span class="message-author">${escapeHtml(data.sender)}</span>
@@ -559,6 +559,17 @@ function linkifyText(text) {
     }
     result += escapeHtml(text.slice(lastIndex));
     return result;
+}
+
+// Shared by every place an avatar circle gets rendered client-side (chat
+// messages; the "me" panel and settings preview refresh after an
+// upload) — a real photo if the person has set one, else the same
+// first-letter-of-name fallback this app has always shown.
+function avatarInnerHtml(avatarUrl, name) {
+    if (avatarUrl) {
+        return `<img src="${safeUrl(resolveUrl(avatarUrl))}" alt="" class="avatar-img">`;
+    }
+    return escapeHtml((name || '?')[0]);
 }
 
 function safeUrl(url) {
@@ -1073,6 +1084,7 @@ function openMySettings() {
             const hint = document.getElementById('myHaNameHint');
             if (input) input.value = me.alias || '';
             if (hint) hint.textContent = `(your Home Assistant name is "${me.ha_name}")`;
+            setAvatarPreview(me.avatar_url);
         })
         .catch(() => {});
 
@@ -1326,6 +1338,60 @@ function saveMyAlias() {
         .catch(() => {
             alert("Couldn't save your display name. Please try again.");
         });
+}
+
+// Current avatar as last loaded from /api/me — lets removeMyAvatar() know
+// whether there's actually anything to remove without a round-trip.
+let myCurrentAvatarUrl = '';
+
+function setAvatarPreview(avatarUrl) {
+    myCurrentAvatarUrl = avatarUrl || '';
+    const preview = document.getElementById('myAvatarPreview');
+    const removeBtn = document.getElementById('removeAvatarBtn');
+    if (preview) preview.innerHTML = avatarInnerHtml(myCurrentAvatarUrl, currentUser);
+    if (removeBtn) removeBtn.classList.toggle('hidden', !myCurrentAvatarUrl);
+}
+
+function uploadMyAvatar(event) {
+    const fileInput = event.target;
+    const file = fileInput.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    fetch(apiUrl('/api/my-avatar'), {
+        method: 'POST',
+        body: formData
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+            // Reload so the new photo applies everywhere at once — the
+            // sidebar, the header, and every past message you've sent —
+            // same reasoning as saveMyAlias() above.
+            location.reload();
+        })
+        .catch(() => alert("Couldn't upload your avatar. Please try again."))
+        .finally(() => { fileInput.value = ''; });
+}
+
+function removeMyAvatar() {
+    if (!myCurrentAvatarUrl) return;
+
+    fetch(apiUrl('/api/my-avatar'), { method: 'DELETE' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+            location.reload();
+        })
+        .catch(() => alert("Couldn't remove your avatar. Please try again."));
 }
 
 function loadCustomEmojiList() {

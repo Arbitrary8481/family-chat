@@ -1,5 +1,9 @@
 name: "Family Chat"
+<<<<<<< Updated upstream
 version: "2.21.11"
+=======
+version: "2.22.0"
+>>>>>>> Stashed changes
 slug: "family_chat"
 description: "Private Discord-like chat for your family with file sharing and emojis"
 arch:
