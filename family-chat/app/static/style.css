@@ -286,6 +286,9 @@ body {
     padding: 8px;
     border-radius: 4px;
     font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     transition: all 0.2s;
 }
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.21.5
+
+### Fixed
+- **The channel-list toggle button used the ☰ hamburger icon — the same icon Home Assistant's own frontend uses for its own navigation drawer.** On mobile, where HA shows its own app bar around the add-on's content, this made it easy to tap HA's own menu instead of the chat's button, or just be confused about which one you were looking at. Replaced with a distinct sidebar-toggle icon (a panel with a divider line) that doesn't look like a generic app menu.
+
 ## 2.21.4
 
 ### Removed
