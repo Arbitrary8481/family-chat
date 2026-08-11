@@ -963,7 +963,13 @@ def api_set_my_avatar():
         return jsonify({'error': 'No image selected'}), 400
 
     file = request.files['file']
-    ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
+    mime_to_ext = {
+        'image/png': 'png',
+        'image/jpeg': 'jpg',
+        'image/gif': 'gif',
+        'image/webp': 'webp',
+    }
+    ext = mime_to_ext.get((file.mimetype or '').lower(), '')
     if ext not in ALLOWED_AVATAR_EXTENSIONS:
         return jsonify({'error': 'Avatar must be a PNG, JPG, GIF, or WEBP image.'}), 400
 
