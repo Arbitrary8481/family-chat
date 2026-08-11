@@ -719,10 +719,16 @@ def ingress_redirect(path):
     it becomes once a browser gets hold of it.
     """
     prefix = request.headers.get('X-Ingress-Path', '').replace('\\', '/')
-    parsed = urllib.parse.urlparse(prefix)
-    if not prefix.startswith('/') or prefix.startswith('//') or parsed.netloc or parsed.scheme:
+    parsed_prefix = urllib.parse.urlparse(prefix)
+    if not prefix.startswith('/') or prefix.startswith('//') or parsed_prefix.netloc or parsed_prefix.scheme:
         prefix = ''
-    return redirect(prefix + path)
+
+    safe_path = (path or '').replace('\\', '/')
+    parsed_path = urllib.parse.urlparse(safe_path)
+    if not safe_path.startswith('/') or safe_path.startswith('//') or parsed_path.netloc or parsed_path.scheme:
+        safe_path = '/'
+
+    return redirect(prefix + safe_path)
 
 @app.after_request
 def set_cache_headers(response):
