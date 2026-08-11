@@ -1,5 +1,5 @@
 name: "Family Chat"
-version: "2.24.1"
+version: "2.24.2"
 slug: "family_chat"
 description: "Private Discord-like chat for your family with file sharing and emojis"
 arch:

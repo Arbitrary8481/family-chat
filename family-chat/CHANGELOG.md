@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.24.2
+
+### Fixed
+- **Calendar events showed as raw JSON text instead of the card**, for anyone who wasn't watching live when it was posted — which in practice is most people, most of the time, since it only worked correctly for whoever had the chat open at the exact moment it was created. The card-rendering check looked for a field called `type`, which live socket messages do have, but history loaded from `/api/messages` (i.e. anyone opening or reloading the app afterward) comes back with that same value under the field `message_type` — the actual database column name — not `type`. Fixed by normalizing both possible field names once, rather than patching just the one comparison that broke, so nothing added later falls into the same gap.
+
 ## 2.24.1
 
 ### Changed

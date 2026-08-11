@@ -332,6 +332,16 @@ function sendMessage(content) {
 function addMessage(data) {
     const container = document.getElementById('messagesContainer');
     if (!container) return;
+
+    // Messages loaded from history (/api/messages) come back with the
+    // field named message_type — the actual database column name.
+    // Messages delivered live over the socket use type instead, set
+    // explicitly in each socket emit. Normalized once here rather than
+    // at each call site, so nothing added later falls into the same
+    // gap this already caused: a calendar event rendered as raw JSON
+    // text instead of its card, specifically because history-loaded
+    // messages never had a `type` field at all to match against.
+    const msgType = data.type || data.message_type || 'text';
     
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message';
@@ -342,7 +352,7 @@ function addMessage(data) {
         minute: '2-digit'
     });
     
-    let contentHtml = data.type === 'calendar_event'
+    let contentHtml = msgType === 'calendar_event'
         ? buildCalendarEventHtml(data.content)
         : `<div class="message-text">${linkifyText(data.content || '')}</div>`;
     
