@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.26.0
+
+### Added
+- **@mentions.** Type `@` in the message box and a picker of family members appears, filtered as you keep typing — arrow keys to navigate, Enter/Tab/click to pick, Escape to dismiss. Mentioned names show up highlighted in the chat feed and in search results, matched against real member names so `@name` inside an ordinary email address is never mistaken for one. More importantly, being mentioned actually notifies you — even in a channel you never subscribed to — since being personally called out is a stronger signal than general channel activity, the same way it works in any other chat app. If you're already subscribed to that channel too, you still only get one notification, not two.
+
+## 2.25.1
+
+### Added
+- **Shift+Enter now adds a line break in the message box instead of sending.** The message box was a single-line `<input>`, which can't hold a line break at all regardless of any key combination — Shift+Enter had nowhere to put one. Switched to an auto-growing textarea (starts single-line, expands as you add lines, caps at a scrollable height for very long messages) so there's actually somewhere for the line break to go. Enter alone still sends, same as always.
+
 ## 2.25.0
 
 ### Added
