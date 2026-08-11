@@ -1525,6 +1525,7 @@ def api_calendars():
         return jsonify({'error': error}), 503
     return jsonify({'calendars': calendars})
 
+<<<<<<< HEAD
 def get_calendar_events(entity_id, start_dt, end_dt):
     """Real events for one calendar between two datetimes, straight from
     Home Assistant's dedicated calendar REST endpoint (not the
@@ -1650,6 +1651,8 @@ def api_calendar_upcoming():
     all_events.sort(key=lambda e: e['start'])
     return jsonify({'events': all_events[:25]})
 
+=======
+>>>>>>> 7db67a3970f87c9499e5d272d69c78f8c785bbe8
 @app.route('/api/calendar/create-event', methods=['POST'])
 def api_create_calendar_event():
     ha_user_id = request.headers.get('X-Remote-User-Id')
@@ -1715,12 +1718,15 @@ def api_create_calendar_event():
     if error:
         return jsonify({'error': error}), 503
 
+<<<<<<< HEAD
     # Best-effort attribution — the event is already successfully
     # created in Home Assistant regardless of whether this lookup
     # succeeds, so nothing here should ever fail the request itself.
     uid = find_event_uid(entity_id, title, all_day, start)
     log_calendar_event_creation(uid, entity_id, ha_user_id, sender)
 
+=======
+>>>>>>> 7db67a3970f87c9499e5d272d69c78f8c785bbe8
     # Posts the same way any other message does — saved, then broadcast
     # to whichever channel's room it belongs to — except this request
     # came in over plain HTTP, not an active socket connection, so it

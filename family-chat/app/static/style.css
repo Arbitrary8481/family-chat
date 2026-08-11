@@ -638,6 +638,10 @@ body {
     background: var(--bg-modifier-hover);
 }
 
+.calendar-btn {
+    font-size: 18px;
+}
+
 .gif-btn {
     font-size: 11px;
     font-weight: 700;
@@ -1526,6 +1530,7 @@ body {
 }
 
 .calendar-date-row {
+<<<<<<< HEAD
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -1536,6 +1541,13 @@ body {
     box-sizing: border-box;
 }
 
+=======
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+>>>>>>> 7db67a3970f87c9499e5d272d69c78f8c785bbe8
 /* Calendar event confirmation card — its own distinct rendering in the
    message feed, same reasoning as images/GIFs getting their own look
    instead of just showing as a plain link or line of text. */

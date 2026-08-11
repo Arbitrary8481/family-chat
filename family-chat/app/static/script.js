@@ -1191,15 +1191,19 @@ function submitCalendarEvent() {
                 return;
             }
             closeCalendarModal();
+<<<<<<< HEAD
             // Refreshes the sidebar panel immediately rather than
             // waiting for its own periodic/manual refresh — we know
             // exactly when something just got added, no reason to make
             // the person go find the refresh button themselves.
             loadUpcomingEvents();
+=======
+>>>>>>> 7db67a3970f87c9499e5d272d69c78f8c785bbe8
         })
         .catch(() => alert("Couldn't add that to the calendar. Please try again."));
 }
 
+<<<<<<< HEAD
 // Renders the "Upcoming" panel at the bottom of the member list — real
 // Home Assistant calendar events (from every calendar, not just what's
 // come through this app), sorted by when they actually happen.
@@ -1254,6 +1258,8 @@ function buildUpcomingEventItemHtml(event) {
     `;
 }
 
+=======
+>>>>>>> 7db67a3970f87c9499e5d272d69c78f8c785bbe8
 // Renders a calendar_event message's JSON payload (see
 // api_create_calendar_event() server-side) as a small card rather than
 // a wall of text. Falls back to plain escaped text if the payload isn't

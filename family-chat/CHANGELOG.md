@@ -1,5 +1,6 @@
 # Changelog
 
+<<<<<<< HEAD
 ## 2.24.0
 
 ### Added
@@ -12,6 +13,8 @@
 - **The Starts/Ends date-time fields in the calendar form overflowed the modal.** They were laid out as two columns side by side, but native `datetime-local` inputs need more width than half a 500px modal to render "mm/dd/yyyy, --:-- -- AM/PM" plus the picker icon without clipping. Now stacked vertically instead — one full-width field per row — which sidesteps the problem entirely regardless of modal width, locale date format, or browser rendering differences.
 - **The calendar button's icon didn't line up with the others in the composer row.** The 📅 emoji renders with different vertical proportions than simpler icons/emoji across platforms, throwing off its alignment next to the GIF/emoji/send buttons. Replaced with a plain SVG calendar icon at the same size and style as the other icon-based buttons (attach, send) — consistent alignment everywhere, not just wherever this happened to render evenly.
 
+=======
+>>>>>>> 7db67a3970f87c9499e5d272d69c78f8c785bbe8
 ## 2.23.0
 
 ### Added
