@@ -270,6 +270,8 @@ function initializeChat() {
         .then(emojis => {
             customEmojis = emojis;
         });
+
+    loadUpcomingEvents();
     
     const input = document.getElementById('messageInput');
     if (input) {
@@ -340,7 +342,9 @@ function addMessage(data) {
         minute: '2-digit'
     });
     
-    let contentHtml = `<div class="message-text">${linkifyText(data.content || '')}</div>`;
+    let contentHtml = data.type === 'calendar_event'
+        ? buildCalendarEventHtml(data.content)
+        : `<div class="message-text">${linkifyText(data.content || '')}</div>`;
     
     if (data.file || data.file_url) {
         const rawFileName = data.file?.filename || data.file_name || '';
@@ -1057,6 +1061,244 @@ function openFileBrowser() {
 function closeFileBrowser() {
     const modal = document.getElementById('filesModal');
     if (modal) modal.classList.add('hidden');
+}
+
+// --- Calendar ---
+// Fetches its dropdowns fresh every time the modal opens rather than
+// caching them client-side — calendars and channels can both change
+// between opens, and this form is opened rarely enough (compared to,
+// say, the emoji picker) that the extra round-trip isn't worth
+// optimizing away.
+function openCalendarModal() {
+    const modal = document.getElementById('calendarModal');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+
+    // Reset to a blank, timed (non-all-day) event every time it opens,
+    // rather than leaving whatever was last typed — this form is for
+    // adding one specific thing and closing, not something you'd want
+    // to reopen mid-edit.
+    document.getElementById('calEventTitle').value = '';
+    document.getElementById('calEventLocation').value = '';
+    document.getElementById('calEventDescription').value = '';
+    document.getElementById('calEventAllDay').checked = false;
+    document.getElementById('calEventStartDateTime').value = '';
+    document.getElementById('calEventEndDateTime').value = '';
+    document.getElementById('calEventStartDate').value = '';
+    document.getElementById('calEventEndDate').value = '';
+    toggleCalendarAllDay();
+    const status = document.getElementById('calendarEventStatus');
+    if (status) status.classList.add('hidden');
+
+    const calSelect = document.getElementById('calEventCalendar');
+    calSelect.innerHTML = '<option value="">Loading calendars…</option>';
+    fetch(apiUrl('/api/calendars'))
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                calSelect.innerHTML = `<option value="">${escapeHtml(data.error)}</option>`;
+                return;
+            }
+            const calendars = data.calendars || [];
+            if (calendars.length === 0) {
+                calSelect.innerHTML = '<option value="">No calendars found in Home Assistant</option>';
+                return;
+            }
+            calSelect.innerHTML = calendars.map(c =>
+                `<option value="${escapeHtml(c.entity_id)}">${escapeHtml(c.name)}</option>`
+            ).join('');
+        })
+        .catch(() => {
+            calSelect.innerHTML = '<option value="">Couldn\'t load calendars — try again</option>';
+        });
+
+    const channelSelect = document.getElementById('calEventChannelSelect');
+    channelSelect.innerHTML = '<option value="">Loading channels…</option>';
+    fetch(apiUrl('/api/channels'))
+        .then(r => r.json())
+        .then(channels => {
+            channelSelect.innerHTML = (channels || []).map(ch =>
+                `<option value="${escapeHtml(ch.slug)}"${ch.slug === currentChannel ? ' selected' : ''}>${escapeHtml(ch.icon)} ${escapeHtml(ch.name)}</option>`
+            ).join('');
+        })
+        .catch(() => {
+            channelSelect.innerHTML = '<option value="">Couldn\'t load channels</option>';
+        });
+}
+
+function closeCalendarModal() {
+    const modal = document.getElementById('calendarModal');
+    if (modal) modal.classList.add('hidden');
+}
+
+function toggleCalendarAllDay() {
+    const allDay = document.getElementById('calEventAllDay').checked;
+    document.getElementById('calEventTimedFields').classList.toggle('hidden', allDay);
+    document.getElementById('calEventAllDayFields').classList.toggle('hidden', !allDay);
+}
+
+// datetime-local inputs give "2026-08-18T14:00" — Home Assistant's
+// calendar.create_event wants "2026-08-18 14:00:00" (a space instead of
+// "T", plus explicit seconds).
+function formatDateTimeLocalForHa(value) {
+    if (!value) return '';
+    return value.replace('T', ' ') + ':00';
+}
+
+function submitCalendarEvent() {
+    const title = document.getElementById('calEventTitle').value.trim();
+    const allDay = document.getElementById('calEventAllDay').checked;
+    const location = document.getElementById('calEventLocation').value.trim();
+    const description = document.getElementById('calEventDescription').value.trim();
+    const entity_id = document.getElementById('calEventCalendar').value;
+    const channel = document.getElementById('calEventChannelSelect').value;
+
+    if (!title) {
+        alert('Give the appointment a title.');
+        return;
+    }
+    if (!entity_id) {
+        alert('Choose a calendar.');
+        return;
+    }
+
+    let start, end;
+    if (allDay) {
+        start = document.getElementById('calEventStartDate').value;
+        end = document.getElementById('calEventEndDate').value;
+        if (!start) {
+            alert('Choose a start date.');
+            return;
+        }
+    } else {
+        start = formatDateTimeLocalForHa(document.getElementById('calEventStartDateTime').value);
+        end = formatDateTimeLocalForHa(document.getElementById('calEventEndDateTime').value);
+        if (!start || !end) {
+            alert('Choose a start and end time.');
+            return;
+        }
+    }
+
+    fetch(apiUrl('/api/calendar/create-event'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, all_day: allDay, start, end, location, description, entity_id, channel })
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+            closeCalendarModal();
+            // Refreshes the sidebar panel immediately rather than
+            // waiting for its own periodic/manual refresh — we know
+            // exactly when something just got added, no reason to make
+            // the person go find the refresh button themselves.
+            loadUpcomingEvents();
+        })
+        .catch(() => alert("Couldn't add that to the calendar. Please try again."));
+}
+
+// Renders the "Upcoming" panel at the bottom of the member list — real
+// Home Assistant calendar events (from every calendar, not just what's
+// come through this app), sorted by when they actually happen.
+function loadUpcomingEvents() {
+    const list = document.getElementById('upcomingEventsList');
+    if (!list) return; // panel isn't rendered at all when calendar_enabled is false
+
+    fetch(apiUrl('/api/calendar/upcoming'))
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                list.innerHTML = `<p class="settings-hint">${escapeHtml(data.error)}</p>`;
+                return;
+            }
+            const events = data.events || [];
+            if (events.length === 0) {
+                list.innerHTML = '<p class="settings-hint">Nothing on the calendar yet.</p>';
+                return;
+            }
+            list.innerHTML = events.map(buildUpcomingEventItemHtml).join('');
+        })
+        .catch(() => {
+            list.innerHTML = '<p class="settings-hint">Couldn\'t load the calendar.</p>';
+        });
+}
+
+function buildUpcomingEventItemHtml(event) {
+    const startDate = new Date(event.all_day ? event.start + 'T00:00:00' : event.start.replace(' ', 'T'));
+    const month = startDate.toLocaleDateString(undefined, { month: 'short' });
+    const day = startDate.getDate();
+
+    let metaParts = [];
+    if (event.all_day) {
+        metaParts.push('All day');
+    } else {
+        metaParts.push(startDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }));
+    }
+    metaParts.push(event.calendar_name);
+    if (event.added_by) metaParts.push(`Added by ${event.added_by}`);
+
+    return `
+        <div class="upcoming-event-item" title="${escapeHtml(event.title)}${event.location ? ' — ' + escapeHtml(event.location) : ''}">
+            <div class="upcoming-event-date">
+                <span class="month">${escapeHtml(month)}</span>
+                <span class="day">${day}</span>
+            </div>
+            <div class="upcoming-event-details">
+                <div class="upcoming-event-title">${escapeHtml(event.title)}</div>
+                <div class="upcoming-event-meta">${escapeHtml(metaParts.join(' · '))}</div>
+            </div>
+        </div>
+    `;
+}
+
+// Renders a calendar_event message's JSON payload (see
+// api_create_calendar_event() server-side) as a small card rather than
+// a wall of text. Falls back to plain escaped text if the payload isn't
+// valid JSON for any reason — old/corrupted data should never crash
+// the message list, just look a little plainer.
+function buildCalendarEventHtml(content) {
+    let event;
+    try {
+        event = JSON.parse(content);
+    } catch (e) {
+        return `<div class="message-text">${escapeHtml(content || '')}</div>`;
+    }
+
+    const title = event.title || 'Untitled event';
+    let when = '';
+    if (event.all_day && event.start) {
+        const startDate = new Date(event.start + 'T00:00:00');
+        when = startDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+        if (event.end) {
+            const endDateExclusive = new Date(event.end + 'T00:00:00');
+            const lastDay = new Date(endDateExclusive.getTime() - 86400000);
+            if (lastDay.getTime() !== startDate.getTime()) {
+                when += ' – ' + lastDay.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+            }
+        }
+    } else if (event.start) {
+        const start = new Date(event.start.replace(' ', 'T'));
+        when = start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+            + ' · ' + start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+        if (event.end) {
+            const end = new Date(event.end.replace(' ', 'T'));
+            when += ' – ' + end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+        }
+    }
+
+    return `
+        <div class="calendar-event-card">
+            <div class="calendar-event-icon">📅</div>
+            <div>
+                <div class="calendar-event-title">${escapeHtml(title)}</div>
+                ${when ? `<div class="calendar-event-when">${escapeHtml(when)}</div>` : ''}
+                ${event.location ? `<div class="calendar-event-location">📍 ${escapeHtml(event.location)}</div>` : ''}
+            </div>
+        </div>
+    `;
 }
 
 function switchSettingsTab(tab) {
