@@ -991,6 +991,19 @@ def api_delete_my_avatar():
 def admin_panel():
     if not session.get('is_admin'):
         return render_template('admin.html', logged_in=False, error=request.args.get('error'))
+
+    all_calendars, calendar_error = get_calendar_entities()
+    allowed_ids = get_allowed_calendar_ids()
+    calendars_with_state = []
+    if all_calendars:
+        for cal in all_calendars:
+            # Unset (allowed_ids is None) means nothing's ever been
+            # restricted — every calendar shows as checked by default,
+            # communicating "everything is currently allowed" rather
+            # than starting from an unexplained blank slate.
+            checked = allowed_ids is None or cal['entity_id'] in allowed_ids
+            calendars_with_state.append({**cal, 'checked': checked})
+
     return render_template('admin.html', logged_in=True,
                           saved=request.args.get('saved'),
                           active_tab=request.args.get('tab', 'chatname'),
@@ -998,7 +1011,19 @@ def admin_panel():
                           channel_error=request.args.get('channel_error'),
                           ha_accounts=get_known_ha_accounts(),
                           current_owner_id=get_owner_user_id(),
-                          server_identity=get_server_identity())
+                          server_identity=get_server_identity(),
+                          all_calendars=calendars_with_state,
+                          calendar_error=calendar_error)
+
+@app.route('/admin/calendars/set', methods=['POST'])
+@require_admin
+def admin_set_calendars():
+    # A checkbox that's unchecked simply doesn't appear in the submitted
+    # form data at all — getlist() only returns the ones that were
+    # checked, which is exactly the allowed set.
+    allowed = request.form.getlist('allowed_calendars')
+    set_allowed_calendars(allowed)
+    return ingress_redirect(url_for('admin_panel', saved='1', tab='calendars'))
 
 @app.route('/admin/server-name/set', methods=['POST'])
 @require_admin
@@ -1500,12 +1525,13 @@ def api_notify_test():
 
 def get_calendar_entities():
     """Every calendar.* entity currently registered in Home Assistant,
-    with a friendly display name. Used both to populate the calendar
-    picker and — just as importantly — as the allowlist a submitted
-    entity_id gets checked against before ever being used in a
-    privileged HA API call (same reasoning as send_ha_notification():
-    never trust a client-supplied identifier, even one that only ever
-    came from a dropdown populated with real values)."""
+    with a friendly display name. This is the *complete*, unrestricted
+    list — used for the Upcoming panel (viewing every calendar's events
+    is a separate concern from which ones people can add to) and as the
+    source get_addable_calendar_entities() filters down from. Don't use
+    this directly to validate a submitted entity_id for creating an
+    event — use get_addable_calendar_entities() for that, which is the
+    one that respects an admin's restriction."""
     data, error = ha_api_request('GET', '/states')
     if error:
         return None, error
@@ -1518,9 +1544,46 @@ def get_calendar_entities():
     calendars.sort(key=lambda c: c['name'].lower())
     return calendars, None
 
+def get_allowed_calendar_ids():
+    """None means no restriction has ever been configured — every real
+    calendar is addable, which is what makes this an opt-in admin
+    feature rather than something that silently breaks a fresh install
+    until someone visits the admin panel. An empty list is different
+    from None: that's an admin having explicitly unchecked everything,
+    which is a valid (if unusual) choice to make and is honored as-is,
+    not treated as "unset"."""
+    raw = get_setting('allowed_calendars')
+    if raw is None:
+        return None
+    try:
+        return set(json.loads(raw))
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+def set_allowed_calendars(entity_ids):
+    set_setting('allowed_calendars', json.dumps(sorted(set(entity_ids))))
+
+def get_addable_calendar_entities():
+    """Calendars people can actually create new events on — every real
+    calendar in Home Assistant, unless an admin has restricted the list
+    from the admin panel's Calendars tab, in which case only those
+    remain. This is the one both the add-event dropdown and (more
+    importantly) the server-side validation in
+    api_create_calendar_event() should use — using the unrestricted
+    get_calendar_entities() for validation would make the admin
+    restriction purely cosmetic, since a crafted request could still
+    name any real calendar."""
+    calendars, error = get_calendar_entities()
+    if error:
+        return None, error
+    allowed_ids = get_allowed_calendar_ids()
+    if allowed_ids is None:
+        return calendars, None
+    return [c for c in calendars if c['entity_id'] in allowed_ids], None
+
 @app.route('/api/calendars')
 def api_calendars():
-    calendars, error = get_calendar_entities()
+    calendars, error = get_addable_calendar_entities()
     if error:
         return jsonify({'error': error}), 503
     return jsonify({'calendars': calendars})
@@ -1673,9 +1736,12 @@ def api_create_calendar_event():
         return jsonify({'error': 'Choose a start date.' if all_day else 'Choose a start date and time.'}), 400
 
     # entity_id and channel are both validated against the real, current
-    # lists rather than trusted as-is — see get_calendar_entities()'s
-    # docstring for why.
-    calendars, cal_error = get_calendar_entities()
+    # lists rather than trusted as-is. Using get_addable_calendar_entities()
+    # here specifically — not the unrestricted get_calendar_entities() —
+    # is what actually enforces an admin's calendar restriction; using
+    # the unrestricted list would make that restriction purely cosmetic,
+    # since a crafted request could still name any real calendar.
+    calendars, cal_error = get_addable_calendar_entities()
     if cal_error:
         return jsonify({'error': cal_error}), 503
     if entity_id not in {c['entity_id'] for c in calendars}:

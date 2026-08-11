@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.25.0
+
+### Added
+- **Admin-restricted calendar list.** New "Calendars" tab in the admin panel — check/uncheck which of Home Assistant's calendars people are allowed to add new events to from the chat's 📅 button. Unrestricted by default (every calendar checked, matching how it's always worked) — this is purely opt-in, a fresh install or an admin who never visits this tab sees no change. The restriction is enforced server-side, not just hidden from the dropdown: a crafted request naming a calendar that isn't on the allowed list is rejected before Home Assistant's API is ever called, verified directly. The "Upcoming" panel in the sidebar is deliberately unaffected by this — it keeps showing events from every calendar regardless, since viewing what's already on the calendar is a different concern from controlling where new things can be added.
+
 ## 2.24.2
 
 ### Fixed
