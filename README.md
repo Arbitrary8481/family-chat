@@ -32,12 +32,15 @@ A private, Discord-style chat for your family that runs entirely inside Home Ass
 
 ## Permissions
 
+Everyone who can open this add-on at all is, by necessity, a Home Assistant admin — see Requirements below for why. Within the app itself, though, there's a separate, much narrower set of roles:
+
 - **Everyone** (anyone signed into Home Assistant) can chat, react, add channels, upload custom emoji, set their own display name, and manage their own notification subscriptions.
-- **Admin** — a separate password (set in the add-on configuration) unlocks the admin panel: rename the chat, delete channels, manage everyone's display names, and designate a server owner.
+- **Admin** — a separate password (set in the add-on configuration) unlocks the admin panel: rename the chat, delete channels, manage everyone's display names, restrict which calendars can be added to, and designate a server owner.
 - **Server Owner** — an admin can designate one Home Assistant account as the owner, from the admin panel. The owner gets the same message- and channel-deletion powers an admin has, but tied to their own Home Assistant login — no admin password needed day-to-day.
 
 ## Requirements
 
+- **Every family member needs Home Assistant admin access.** Home Assistant doesn't currently support granting a non-admin user access to just one specific add-on — ingress-based add-ons like this one are only reachable by admin accounts, full stop. This isn't something this add-on chose; it's a limitation of Home Assistant's permission model today. If Home Assistant adds more granular, per-add-on permissions for non-admin users in the future, this requirement should be able to relax to match.
 - Home Assistant with Supervisor (required for ingress and for the add-on's access to Home Assistant's notification services).
 - To post GIFs: a free [GIPHY API key](https://developers.giphy.com/).
 - To receive push notifications: the [Home Assistant Companion App](https://www.home-assistant.io/companion-app/) installed and connected on the devices you want notified.
