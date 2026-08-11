@@ -619,7 +619,7 @@ body {
     min-height: 44px;
 }
 
-.attach-btn, .emoji-btn, .gif-btn, .send-btn {
+.attach-btn, .emoji-btn, .gif-btn, .calendar-btn, .send-btn {
     background: transparent;
     border: none;
     color: var(--text-muted);
@@ -633,7 +633,7 @@ body {
     flex-shrink: 0;
 }
 
-.attach-btn:hover, .emoji-btn:hover, .gif-btn:hover {
+.attach-btn:hover, .emoji-btn:hover, .gif-btn:hover, .calendar-btn:hover {
     color: var(--interactive-hover);
     background: var(--bg-modifier-hover);
 }
@@ -859,27 +859,39 @@ body {
 .members-sidebar {
     width: 240px;
     background: var(--bg-secondary);
-    padding: 16px 8px;
     flex-shrink: 0;
-    overflow-y: auto;
-    overflow-x: hidden;
-    transition: width 0.15s ease, opacity 0.15s ease, padding 0.15s ease;
+    display: flex;
+    flex-direction: column;
+    /* The sidebar itself no longer scrolls as one unit — each of its two
+       regions (member list above, calendar below) scrolls independently
+       instead, which is what makes a fixed "bottom third" possible in
+       the first place. Without this, a long member list or event list
+       would just grow the whole sidebar rather than scroll within its
+       own allotted space. */
+    overflow: hidden;
+    transition: width 0.15s ease, opacity 0.15s ease;
 }
 
 .members-sidebar.collapsed {
     width: 0;
-    padding-left: 0;
-    padding-right: 0;
     opacity: 0;
     pointer-events: none;
     white-space: nowrap;
+}
+
+.members-top-section {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 16px 8px;
 }
 
 .members-header {
     color: var(--text-muted);
     font-size: 12px;
     font-weight: 700;
-    padding: 24px 8px 8px;
+    padding: 0 8px 8px;
     letter-spacing: 0.5px;
 }
 
@@ -950,6 +962,108 @@ body {
     font-weight: 700;
     padding: 8px;
     letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.upcoming-events {
+    flex: 0 0 33%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg-tertiary);
+    border-top: 1px solid var(--bg-primary);
+    padding-top: 8px;
+}
+
+.upcoming-events .media-header {
+    padding: 8px 16px;
+    flex-shrink: 0;
+}
+
+.upcoming-refresh-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    line-height: 1;
+}
+
+.upcoming-refresh-btn:hover {
+    color: var(--interactive-hover);
+    background: var(--bg-modifier-hover);
+}
+
+.upcoming-events-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 0 8px 8px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.upcoming-event-item {
+    display: flex;
+    gap: 10px;
+    padding: 6px 4px;
+    border-radius: 4px;
+}
+
+.upcoming-event-item:hover {
+    background: var(--bg-modifier-hover);
+}
+
+.upcoming-event-date {
+    flex-shrink: 0;
+    width: 34px;
+    text-align: center;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    padding: 3px 0;
+    line-height: 1.1;
+}
+
+.upcoming-event-date .month {
+    display: block;
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--danger);
+    text-transform: uppercase;
+}
+
+.upcoming-event-date .day {
+    display: block;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-normal);
+}
+
+.upcoming-event-details {
+    min-width: 0;
+    flex: 1;
+}
+
+.upcoming-event-title {
+    font-size: 13px;
+    color: var(--text-normal);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.upcoming-event-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .media-grid {
@@ -1422,6 +1536,60 @@ body {
 }
 
 .settings-hint {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.form-label {
+    display: block;
+    font-size: 13px;
+    color: var(--text-muted);
+    margin: 12px 0 6px;
+}
+
+.form-label:first-child {
+    margin-top: 0;
+}
+
+.calendar-date-row {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.calendar-date-row input {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* Calendar event confirmation card — its own distinct rendering in the
+   message feed, same reasoning as images/GIFs getting their own look
+   instead of just showing as a plain link or line of text. */
+.calendar-event-card {
+    display: flex;
+    gap: 12px;
+    margin-top: 6px;
+    padding: 12px;
+    max-width: 360px;
+    background: var(--bg-tertiary);
+    border-left: 3px solid var(--bg-accent);
+    border-radius: 4px;
+}
+
+.calendar-event-icon {
+    font-size: 24px;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.calendar-event-title {
+    font-weight: 600;
+    color: var(--text-normal);
+    margin-bottom: 2px;
+}
+
+.calendar-event-when,
+.calendar-event-location {
     font-size: 13px;
     color: var(--text-muted);
 }

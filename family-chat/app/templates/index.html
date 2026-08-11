@@ -130,6 +130,17 @@
                     </button>
                     {% endif %}
 
+                    {% if calendar_enabled %}
+                    <button class="calendar-btn" onclick="openCalendarModal()" title="Add a calendar event">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="5" width="18" height="16" rx="2"/>
+                            <line x1="3" y1="10" x2="21" y2="10"/>
+                            <line x1="8" y1="3" x2="8" y2="7"/>
+                            <line x1="16" y1="3" x2="16" y2="7"/>
+                        </svg>
+                    </button>
+                    {% endif %}
+
                     <button class="emoji-btn" onclick="toggleEmojiPicker()" title="Add emoji">
                         😊
                     </button>
@@ -176,32 +187,52 @@
 
         <!-- Members List -->
         <div class="members-sidebar" id="membersSidebar">
-            <div class="members-header">👨‍👩‍👧‍👦 FAMILY — {{ members|length }}</div>
-            {% for m in members %}
-            <div class="member online" data-user="{{ m.name }}">
-                <div class="member-avatar" style="{% if not m.avatar %}background: {{ loop.cycle(
-                    'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                    'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-                    'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-                    'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
-                    'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
-                    'linear-gradient(135deg, #30cfd0 0%, #330867 100%)'
-                ) }};{% endif %}">
-                    {% if m.avatar %}<img src="./{{ m.avatar[1:] }}" alt="" class="avatar-img">{% else %}{{ m.name[0] }}{% endif %}
+            <div class="members-top-section">
+                <div class="members-header">👨‍👩‍👧‍👦 FAMILY — {{ members|length }}</div>
+                {% for m in members %}
+                <div class="member online" data-user="{{ m.name }}">
+                    <div class="member-avatar" style="{% if not m.avatar %}background: {{ loop.cycle(
+                        'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                        'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+                        'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+                        'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+                        'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+                        'linear-gradient(135deg, #30cfd0 0%, #330867 100%)'
+                    ) }};{% endif %}">
+                        {% if m.avatar %}<img src="./{{ m.avatar[1:] }}" alt="" class="avatar-img">{% else %}{{ m.name[0] }}{% endif %}
+                    </div>
+                    <div class="member-info">
+                        <div class="member-name">{{ m.name }}</div>
+                        <div class="member-status-text">🏠 Online</div>
+                    </div>
                 </div>
-                <div class="member-info">
-                    <div class="member-name">{{ m.name }}</div>
-                    <div class="member-status-text">🏠 Online</div>
+                {% endfor %}
+                
+                <div class="shared-media">
+                    <div class="media-header">📸 Family Photos</div>
+                    <div class="media-grid" id="sharedMedia">
+                        <!-- Photos will appear here -->
+                    </div>
                 </div>
             </div>
-            {% endfor %}
-            
-            <div class="shared-media">
-                <div class="media-header">📸 Family Photos</div>
-                <div class="media-grid" id="sharedMedia">
-                    <!-- Photos will appear here -->
+
+            {% if calendar_enabled %}
+            <!-- Real Home Assistant calendar events, aggregated across
+                 every calendar and sorted by when they actually happen
+                 — not limited to whatever's come through chat, and not
+                 sorted by post time the way a channel would be. Fixed to
+                 the bottom third of the sidebar with its own scroll,
+                 independent of the member list above it. -->
+            <div class="upcoming-events">
+                <div class="media-header">
+                    📅 UPCOMING
+                    <button class="upcoming-refresh-btn" onclick="loadUpcomingEvents()" title="Refresh">⟳</button>
+                </div>
+                <div id="upcomingEventsList" class="upcoming-events-list">
+                    <p class="settings-hint">Loading…</p>
                 </div>
             </div>
+            {% endif %}
         </div>
     </div>
 
@@ -362,6 +393,66 @@
                 <button class="btn btn-primary" onclick="runSearch()">Search</button>
             </div>
             <div id="searchResults" class="search-results"></div>
+        </div>
+    </div>
+
+    <!-- Calendar: creates a real event on one of Home Assistant's own
+         calendars (calendar.create_event) and posts a confirmation card
+         into whichever channel is chosen — not a calendar of its own,
+         just a form in front of the one(s) already in Home Assistant. -->
+    <div class="modal hidden" id="calendarModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>📅 Add to Calendar</h3>
+                <button class="close-btn" onclick="closeCalendarModal()">×</button>
+            </div>
+            <div class="settings-section">
+                <label for="calEventTitle" class="form-label">Title</label>
+                <input type="text" id="calEventTitle" class="settings-select" maxlength="200" placeholder="Dentist appointment">
+
+                <label class="settings-toggle-label" style="margin-top: 14px;">
+                    <input type="checkbox" id="calEventAllDay" onchange="toggleCalendarAllDay()">
+                    All-day event
+                </label>
+
+                <div id="calEventTimedFields" class="calendar-date-row">
+                    <div>
+                        <label for="calEventStartDateTime" class="form-label">Starts</label>
+                        <input type="datetime-local" id="calEventStartDateTime" class="settings-select">
+                    </div>
+                    <div>
+                        <label for="calEventEndDateTime" class="form-label">Ends</label>
+                        <input type="datetime-local" id="calEventEndDateTime" class="settings-select">
+                    </div>
+                </div>
+                <div id="calEventAllDayFields" class="calendar-date-row hidden">
+                    <div>
+                        <label for="calEventStartDate" class="form-label">Starts</label>
+                        <input type="date" id="calEventStartDate" class="settings-select">
+                    </div>
+                    <div>
+                        <label for="calEventEndDate" class="form-label">Ends <span class="settings-hint">(optional — for multi-day)</span></label>
+                        <input type="date" id="calEventEndDate" class="settings-select">
+                    </div>
+                </div>
+
+                <label for="calEventLocation" class="form-label">Location <span class="settings-hint">(optional)</span></label>
+                <input type="text" id="calEventLocation" class="settings-select" maxlength="200">
+
+                <label for="calEventDescription" class="form-label">Notes <span class="settings-hint">(optional)</span></label>
+                <input type="text" id="calEventDescription" class="settings-select" maxlength="2000">
+
+                <label for="calEventCalendar" class="form-label">Calendar</label>
+                <select id="calEventCalendar" class="settings-select">
+                    <option value="">Loading calendars…</option>
+                </select>
+
+                <label for="calEventChannelSelect" class="form-label">Post confirmation to</label>
+                <select id="calEventChannelSelect" class="settings-select"></select>
+
+                <button class="btn btn-primary" onclick="submitCalendarEvent()" style="width:100%; margin-top:14px;">Add to Calendar</button>
+                <p id="calendarEventStatus" class="settings-save-status hidden"></p>
+            </div>
         </div>
     </div>
 

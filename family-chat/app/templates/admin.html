@@ -133,6 +133,22 @@
         .channel-row-label {
             font-size: 14px;
         }
+        .calendar-checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            margin-bottom: 6px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        .calendar-checkbox-row input[type="checkbox"] {
+            width: auto;
+            margin: 0;
+            accent-color: var(--bg-accent);
+        }
         .channel-row form {
             width: auto;
             margin: 0;
@@ -270,6 +286,9 @@
                 <button class="admin-tab{% if active_tab == 'aliases' %} active{% endif %}" data-tab="aliases" onclick="switchAdminTab('aliases')">
                     <span>🏷️</span> Display Names
                 </button>
+                <button class="admin-tab{% if active_tab == 'calendars' %} active{% endif %}" data-tab="calendars" onclick="switchAdminTab('calendars')">
+                    <span>📅</span> Calendars
+                </button>
             </div>
 
             <div class="admin-tab-panels">
@@ -349,6 +368,34 @@
                     </form>
                     {% else %}
                     <p class="hint">No Home Assistant users detected yet. Open the chat from the Home Assistant sidebar first, then come back here.</p>
+                    {% endif %}
+                </div>
+
+                <!-- Calendars -->
+                <div class="admin-tab-panel{% if active_tab == 'calendars' %} active{% endif %}" id="adminTab-calendars">
+                    <h2 class="section-title">Calendars</h2>
+                    <p class="subtitle">
+                        Which of Home Assistant's calendars people can add new events to from the chat's 📅 button.
+                        Leave everything checked (the default) for no restriction. This only limits where new events
+                        can be <em>added</em> — the Upcoming panel in the chat still shows events from every calendar,
+                        restricted or not.
+                    </p>
+                    {% if calendar_error %}
+                    <p class="hint">{{ calendar_error }}</p>
+                    {% elif all_calendars %}
+                    <form method="post" action="./admin/calendars/set">
+                        <div class="channel-manage-list">
+                            {% for cal in all_calendars %}
+                            <label class="calendar-checkbox-row">
+                                <input type="checkbox" name="allowed_calendars" value="{{ cal.entity_id }}"{% if cal.checked %} checked{% endif %}>
+                                {{ cal.name }}
+                            </label>
+                            {% endfor %}
+                        </div>
+                        <button type="submit">Save Calendars</button>
+                    </form>
+                    {% else %}
+                    <p class="hint">No calendars found in Home Assistant.</p>
                     {% endif %}
                 </div>
             </div>

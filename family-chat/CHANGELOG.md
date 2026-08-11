@@ -1,5 +1,37 @@
 # Changelog
 
+## 2.25.0
+
+### Added
+- **Admin-restricted calendar list.** New "Calendars" tab in the admin panel — check/uncheck which of Home Assistant's calendars people are allowed to add new events to from the chat's 📅 button. Unrestricted by default (every calendar checked, matching how it's always worked) — this is purely opt-in, a fresh install or an admin who never visits this tab sees no change. The restriction is enforced server-side, not just hidden from the dropdown: a crafted request naming a calendar that isn't on the allowed list is rejected before Home Assistant's API is ever called, verified directly. The "Upcoming" panel in the sidebar is deliberately unaffected by this — it keeps showing events from every calendar regardless, since viewing what's already on the calendar is a different concern from controlling where new things can be added.
+
+## 2.24.2
+
+### Fixed
+- **Calendar events showed as raw JSON text instead of the card**, for anyone who wasn't watching live when it was posted — which in practice is most people, most of the time, since it only worked correctly for whoever had the chat open at the exact moment it was created. The card-rendering check looked for a field called `type`, which live socket messages do have, but history loaded from `/api/messages` (i.e. anyone opening or reloading the app afterward) comes back with that same value under the field `message_type` — the actual database column name — not `type`. Fixed by normalizing both possible field names once, rather than patching just the one comparison that broke, so nothing added later falls into the same gap.
+
+## 2.24.1
+
+### Changed
+- **The Upcoming panel now takes up a fixed bottom third of the member sidebar and scrolls independently**, instead of just growing with the rest of the sidebar's content. The member list and Family Photos above it scroll in their own region too — a long member list no longer pushes the calendar panel out of view, and a long event list no longer pushes the member list up. Visually set apart with its own background shade and a divider line, so it reads as its own distinct box rather than just more sidebar content.
+
+## 2.24.0
+
+### Added
+- **Upcoming events panel**, at the bottom of the member list (below Family Photos). Shows what's actually on Home Assistant's calendars over the next 60 days — aggregated across *every* calendar, sorted by when things actually happen rather than by post date, and including events added directly in Home Assistant, not just ones that came through this app's own calendar form. Anything created through the 📅 button shows who added it; anything already in Home Assistant shows without attribution, since that isn't something HA itself tracks. Refreshes automatically right after you add something through the form, or manually via the ⟳ button. Hidden entirely when this add-on doesn't have Home Assistant API access, same as the calendar button itself.
+  - Technical note: `calendar.create_event` doesn't hand back the new event's ID, so attribution works by looking the event back up right after creating it (a narrow time-window query matched by title) and recording its real ID — a small new table tracks this mapping. If that lookup ever misses for some reason, the event still shows up correctly, just without a name attached, same as anything added outside this app.
+
+## 2.23.1
+
+### Fixed
+- **The Starts/Ends date-time fields in the calendar form overflowed the modal.** They were laid out as two columns side by side, but native `datetime-local` inputs need more width than half a 500px modal to render "mm/dd/yyyy, --:-- -- AM/PM" plus the picker icon without clipping. Now stacked vertically instead — one full-width field per row — which sidesteps the problem entirely regardless of modal width, locale date format, or browser rendering differences.
+- **The calendar button's icon didn't line up with the others in the composer row.** The 📅 emoji renders with different vertical proportions than simpler icons/emoji across platforms, throwing off its alignment next to the GIF/emoji/send buttons. Replaced with a plain SVG calendar icon at the same size and style as the other icon-based buttons (attach, send) — consistent alignment everywhere, not just wherever this happened to render evenly.
+
+## 2.23.0
+
+### Added
+- **Calendar events.** A 📅 button in the message composer (always available, not tied to any one channel) opens a form to add a real event to one of Home Assistant's own calendars — title, all-day or a specific time range, location, and notes — using the same `calendar.create_event` action you'd otherwise trigger from an automation or the Calendar dashboard. No separate calendar of its own; it's a form in front of the one(s) already in Home Assistant, picked from a live dropdown of whatever calendar entities exist. On success it posts a small confirmation card into whichever channel you choose (defaults to the one you're currently viewing) — shows up instantly for everyone the same way any other message does, works with search, and triggers push notifications the same way too. Requires this add-on's existing `homeassistant_api` access (same permission the notification feature already uses) — the button is hidden until that's available. Both the target calendar and the target channel are validated server-side against Home Assistant's and this app's own current lists before ever being used, not just trusted from the request.
+
 ## 2.22.0
 
 ### Added
