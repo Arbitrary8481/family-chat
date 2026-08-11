@@ -187,30 +187,32 @@
 
         <!-- Members List -->
         <div class="members-sidebar" id="membersSidebar">
-            <div class="members-header">👨‍👩‍👧‍👦 FAMILY — {{ members|length }}</div>
-            {% for m in members %}
-            <div class="member online" data-user="{{ m.name }}">
-                <div class="member-avatar" style="{% if not m.avatar %}background: {{ loop.cycle(
-                    'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                    'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-                    'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-                    'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
-                    'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
-                    'linear-gradient(135deg, #30cfd0 0%, #330867 100%)'
-                ) }};{% endif %}">
-                    {% if m.avatar %}<img src="./{{ m.avatar[1:] }}" alt="" class="avatar-img">{% else %}{{ m.name[0] }}{% endif %}
+            <div class="members-top-section">
+                <div class="members-header">👨‍👩‍👧‍👦 FAMILY — {{ members|length }}</div>
+                {% for m in members %}
+                <div class="member online" data-user="{{ m.name }}">
+                    <div class="member-avatar" style="{% if not m.avatar %}background: {{ loop.cycle(
+                        'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                        'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+                        'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+                        'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+                        'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+                        'linear-gradient(135deg, #30cfd0 0%, #330867 100%)'
+                    ) }};{% endif %}">
+                        {% if m.avatar %}<img src="./{{ m.avatar[1:] }}" alt="" class="avatar-img">{% else %}{{ m.name[0] }}{% endif %}
+                    </div>
+                    <div class="member-info">
+                        <div class="member-name">{{ m.name }}</div>
+                        <div class="member-status-text">🏠 Online</div>
+                    </div>
                 </div>
-                <div class="member-info">
-                    <div class="member-name">{{ m.name }}</div>
-                    <div class="member-status-text">🏠 Online</div>
-                </div>
-            </div>
-            {% endfor %}
-            
-            <div class="shared-media">
-                <div class="media-header">📸 Family Photos</div>
-                <div class="media-grid" id="sharedMedia">
-                    <!-- Photos will appear here -->
+                {% endfor %}
+                
+                <div class="shared-media">
+                    <div class="media-header">📸 Family Photos</div>
+                    <div class="media-grid" id="sharedMedia">
+                        <!-- Photos will appear here -->
+                    </div>
                 </div>
             </div>
 
@@ -218,7 +220,9 @@
             <!-- Real Home Assistant calendar events, aggregated across
                  every calendar and sorted by when they actually happen
                  — not limited to whatever's come through chat, and not
-                 sorted by post time the way a channel would be. -->
+                 sorted by post time the way a channel would be. Fixed to
+                 the bottom third of the sidebar with its own scroll,
+                 independent of the member list above it. -->
             <div class="upcoming-events">
                 <div class="media-header">
                     📅 UPCOMING

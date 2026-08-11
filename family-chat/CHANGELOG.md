@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.24.1
+
+### Changed
+- **The Upcoming panel now takes up a fixed bottom third of the member sidebar and scrolls independently**, instead of just growing with the rest of the sidebar's content. The member list and Family Photos above it scroll in their own region too — a long member list no longer pushes the calendar panel out of view, and a long event list no longer pushes the member list up. Visually set apart with its own background shade and a divider line, so it reads as its own distinct box rather than just more sidebar content.
+
 ## 2.24.0
 
 ### Added
