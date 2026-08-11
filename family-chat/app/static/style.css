@@ -429,6 +429,14 @@ body {
     text-decoration: underline;
 }
 
+.mention {
+    background: rgba(88, 101, 242, 0.15);
+    color: var(--bg-accent-hover);
+    border-radius: 3px;
+    padding: 0 2px;
+    font-weight: 600;
+}
+
 /* File Attachments */
 .message-file {
     margin-top: 8px;
@@ -667,12 +675,15 @@ body {
     background: transparent;
     border: none;
     color: var(--text-normal);
+    font-family: inherit;
     font-size: 16px;
+    line-height: 1.4;
     padding: 8px 0;
     outline: none;
     resize: none;
     max-height: 200px;
     min-height: 24px;
+    overflow-y: auto;
 }
 
 #messageInput::placeholder {
@@ -680,6 +691,37 @@ body {
 }
 
 /* Emoji Picker */
+.mention-picker {
+    position: absolute;
+    bottom: 64px;
+    left: 16px;
+    width: 240px;
+    max-height: 220px;
+    overflow-y: auto;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    border: 1px solid var(--bg-tertiary);
+    z-index: 100;
+    padding: 4px;
+}
+
+.mention-picker-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--text-normal);
+}
+
+.mention-picker-item.selected,
+.mention-picker-item:hover {
+    background: var(--bg-modifier-hover);
+}
+
 .emoji-picker {
     position: absolute;
     bottom: 64px;

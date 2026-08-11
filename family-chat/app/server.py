@@ -719,16 +719,10 @@ def ingress_redirect(path):
     it becomes once a browser gets hold of it.
     """
     prefix = request.headers.get('X-Ingress-Path', '').replace('\\', '/')
-    parsed_prefix = urllib.parse.urlparse(prefix)
-    if not prefix.startswith('/') or prefix.startswith('//') or parsed_prefix.netloc or parsed_prefix.scheme:
+    parsed = urllib.parse.urlparse(prefix)
+    if not prefix.startswith('/') or prefix.startswith('//') or parsed.netloc or parsed.scheme:
         prefix = ''
-
-    safe_path = (path or '').replace('\\', '/')
-    parsed_path = urllib.parse.urlparse(safe_path)
-    if not safe_path.startswith('/') or safe_path.startswith('//') or parsed_path.netloc or parsed_path.scheme:
-        safe_path = '/'
-
-    return redirect(prefix + safe_path)
+    return redirect(prefix + path)
 
 @app.after_request
 def set_cache_headers(response):
@@ -969,13 +963,7 @@ def api_set_my_avatar():
         return jsonify({'error': 'No image selected'}), 400
 
     file = request.files['file']
-    mime_to_ext = {
-        'image/png': 'png',
-        'image/jpeg': 'jpg',
-        'image/gif': 'gif',
-        'image/webp': 'webp',
-    }
-    ext = mime_to_ext.get((file.mimetype or '').lower(), '')
+    ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
     if ext not in ALLOWED_AVATAR_EXTENSIONS:
         return jsonify({'error': 'Avatar must be a PNG, JPG, GIF, or WEBP image.'}), 400
 
@@ -1432,6 +1420,55 @@ def summarize_message_for_notification(content, msg_type, file_info):
         return f'Shared {name}' if name else 'Shared a file'
     return 'Sent a message'
 
+def get_mentionable_users():
+    """(user_id, name) for everyone who's ever opened the chat, using the
+    exact same canonical name (alias, else HA display name, else
+    username) get_known_people() shows in the member list — so a
+    mention always matches what's actually displayed on screen, not
+    some other identity string the person typing it would have no way
+    to know. Unlike get_known_people(), this keeps user_id (needed to
+    actually notify someone) rather than deduping purely by name."""
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('''SELECT h.user_id, h.display_name, h.username, ua.alias
+                 FROM ha_users h
+                 LEFT JOIN user_aliases ua ON ua.user_id = h.user_id''')
+    rows = c.fetchall()
+    conn.close()
+    people = []
+    for user_id, display_name, username, alias in rows:
+        name = (alias or '').strip() or (display_name or '').strip() or (username or '').strip()
+        if name:
+            people.append({'user_id': user_id, 'name': name})
+    return people
+
+def find_mentioned_user_ids(content, exclude_user_id=None):
+    """Which known people got @mentioned in a message — matched by exact
+    name (longest first, so "@John Smith" matches the whole thing rather
+    than just "@John" if both happen to be known names) followed by a
+    word boundary, case-sensitive, since two different family members
+    could plausibly have names differing only in case. A sender
+    @mentioning themselves doesn't notify them a second time on top of
+    however their own message already reached them."""
+    if not content or '@' not in content:
+        return []
+    people = [p for p in get_mentionable_users() if p['user_id'] != exclude_user_id]
+    if not people:
+        return []
+    people.sort(key=lambda p: len(p['name']), reverse=True)
+    mentioned_ids = []
+    for person in people:
+        # (?!\w) rather than \b — see the matching comment in
+        # highlightMentions() in script.js for why: \b alone silently
+        # fails to match a name that itself ends in punctuation (e.g.
+        # "A.J."), since it needs a word/non-word transition that a
+        # trailing non-word character followed by another non-word
+        # character (a space) can never provide.
+        pattern = r'@' + re.escape(person['name']) + r'(?!\w)'
+        if re.search(pattern, content):
+            mentioned_ids.append(person['user_id'])
+    return mentioned_ids
+
 def notify_message_subscribers(channel, sender, sender_id, content, msg_type, file_info):
     """Best-effort — a slow or failed notification should never affect
     message delivery in the chat itself, which has already happened by
@@ -1439,8 +1476,30 @@ def notify_message_subscribers(channel, sender, sender_id, content, msg_type, fi
     if not SUPERVISOR_TOKEN:
         logger.info('Skipping notifications for a message in #%s — SUPERVISOR_TOKEN not set', channel)
         return
-    subscribers = get_subscribers_for_channel(channel, exclude_user_id=sender_id)
-    if not subscribers:
+
+    channel_obj = next((c for c in get_channels() if c['slug'] == channel), None)
+    channel_name = channel_obj['name'] if channel_obj else channel
+    body = summarize_message_for_notification(content, msg_type, file_info)
+
+    subscribers = dict(get_subscribers_for_channel(channel, exclude_user_id=sender_id))
+
+    # Being @mentioned is a stronger, more personal signal than general
+    # channel activity — it notifies you even if you never subscribed to
+    # that particular channel at all, the same way it would in any other
+    # chat app. Excludes only calendar_event messages, since that type's
+    # content is a JSON payload, not something a person actually typed —
+    # every other type (text, or a caption on an image/file/gif) is real
+    # typed content worth scanning.
+    mentioned_ids = find_mentioned_user_ids(content, exclude_user_id=sender_id) if msg_type != 'calendar_event' else []
+    prefs_cache = {}
+    for user_id in mentioned_ids:
+        if user_id in subscribers:
+            continue  # already getting a notification below; don't send two
+        service = get_notify_service(user_id)
+        if service:
+            prefs_cache[user_id] = service
+
+    if not subscribers and not prefs_cache:
         # Logged at INFO rather than staying silent — otherwise "nobody
         # is subscribed to this channel" and "this function never ran"
         # look identical in the log, which makes exactly this situation
@@ -1449,17 +1508,21 @@ def notify_message_subscribers(channel, sender, sender_id, content, msg_type, fi
         logger.info('No notification subscribers for #%s (message from %s)', channel, sender)
         return
 
-    channel_obj = next((c for c in get_channels() if c['slug'] == channel), None)
-    channel_name = channel_obj['name'] if channel_obj else channel
     title = f'{sender} in #{channel_name}'
-    body = summarize_message_for_notification(content, msg_type, file_info)
-
-    for user_id, notify_service in subscribers:
+    for user_id, notify_service in subscribers.items():
         ok, error = send_ha_notification(notify_service, title, body)
         if ok:
             logger.info('Notified %s via %s for a message in #%s', user_id, notify_service, channel)
         else:
             logger.warning('Notification to %s via %s failed: %s', user_id, notify_service, error)
+
+    mention_title = f'{sender} mentioned you in #{channel_name}'
+    for user_id, notify_service in prefs_cache.items():
+        ok, error = send_ha_notification(notify_service, mention_title, body)
+        if ok:
+            logger.info('Notified %s via %s for being mentioned in #%s', user_id, notify_service, channel)
+        else:
+            logger.warning('Mention notification to %s via %s failed: %s', user_id, notify_service, error)
 
 @app.route('/api/notify/services')
 def api_notify_services():
