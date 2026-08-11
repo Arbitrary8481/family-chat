@@ -720,8 +720,8 @@ def ingress_redirect(path):
     """
     prefix = request.headers.get('X-Ingress-Path', '').replace('\\', '/')
     parsed_prefix = urllib.parse.urlparse(prefix)
-    if not prefix.startswith('/') or prefix.startswith('//') or parsed_prefix.netloc or parsed_prefix.scheme:
-        prefix = ''
+    prefix_is_valid = (prefix.startswith('/') and not prefix.startswith('//')
+                        and not parsed_prefix.netloc and not parsed_prefix.scheme)
 
     # path is always a server-generated route (url_for(...)) in every
     # current caller, never user input — but validating it the same way
@@ -732,10 +732,28 @@ def ingress_redirect(path):
     # exists to close.
     safe_path = (path or '').replace('\\', '/')
     parsed_path = urllib.parse.urlparse(safe_path)
-    if not safe_path.startswith('/') or safe_path.startswith('//') or parsed_path.netloc or parsed_path.scheme:
-        safe_path = '/'
+    path_is_valid = (safe_path.startswith('/') and not safe_path.startswith('//')
+                      and not parsed_path.netloc and not parsed_path.scheme)
 
-    return redirect(prefix + safe_path)
+    # Every branch below either uses a value that just passed its own
+    # validation check immediately above, or a hardcoded literal —
+    # never a variable that was conditionally reassigned earlier and
+    # then used further down. Behaviorally this is identical to
+    # reassigning each tainted value to a safe fallback and making one
+    # call at the end (which is what this function used to do), but
+    # written this way instead because CodeQL's static analysis
+    # reliably recognizes "redirect() called on a value that just
+    # passed an explicit if-check in the same branch" as sanitized,
+    # and did not reliably recognize the reassignment-based version —
+    # it kept flagging this line even after prefix and safe_path were
+    # both being fully validated.
+    if prefix_is_valid and path_is_valid:
+        return redirect(prefix + safe_path)
+    if path_is_valid:
+        return redirect(safe_path)
+    if prefix_is_valid:
+        return redirect(prefix + '/')
+    return redirect('/')
 
 @app.after_request
 def set_cache_headers(response):
