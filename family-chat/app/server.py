@@ -719,10 +719,23 @@ def ingress_redirect(path):
     it becomes once a browser gets hold of it.
     """
     prefix = request.headers.get('X-Ingress-Path', '').replace('\\', '/')
-    parsed = urllib.parse.urlparse(prefix)
-    if not prefix.startswith('/') or prefix.startswith('//') or parsed.netloc or parsed.scheme:
+    parsed_prefix = urllib.parse.urlparse(prefix)
+    if not prefix.startswith('/') or prefix.startswith('//') or parsed_prefix.netloc or parsed_prefix.scheme:
         prefix = ''
-    return redirect(prefix + path)
+
+    # path is always a server-generated route (url_for(...)) in every
+    # current caller, never user input — but validating it the same way
+    # as prefix is what actually makes that a property of every caller,
+    # not just an accident of how the function happens to be used
+    # today. A future caller passing anything client-influenced here
+    # would otherwise reopen the exact issue prefix's own validation
+    # exists to close.
+    safe_path = (path or '').replace('\\', '/')
+    parsed_path = urllib.parse.urlparse(safe_path)
+    if not safe_path.startswith('/') or safe_path.startswith('//') or parsed_path.netloc or parsed_path.scheme:
+        safe_path = '/'
+
+    return redirect(prefix + safe_path)
 
 @app.after_request
 def set_cache_headers(response):
@@ -963,7 +976,21 @@ def api_set_my_avatar():
         return jsonify({'error': 'No image selected'}), 400
 
     file = request.files['file']
-    ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
+    # Deliberately not derived from file.filename — a client-supplied
+    # filename is exactly the kind of untrusted input that shouldn't
+    # flow into a path expression at all, extension or otherwise (this
+    # reverted once already after being fixed; see CHANGELOG). Only the
+    # declared mimetype, checked against a fixed server-side mapping,
+    # ever decides the saved extension — an "evil.exe" upload with a
+    # declared image/png mimetype saves as .png, never .exe, because
+    # nothing about the filename itself is ever used here.
+    mime_to_ext = {
+        'image/png': 'png',
+        'image/jpeg': 'jpg',
+        'image/gif': 'gif',
+        'image/webp': 'webp',
+    }
+    ext = mime_to_ext.get((file.mimetype or '').lower(), '')
     if ext not in ALLOWED_AVATAR_EXTENSIONS:
         return jsonify({'error': 'Avatar must be a PNG, JPG, GIF, or WEBP image.'}), 400
 
