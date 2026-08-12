@@ -239,7 +239,7 @@ function initializeChat() {
         // mention in the channel you're already looking at from
         // leaving a stale badge behind.
         if (data.channel === currentChannel) {
-            markChannelMentionsRead(data.channel);
+            markChannelRead(data.channel);
         }
 
         if (wasNearBottom) {
@@ -299,8 +299,14 @@ function initializeChat() {
     // switchChannel() (which is what normally marks a channel read) —
     // it's just already there in the initial HTML. Marking it read here
     // covers that one case switchChannel() can't.
-    markChannelMentionsRead(currentChannel);
-    refreshMentionBadges();
+    markChannelRead(currentChannel);
+    refreshChannelIndicators();
+    // The only other trigger for this is switching channels — someone
+    // who just stays put in one channel the whole time would otherwise
+    // never see a badge for another channel light up until they
+    // happened to navigate or reload. A light poll closes that gap
+    // without needing a live per-user push channel just for this.
+    setInterval(refreshChannelIndicators, 30000);
     
     const input = document.getElementById('messageInput');
     if (input) {
@@ -1160,7 +1166,15 @@ function switchChannel(slug, onLoaded) {
     });
     currentChannel = slug;
     try { localStorage.setItem('lastChannel', currentChannel); } catch (e) {}
-    markChannelMentionsRead(slug);
+    markChannelRead(slug);
+    // Marking the newly-active channel read only ever handles that one
+    // channel — this is what actually picks up a mention (or general
+    // unread activity) that happened in some *other* channel while you
+    // were elsewhere, which nothing else was doing. Without it,
+    // indicators only ever reflected whatever was true at the last full
+    // page load, no matter how much navigating around happened in
+    // between.
+    refreshChannelIndicators();
 
     // On phone-width screens the channel sidebar is a slide-over drawer
     // (see the <768px media query) — picking a channel from it should
@@ -1497,13 +1511,44 @@ function refreshMentionBadges() {
         .catch(() => {}); // badges just don't update this round — not worth surfacing an error for
 }
 
-function markChannelMentionsRead(channel) {
+// Bold channel name for "something new happened here" — deliberately a
+// separate, plainer signal from the numbered mention badge above,
+// matching how Discord/Slack keep "unread" and "you were mentioned"
+// visually distinct rather than conflating them into one indicator.
+function refreshUnreadChannelIndicators() {
+    fetch(apiUrl('/api/channels/unread-status'))
+        .then(r => r.json())
+        .then(unreadChannels => {
+            if (!Array.isArray(unreadChannels)) return;
+            const unreadSet = new Set(unreadChannels);
+            document.querySelectorAll('.channel[data-channel]').forEach(el => {
+                el.classList.toggle('has-unread', unreadSet.has(el.dataset.channel));
+            });
+        })
+        .catch(() => {});
+}
+
+// The single entry point every touchpoint (page load, channel switch,
+// the periodic poll, a live message in the active channel) should call
+// — keeps mention badges and the general unread indicator refreshing
+// together in lockstep rather than needing two calls wired in
+// everywhere.
+function refreshChannelIndicators() {
+    refreshMentionBadges();
+    refreshUnreadChannelIndicators();
+}
+
+function markChannelRead(channel) {
     if (!channel) return;
     // Updated immediately rather than waiting on the request to
     // complete — nothing about "you're looking at this channel right
-    // now" needs to wait on a round-trip to feel correct.
+    // now" needs to wait on a round-trip to feel correct. Covers both
+    // indicators since the one server call now clears both (see
+    // mark_channel_read() server-side).
     const badge = document.querySelector(`[data-mention-badge="${CSS.escape(channel)}"]`);
     if (badge) badge.classList.add('hidden');
+    const channelEl = document.querySelector(`.channel[data-channel="${CSS.escape(channel)}"]`);
+    if (channelEl) channelEl.classList.remove('has-unread');
 
     fetch(apiUrl('/api/mentions/mark-read'), {
         method: 'POST',
@@ -1830,7 +1875,7 @@ function addChannelToSidebar(ch) {
     const el = document.createElement('div');
     el.className = 'channel';
     el.dataset.channel = ch.slug;
-    el.innerHTML = `<span class="channel-icon">${escapeHtml(ch.icon)}</span><span>${escapeHtml(ch.name)}</span><span class="mention-badge hidden" data-mention-badge="${escapeHtml(ch.slug)}"></span>`;
+    el.innerHTML = `<span class="channel-icon">${escapeHtml(ch.icon)}</span><span class="channel-name">${escapeHtml(ch.name)}</span><span class="mention-badge hidden" data-mention-badge="${escapeHtml(ch.slug)}"></span>`;
     el.addEventListener('click', function() {
         switchChannel(this.dataset.channel);
     });

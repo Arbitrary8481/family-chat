@@ -280,6 +280,19 @@ def init_db():
                   created_at TEXT NOT NULL)''')
     c.execute('CREATE INDEX IF NOT EXISTS idx_unread_mentions_user_channel ON unread_mentions(user_id, channel)')
 
+    # A much simpler cousin of unread_mentions — one row per person per
+    # channel, just "the highest message id you'd seen last time you
+    # looked". A channel counts as having unread activity if it has any
+    # message with a higher id than this, sent by someone other than
+    # you. No per-message rows to accumulate here, unlike mentions,
+    # since this only ever needs "is there anything newer", never a
+    # count.
+    c.execute('''CREATE TABLE IF NOT EXISTS channel_last_read
+                 (user_id TEXT NOT NULL,
+                  channel TEXT NOT NULL,
+                  last_read_message_id INTEGER NOT NULL DEFAULT 0,
+                  PRIMARY KEY (user_id, channel))''')
+
     # Custom emojis table
     c.execute('''CREATE TABLE IF NOT EXISTS custom_emojis
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1562,12 +1575,42 @@ def get_unread_mention_counts(user_id):
     conn.close()
     return {channel: count for channel, count in rows}
 
-def mark_channel_mentions_read(user_id, channel):
+def mark_channel_read(user_id, channel):
+    """Called every time someone actually views a channel — clears
+    their pending @mentions there (unread_mentions) and, separately,
+    records the highest message id in the channel right now as their
+    new "last read" point (channel_last_read), which is what the
+    general new-message indicator is based on. One call covers both,
+    since both represent the exact same real-world moment: you looked
+    at this channel."""
     conn = sqlite3.connect('/data/chat.db')
     c = conn.cursor()
     c.execute('DELETE FROM unread_mentions WHERE user_id = ? AND channel = ?', (user_id, channel))
+    c.execute('SELECT MAX(id) FROM messages WHERE channel = ?', (channel,))
+    max_id = (c.fetchone() or (0,))[0] or 0
+    c.execute('''INSERT INTO channel_last_read (user_id, channel, last_read_message_id) VALUES (?, ?, ?)
+                 ON CONFLICT(user_id, channel) DO UPDATE SET last_read_message_id = excluded.last_read_message_id
+                 WHERE excluded.last_read_message_id > channel_last_read.last_read_message_id''',
+              (user_id, channel, max_id))
     conn.commit()
     conn.close()
+
+def get_unread_channels(user_id):
+    """Which channels have a message newer than this person's own last
+    read point, sent by someone other than them — their own messages
+    don't count as "new" for themselves, the same way sending a message
+    doesn't leave you with an unread badge for your own words."""
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('''SELECT DISTINCT m.channel
+                 FROM messages m
+                 LEFT JOIN channel_last_read r ON r.user_id = ? AND r.channel = m.channel
+                 WHERE m.id > COALESCE(r.last_read_message_id, 0)
+                 AND (m.sender_id IS NULL OR m.sender_id != ?)''',
+              (user_id, user_id))
+    rows = c.fetchall()
+    conn.close()
+    return [row[0] for row in rows]
 
 @app.route('/api/mentions/unread-counts')
 def api_unread_mention_counts():
@@ -1575,6 +1618,13 @@ def api_unread_mention_counts():
     if not ha_user_id:
         return jsonify({'error': 'Not accessed through Home Assistant'}), 403
     return jsonify(get_unread_mention_counts(ha_user_id))
+
+@app.route('/api/channels/unread-status')
+def api_unread_channel_status():
+    ha_user_id = request.headers.get('X-Remote-User-Id')
+    if not ha_user_id:
+        return jsonify({'error': 'Not accessed through Home Assistant'}), 403
+    return jsonify(get_unread_channels(ha_user_id))
 
 @app.route('/api/mentions/mark-read', methods=['POST'])
 def api_mark_mentions_read():
@@ -1585,7 +1635,7 @@ def api_mark_mentions_read():
     channel = (data.get('channel') or '').strip()
     if not channel:
         return jsonify({'error': 'Missing channel'}), 400
-    mark_channel_mentions_read(ha_user_id, channel)
+    mark_channel_read(ha_user_id, channel)
     return jsonify({'success': True})
 
 def notify_message_subscribers(channel, sender, sender_id, content, msg_type, file_info):

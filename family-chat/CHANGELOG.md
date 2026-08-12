@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.28.0
+
+### Added
+- **Unread channel indicators.** A channel's name turns bold when there's a new message there since you last looked — deliberately a plainer, simpler signal than the numbered @mention badge, the same way Discord and Slack keep "something happened here" visually distinct from "you were specifically called out." Your own messages never mark a channel as unread for yourself. Built on the same "last read" tracking the mention badges already use (a single mark-read call now clears both at once), and updates through the same three touchpoints established in 2.27.1: page load, switching channels, and a light 30-second poll — not instant for a channel you're not actively viewing, same underlying reason as the mention badges (the app only keeps a live connection to whichever channel's room is currently open), but no longer stuck until a manual reload either.
+
+## 2.27.1
+
+### Fixed
+- **Mention badges only ever updated at page load, not while actually using the app.** My own release notes for 2.27.0 said badges would catch up "the next time you switch to it or reload" — the reload half was true, the switching half wasn't actually wired up. `switchChannel()` only ever marked the *newly active* channel as read; nothing re-fetched counts for the others, so a mention that happened in a channel you weren't looking at stayed invisible until a hard reload no matter how much you navigated around in the meantime. Fixed by re-fetching on every channel switch, and added a light 30-second poll on top of that so a badge can appear even if you never switch channels at all — not fully instant for a channel you're not viewing (still bound by the same single-active-room limitation from 2.27.0), but no longer stuck until a manual reload either.
+
 ## 2.27.0
 
 ### Added

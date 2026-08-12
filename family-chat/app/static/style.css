@@ -126,6 +126,17 @@ body {
     color: var(--interactive-active);
 }
 
+/* A channel with unread activity gets a bolder, brighter name — no
+   extra element, no layout shift, just the same text rendered more
+   prominently, the same visual language Discord/Slack use to
+   distinguish "something's new here" from a numbered mention count,
+   which is a stronger, more specific signal reserved for
+   .mention-badge. */
+.channel.has-unread .channel-name {
+    font-weight: 700;
+    color: var(--text-normal);
+}
+
 .channel-icon {
     margin-right: 6px;
     font-size: 18px;
