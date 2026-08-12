@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.26.1
+
+### Fixed
+- **The Upcoming calendar panel didn't load until a hard refresh, and its own ⟳ button appeared to do nothing.** The server already sends `Cache-Control: no-store` on this response, but Home Assistant's ingress iframe layer has a history of not reliably honoring cache-control headers for in-page fetches (the same bug class as two earlier fixes in this app's history). `loadUpcomingEvents()` now appends a timestamp query parameter to every request and sets `cache: 'no-store'` on the fetch itself, so there's no repeatable URL for anything upstream to serve a stale, cached copy of — on first load or on any later manual refresh.
+
 ## 2.26.0
 
 ### Added
