@@ -194,6 +194,16 @@ function initializeChat() {
         path: basePath + 'socket.io/'
     });
 
+    // The names people can @mention are read straight from the member
+    // list already rendered on the page — the same list the person sees
+    // in the sidebar, so a mention always matches someone actually
+    // visible as a member, not some other identity string they'd have
+    // no way to know. Populated once at load, matching how the member
+    // list itself doesn't live-update either.
+    window.mentionableNames = Array.from(document.querySelectorAll('.member[data-user]'))
+        .map(el => el.dataset.user)
+        .filter(Boolean);
+
     // The server always renders the first channel as "active" in the
     // initial HTML. If a different channel was restored from storage,
     // fix the sidebar/header to match it before anything loads — 
@@ -277,9 +287,58 @@ function initializeChat() {
     if (input) {
         input.addEventListener('keypress', function(e) {
             if (e.key === 'Enter' && !e.shiftKey) {
+                // The mention picker being open takes priority over
+                // sending — Enter here means "pick the highlighted
+                // match", the same as Tab does, not "send the message
+                // with a half-typed @name still in it".
+                if (mentionPickerState) {
+                    e.preventDefault();
+                    selectMentionMatch(mentionPickerState.matches[mentionPickerState.selectedIndex]);
+                    return;
+                }
                 e.preventDefault();
                 sendMessageClick();
             }
+            // Enter alone still sends (preventDefault stops the newline
+            // that a textarea would otherwise insert). Shift+Enter falls
+            // through untouched — the browser's own default behavior for
+            // Enter in a textarea is exactly "insert a newline", which is
+            // what's wanted here, so there's nothing to add for that case.
+        });
+        // keydown, not keypress, for these — keypress doesn't reliably
+        // fire for non-printable keys like the arrows or Escape across
+        // browsers, only for character-producing ones.
+        input.addEventListener('keydown', function(e) {
+            if (!mentionPickerState) return;
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                mentionPickerState.selectedIndex = (mentionPickerState.selectedIndex + 1) % mentionPickerState.matches.length;
+                renderMentionPicker();
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                mentionPickerState.selectedIndex = (mentionPickerState.selectedIndex - 1 + mentionPickerState.matches.length) % mentionPickerState.matches.length;
+                renderMentionPicker();
+            } else if (e.key === 'Tab') {
+                e.preventDefault();
+                selectMentionMatch(mentionPickerState.matches[mentionPickerState.selectedIndex]);
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                closeMentionPicker();
+            }
+        });
+        input.addEventListener('input', () => {
+            autoResizeMessageInput(input);
+            checkMentionTrigger(input);
+        });
+        // Clicking away from the input (without picking a match) should
+        // close the picker rather than leave it stuck open pointing at
+        // a cursor position that no longer means anything.
+        input.addEventListener('blur', () => {
+            // A timeout, not an immediate close: a click on a picker
+            // item fires this blur event first, and closing right away
+            // would remove the item from the DOM before its own click
+            // handler gets a chance to run.
+            setTimeout(closeMentionPicker, 150);
         });
     }
     
@@ -298,6 +357,133 @@ function initializeChat() {
     }
 }
 
+// Grows the message box to fit multi-line content (up to the CSS
+// max-height, past which it scrolls instead) and shrinks it back down
+// again as lines are removed — resetting to 'auto' first is what makes
+// the shrink direction work at all, since scrollHeight alone only ever
+// reports how tall the content currently needs to be, not how much
+// smaller the box could become.
+function autoResizeMessageInput(input) {
+    input.style.height = 'auto';
+    input.style.height = input.scrollHeight + 'px';
+}
+
+// null when no @mention is actively being typed, otherwise
+// { triggerStart, matches, selectedIndex } — triggerStart is the index
+// of the '@' itself, so the whole "@partial" can be sliced out and
+// replaced in one go once a match is picked.
+let mentionPickerState = null;
+
+function checkMentionTrigger(input) {
+    const cursorPos = input.selectionStart;
+    const textBeforeCursor = input.value.slice(0, cursorPos);
+    const atIndex = textBeforeCursor.lastIndexOf('@');
+
+    if (atIndex === -1) {
+        closeMentionPicker();
+        return;
+    }
+
+    const partial = textBeforeCursor.slice(atIndex + 1);
+    if (/\s/.test(partial)) {
+        // Whitespace between the @ and the cursor means the cursor has
+        // moved past whatever mention (if any) was being typed there.
+        closeMentionPicker();
+        return;
+    }
+
+    const charBeforeAt = atIndex > 0 ? textBeforeCursor[atIndex - 1] : '';
+    if (charBeforeAt && !/\s/.test(charBeforeAt)) {
+        // The @ isn't at a word boundary — "email@domain" mid-word,
+        // not the start of a mention.
+        closeMentionPicker();
+        return;
+    }
+
+    if (!window.mentionableNames || window.mentionableNames.length === 0) {
+        closeMentionPicker();
+        return;
+    }
+
+    const partialLower = partial.toLowerCase();
+    const matches = window.mentionableNames
+        .filter(name => name.toLowerCase().startsWith(partialLower))
+        .slice(0, 8);
+
+    if (matches.length === 0) {
+        closeMentionPicker();
+        return;
+    }
+
+    // Reuse the existing state object across keystrokes rather than
+    // replacing it outright, so a previously-navigated selectedIndex
+    // doesn't just reset to 0 on every single character typed —
+    // clamped afterward in case the new, narrower match list is
+    // shorter than the old selected index.
+    if (!mentionPickerState) mentionPickerState = { triggerStart: atIndex, matches: [], selectedIndex: 0 };
+    mentionPickerState.triggerStart = atIndex;
+    mentionPickerState.matches = matches;
+    mentionPickerState.selectedIndex = Math.min(mentionPickerState.selectedIndex, matches.length - 1);
+    renderMentionPicker();
+}
+
+function renderMentionPicker() {
+    const picker = document.getElementById('mentionPicker');
+    if (!picker || !mentionPickerState) return;
+
+    picker.innerHTML = mentionPickerState.matches.map((name, i) =>
+        `<div class="mention-picker-item${i === mentionPickerState.selectedIndex ? ' selected' : ''}" data-index="${i}">${escapeHtml(name)}</div>`
+    ).join('');
+    picker.classList.remove('hidden');
+
+    picker.querySelectorAll('.mention-picker-item').forEach(el => {
+        // mousedown rather than click, with preventDefault — this stops
+        // the browser's default "clicking an element moves focus to
+        // it" behavior, which means the textarea never actually loses
+        // focus when picking a match with the mouse. That sidesteps
+        // the close-on-blur handler entirely for the common case,
+        // rather than racing against its setTimeout.
+        el.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            const idx = parseInt(el.dataset.index, 10);
+            selectMentionMatch(mentionPickerState.matches[idx]);
+        });
+    });
+}
+
+function selectMentionMatch(name) {
+    if (!mentionPickerState || !name) return;
+    const input = document.getElementById('messageInput');
+    if (!input) return;
+
+    const cursorPos = input.selectionStart;
+    const before = input.value.slice(0, mentionPickerState.triggerStart);
+    const after = input.value.slice(cursorPos);
+    // Only add a trailing space if there isn't one there already —
+    // picking a mention mid-sentence (where a space already follows the
+    // cursor, from whatever came after the partial mention) would
+    // otherwise leave a double space behind.
+    const insertion = `@${name}` + (after.startsWith(' ') ? '' : ' ');
+
+    input.value = before + insertion + after;
+    const newCursorPos = before.length + insertion.length;
+    input.setSelectionRange(newCursorPos, newCursorPos);
+    input.focus();
+
+    closeMentionPicker();
+    autoResizeMessageInput(input);
+}
+
+function closeMentionPicker() {
+    if (!mentionPickerState) return;
+    mentionPickerState = null;
+    const picker = document.getElementById('mentionPicker');
+    if (picker) {
+        picker.classList.add('hidden');
+        picker.innerHTML = '';
+    }
+}
+
 function sendMessageClick() {
     const input = document.getElementById('messageInput');
     if (!input) return;
@@ -307,6 +493,7 @@ function sendMessageClick() {
     if (content || selectedFile) {
         sendMessage(content);
         input.value = '';
+        input.style.height = 'auto';
     }
 }
 
@@ -354,7 +541,7 @@ function addMessage(data) {
     
     let contentHtml = msgType === 'calendar_event'
         ? buildCalendarEventHtml(data.content)
-        : `<div class="message-text">${linkifyText(data.content || '')}</div>`;
+        : `<div class="message-text">${renderMessageText(data.content)}</div>`;
     
     if (data.file || data.file_url) {
         const rawFileName = data.file?.filename || data.file_name || '';
@@ -524,6 +711,56 @@ function escapeHtml(text) {
 // everything itself (both the surrounding text and the URLs) — callers
 // should NOT also run escapeHtml() on text passed through here, or
 // entities would get double-escaped.
+// Swaps @Name for an opaque placeholder token BEFORE linkifyText runs,
+// and hands back the real names separately rather than embedding them
+// in the placeholder text itself — anything embedded would go through
+// linkifyText's own HTML-escaping pass along with the surrounding text,
+// and escaping a name a second time on the way back out (a name with an
+// apostrophe, say) would show literal &#39; instead of an apostrophe.
+// Keeping the names in an array and re-inserting by index sidesteps
+// that entirely. Longest names first, so "@John Smith" matches whole
+// rather than a shorter "@John" grabbing part of it.
+function highlightMentions(text) {
+    if (!text || !window.mentionableNames || window.mentionableNames.length === 0) {
+        return { text: text || '', mentions: [] };
+    }
+    const sorted = [...window.mentionableNames].sort((a, b) => b.length - a.length);
+    const pattern = sorted.map(name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+    // (?!\w) rather than \b at the end — \b only fires on a transition
+    // between a word and non-word character, which breaks for a name
+    // that itself ends in punctuation ("A.J.", "Jon Jr."): the period
+    // and the space after it are both non-word characters, so \b can
+    // never find a valid transition there and the match silently fails.
+    // (?!\w) just asserts "not immediately followed by a word
+    // character" — true end-of-string included — which is what's
+    // actually wanted and correctly covers ordinary names too.
+    const mentionRegex = new RegExp(`@(${pattern})(?!\\w)`, 'g');
+    const mentions = [];
+    const replaced = text.replace(mentionRegex, (match, name) => {
+        const idx = mentions.length;
+        mentions.push(name);
+        return `\x00MENTION${idx}\x00`;
+    });
+    return { text: replaced, mentions };
+}
+
+function restoreMentionPlaceholders(html, mentions) {
+    if (!mentions || mentions.length === 0) return html;
+    return html.replace(/\x00MENTION(\d+)\x00/g, (match, idxStr) => {
+        const name = mentions[Number(idxStr)];
+        return name !== undefined ? `<span class="mention">@${escapeHtml(name)}</span>` : match;
+    });
+}
+
+// The one place both of the above should actually be used — wraps
+// linkifyText so every call site (the message feed, search results)
+// gets mention highlighting applied consistently, in the right order,
+// without each one having to know about the placeholder mechanism.
+function renderMessageText(text) {
+    const { text: preprocessed, mentions } = highlightMentions(text || '');
+    return restoreMentionPlaceholders(linkifyText(preprocessed), mentions);
+}
+
 function linkifyText(text) {
     if (!text) return '';
     const urlPattern = /https?:\/\/[^\s<>"']+/g;
@@ -1006,7 +1243,7 @@ function runSearch() {
                 const time = new Date(m.timestamp).toLocaleString();
                 item.innerHTML = `
                     <div class="search-result-meta">${escapeHtml(m.channel_icon)} ${escapeHtml(m.channel_name)} · <strong>${escapeHtml(m.sender)}</strong> · ${escapeHtml(time)}</div>
-                    <div class="search-result-content">${linkifyText(m.content || '')}</div>
+                    <div class="search-result-content">${renderMessageText(m.content)}</div>
                 `;
                 item.onclick = () => jumpToSearchResult(m);
                 results.appendChild(item);
@@ -1217,7 +1454,16 @@ function loadUpcomingEvents() {
     const list = document.getElementById('upcomingEventsList');
     if (!list) return; // panel isn't rendered at all when calendar_enabled is false
 
-    fetch(apiUrl('/api/calendar/upcoming'))
+    // The server already sends Cache-Control: no-store on this response,
+    // but that's not always enough — Home Assistant's ingress iframe
+    // layer has a history of not reliably honoring cache-control headers
+    // for in-page fetches (see set_cache_headers() server-side). A
+    // timestamp query param makes every request URL unique instead, so
+    // there's simply nothing for any cache in that path to match against,
+    // regardless of whether it's respecting headers correctly. `cache:
+    // 'no-store'` on top of that stops the browser's own fetch cache from
+    // getting involved at all.
+    fetch(apiUrl(`/api/calendar/upcoming?_=${Date.now()}`), { cache: 'no-store' })
         .then(r => r.json())
         .then(data => {
             if (data.error) {

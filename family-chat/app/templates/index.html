@@ -118,10 +118,11 @@
                     <input type="file" id="fileInput" hidden onchange="handleFileSelect(event)">
                     
                     <div class="input-area">
-                        <input type="text" id="messageInput" 
+                        <textarea id="messageInput" 
                                placeholder="Message #general" 
                                maxlength="2000"
-                               autocomplete="off">
+                               autocomplete="off"
+                               rows="1"></textarea>
                     </div>
                     
                     {% if giphy_enabled %}
@@ -151,6 +152,13 @@
                         </svg>
                     </button>
                 </div>
+
+                <!-- @mention autocomplete — appears while typing @Name in
+                     the message box, positioned right above it like the
+                     emoji/GIF pickers. Populated and driven entirely from
+                     script.js; nothing here is server-rendered since the
+                     match list changes on every keystroke. -->
+                <div class="mention-picker hidden" id="mentionPicker"></div>
                 
                 <!-- Emoji Picker -->
                 <div class="emoji-picker hidden" id="emojiPicker">

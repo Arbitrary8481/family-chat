@@ -13,6 +13,7 @@ class FamilyChatCard extends HTMLElement {
 
     set hass(hass) {
         if (!this.content) {
+            this.content = true;
             this.innerHTML = `
                 <ha-card>
                     <div class="card-header">
