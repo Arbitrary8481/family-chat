@@ -264,6 +264,22 @@ def init_db():
                   created_at TEXT NOT NULL,
                   PRIMARY KEY (uid, entity_id))''')
 
+    # One row per (person, channel, message) they were @mentioned in and
+    # haven't yet seen — rows get deleted wholesale for a channel the
+    # moment that person actually views it, so a channel's count is
+    # always just "how many rows are still here". Persisted rather than
+    # tracked purely client-side/in-memory so it survives a reload, a
+    # different device, or having been offline when the mention
+    # actually happened — the same reasoning notify_message_subscribers()
+    # already uses for push notifications.
+    c.execute('''CREATE TABLE IF NOT EXISTS unread_mentions
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  user_id TEXT NOT NULL,
+                  channel TEXT NOT NULL,
+                  message_id INTEGER NOT NULL,
+                  created_at TEXT NOT NULL)''')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_unread_mentions_user_channel ON unread_mentions(user_id, channel)')
+
     # Custom emojis table
     c.execute('''CREATE TABLE IF NOT EXISTS custom_emojis
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1514,6 +1530,64 @@ def find_mentioned_user_ids(content, exclude_user_id=None):
             mentioned_ids.append(person['user_id'])
     return mentioned_ids
 
+def record_unread_mentions(channel, message_id, content, msg_type, exclude_user_id):
+    """Records that specific people were @mentioned in a message, for
+    the channel-list badge to count later. Deliberately separate from
+    notify_message_subscribers()'s own mention detection — different
+    lifetime (this persists until the channel is actually viewed;
+    notifications fire once and are done) even though both start from
+    the same find_mentioned_user_ids() call. calendar_event content is
+    a JSON payload, not typed text, so there's nothing to scan there —
+    same reasoning as the notification path."""
+    if msg_type == 'calendar_event':
+        return
+    mentioned_ids = find_mentioned_user_ids(content, exclude_user_id=exclude_user_id)
+    if not mentioned_ids:
+        return
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    now = datetime.now().isoformat()
+    c.executemany(
+        'INSERT INTO unread_mentions (user_id, channel, message_id, created_at) VALUES (?, ?, ?, ?)',
+        [(uid, channel, message_id, now) for uid in mentioned_ids]
+    )
+    conn.commit()
+    conn.close()
+
+def get_unread_mention_counts(user_id):
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('SELECT channel, COUNT(*) FROM unread_mentions WHERE user_id = ? GROUP BY channel', (user_id,))
+    rows = c.fetchall()
+    conn.close()
+    return {channel: count for channel, count in rows}
+
+def mark_channel_mentions_read(user_id, channel):
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('DELETE FROM unread_mentions WHERE user_id = ? AND channel = ?', (user_id, channel))
+    conn.commit()
+    conn.close()
+
+@app.route('/api/mentions/unread-counts')
+def api_unread_mention_counts():
+    ha_user_id = request.headers.get('X-Remote-User-Id')
+    if not ha_user_id:
+        return jsonify({'error': 'Not accessed through Home Assistant'}), 403
+    return jsonify(get_unread_mention_counts(ha_user_id))
+
+@app.route('/api/mentions/mark-read', methods=['POST'])
+def api_mark_mentions_read():
+    ha_user_id = request.headers.get('X-Remote-User-Id')
+    if not ha_user_id:
+        return jsonify({'error': 'Not accessed through Home Assistant'}), 403
+    data = request.get_json(silent=True) or {}
+    channel = (data.get('channel') or '').strip()
+    if not channel:
+        return jsonify({'error': 'Missing channel'}), 400
+    mark_channel_mentions_read(ha_user_id, channel)
+    return jsonify({'success': True})
+
 def notify_message_subscribers(channel, sender, sender_id, content, msg_type, file_info):
     """Best-effort — a slow or failed notification should never affect
     message delivery in the chat itself, which has already happened by
@@ -2019,6 +2093,7 @@ def handle_message(data):
     msg_id = save_message(sender, content, channel, msg_type,
                          file_url, file_name, file_size, mime_type,
                          sender_id=sender_id)
+    record_unread_mentions(channel, msg_id, content, msg_type, sender_id)
     
     emit('new_message', {
         'id': msg_id,

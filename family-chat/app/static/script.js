@@ -230,6 +230,18 @@ function initializeChat() {
 
         addMessage(data);
 
+        // The client is only ever joined to the room for whichever
+        // channel is currently open (see on_join() server-side), so
+        // this only ever fires for the active channel — a mention in a
+        // channel you're not currently viewing won't update its badge
+        // live this way, only on the next switch to it or page reload.
+        // Marking the active channel read again here stops a live
+        // mention in the channel you're already looking at from
+        // leaving a stale badge behind.
+        if (data.channel === currentChannel) {
+            markChannelMentionsRead(data.channel);
+        }
+
         if (wasNearBottom) {
             scrollToBottom();
         } else {
@@ -282,6 +294,13 @@ function initializeChat() {
         });
 
     loadUpcomingEvents();
+
+    // The channel shown by default at page load never goes through
+    // switchChannel() (which is what normally marks a channel read) —
+    // it's just already there in the initial HTML. Marking it read here
+    // covers that one case switchChannel() can't.
+    markChannelMentionsRead(currentChannel);
+    refreshMentionBadges();
     
     const input = document.getElementById('messageInput');
     if (input) {
@@ -1141,6 +1160,7 @@ function switchChannel(slug, onLoaded) {
     });
     currentChannel = slug;
     try { localStorage.setItem('lastChannel', currentChannel); } catch (e) {}
+    markChannelMentionsRead(slug);
 
     // On phone-width screens the channel sidebar is a slide-over drawer
     // (see the <768px media query) — picking a channel from it should
@@ -1450,6 +1470,48 @@ function submitCalendarEvent() {
 // Renders the "Upcoming" panel at the bottom of the member list — real
 // Home Assistant calendar events (from every calendar, not just what's
 // come through this app), sorted by when they actually happen.
+// --- Mention badges ---
+// Shows, per channel, how many @mentions are still unread there — a
+// small red count next to the channel name, matching the visual
+// language of the jump-to-bottom button's own badge. The count itself
+// lives server-side (see api_unread_mention_counts()/mark-read), not
+// just tracked in memory here, so it survives a reload and isn't lost
+// if a mention happened while this device wasn't even connected.
+
+function refreshMentionBadges() {
+    fetch(apiUrl('/api/mentions/unread-counts'))
+        .then(r => r.json())
+        .then(counts => {
+            if (counts.error) return; // not accessed through HA, or similar — just leave badges as they are
+            document.querySelectorAll('[data-mention-badge]').forEach(badge => {
+                const channel = badge.dataset.mentionBadge;
+                const count = counts[channel] || 0;
+                if (count > 0) {
+                    badge.textContent = count > 9 ? '9+' : String(count);
+                    badge.classList.remove('hidden');
+                } else {
+                    badge.classList.add('hidden');
+                }
+            });
+        })
+        .catch(() => {}); // badges just don't update this round — not worth surfacing an error for
+}
+
+function markChannelMentionsRead(channel) {
+    if (!channel) return;
+    // Updated immediately rather than waiting on the request to
+    // complete — nothing about "you're looking at this channel right
+    // now" needs to wait on a round-trip to feel correct.
+    const badge = document.querySelector(`[data-mention-badge="${CSS.escape(channel)}"]`);
+    if (badge) badge.classList.add('hidden');
+
+    fetch(apiUrl('/api/mentions/mark-read'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel })
+    }).catch(() => {});
+}
+
 function loadUpcomingEvents() {
     const list = document.getElementById('upcomingEventsList');
     if (!list) return; // panel isn't rendered at all when calendar_enabled is false
@@ -1768,7 +1830,7 @@ function addChannelToSidebar(ch) {
     const el = document.createElement('div');
     el.className = 'channel';
     el.dataset.channel = ch.slug;
-    el.innerHTML = `<span class="channel-icon">${escapeHtml(ch.icon)}</span><span>${escapeHtml(ch.name)}</span>`;
+    el.innerHTML = `<span class="channel-icon">${escapeHtml(ch.icon)}</span><span>${escapeHtml(ch.name)}</span><span class="mention-badge hidden" data-mention-badge="${escapeHtml(ch.slug)}"></span>`;
     el.addEventListener('click', function() {
         switchChannel(this.dataset.channel);
     });

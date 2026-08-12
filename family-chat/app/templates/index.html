@@ -33,6 +33,7 @@
                 <div class="channel{% if loop.first %} active{% endif %}" data-channel="{{ ch.slug }}">
                     <span class="channel-icon">{{ ch.icon }}</span>
                     <span>{{ ch.name }}</span>
+                    <span class="mention-badge hidden" data-mention-badge="{{ ch.slug }}"></span>
                 </div>
                 {% endfor %}
             </div>

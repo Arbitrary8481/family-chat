@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.27.0
+
+### Added
+- **Mention badges.** A small red count now appears next to a channel's name in the sidebar showing how many times you've been @mentioned there since you last viewed it — clears automatically the moment you switch to that channel. The count is tracked server-side (not just in memory), so it survives a reload and isn't lost if a mention happened while you weren't connected at all. One honest limitation worth knowing: since the app only ever keeps you connected to whichever channel's room you're currently viewing, a mention in a channel you're *not* looking at won't update its badge instantly — it'll show up the next time you switch to it or reload, rather than live. The push notification for being mentioned (already in place) still fires instantly regardless; this is specifically about the in-app badge.
+
 ## 2.26.1
 
 ### Fixed
