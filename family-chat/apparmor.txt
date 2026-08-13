@@ -5,23 +5,23 @@
 # real instance across every distinct feature this app has, then
 # switched to enforcing (2.29.1) on that basis.
 #
-# Reverted back to complain mode here (2.29.2) as a precaution, not
-# because there's strong evidence this profile was actually the cause
-# of anything — the add-on failed to start right after this switched to
-# enforcing, but the actual error ("Error loading shared library
-# libpython3.11.so.1.0: No such file or directory") is a known,
-# unrelated bug in the python:3.11-alpine base image itself when it
-# resolves to a newer Alpine release (see the Dockerfile's own comment,
-# and CHANGELOG 2.29.2) — AppArmor denying access produces "Permission
-# denied", not "No such file or directory", which doesn't match this
-# failure. Reverted anyway while that Dockerfile fix gets verified,
-# since there was no way to be completely certain from outside a real
-# instance, and complain mode costs nothing to fall back to. Once the
-# add-on is confirmed stable again on the pinned base image, this
-# should go back through the same verification as before (real usage
-# across every feature, confirm dmesg stays clean, then remove
-# ",complain" again) rather than being switched back on faith.
-profile family_chat flags=(attach_disconnected,mediate_deleted,complain) {
+# Reverted back to complain mode (2.29.2) as a precaution when the
+# add-on failed to start right after that — turned out to be an
+# unrelated bug in the python:3.11-alpine base image itself (see the
+# Dockerfile's own comment, and CHANGELOG 2.29.2), not this profile;
+# AppArmor denials produce "Permission denied", not the "No such file
+# or directory" error that actually occurred. Reverted anyway at the
+# time since there was no way to be fully certain from outside a real
+# instance, and complain mode costs nothing to fall back to.
+#
+# Re-verified on the fixed build (2.29.3, pinned base image): same
+# real-usage pass as the first verification — chat, file upload,
+# avatar upload, the admin panel, adding a calendar event, posting a
+# GIF — covering every distinct code path this app has. dmesg stayed
+# clean of any AppArmor activity throughout, which in complain mode
+# specifically means nothing fell outside the rules below. Switched
+# back to enforcing on that basis.
+profile family_chat flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/base>
   #include <abstractions/python>
 
