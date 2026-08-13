@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.29.1
+
+### Changed
+- **AppArmor profile switched from complain mode to full enforcement.** 2.29.0 shipped it in complain mode deliberately, since it had never been run against a real instance. Since then: confirmed it actually loads (Supervisor's log showed `Adding/updating AppArmor profile: c2f85679_family_chat`), then deliberately exercised every distinct feature this app has — chat, file upload, avatar upload, the admin panel, adding a calendar event (outbound to Home Assistant's own Supervisor API), and posting a GIF (outbound to GIPHY) — not just the common chat path. `dmesg` stayed clean of any AppArmor activity throughout, which in complain mode specifically means nothing fell outside the profile's rules (complain mode logs exactly what *would've* been denied — it doesn't log ordinary permitted activity, so a clean result after real, broad usage is genuine evidence the profile is complete, not just an absence of testing). Now actually confining the container instead of only logging.
+
 ## 2.29.0
 
 ### Added

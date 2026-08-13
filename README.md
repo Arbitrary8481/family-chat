@@ -40,7 +40,7 @@ Everyone who can open this add-on at all is, by necessity, a Home Assistant admi
 
 ## Security
 
-Ships with a custom [AppArmor](https://developers.home-assistant.io/docs/apps/presentation/) profile (`apparmor.txt`) scoping the container down to only what it actually needs — its own code, `/data` for the database and uploads, and network access, nothing else. It currently runs in AppArmor's "complain" mode (logs anything outside those rules instead of blocking it) rather than full enforcement, since it hasn't yet been run against a real instance to confirm the rules are complete — see the comments at the top of the file for how to verify and then switch it to enforcing.
+Ships with a custom [AppArmor](https://developers.home-assistant.io/docs/apps/presentation/) profile (`apparmor.txt`) scoping the container down to only what it actually needs — its own code, `/data` for the database and uploads, and network access, nothing else. Verified against a real instance across every distinct feature this app has (chat, uploads, avatars, the admin panel, calendar events, GIFs) and now runs in full enforcing mode, not just logging — see the comments at the top of the file for the verification history.
 
 ## Requirements
 

@@ -1,35 +1,32 @@
 #include <tunables/global>
 
-# --- READ BEFORE ENFORCING ---
-# Shipped in "complain" mode deliberately, not full enforcement. This
-# profile was written from this app's actual Dockerfile/run.sh and the
-# code's own known file/network footprint, but never run against a
-# real AppArmor-enabled Home Assistant host — there's no way to
-# validate that from outside one. "complain" logs anything the profile
-# doesn't explicitly allow instead of blocking it, which is the
-# officially-documented, safe way to roll out any new custom profile
-# (see developers.home-assistant.io/docs/apps/presentation, the
-# AppArmor section) rather than risking exactly the "inoperable setup"
-# outcome others have hit shipping one straight to enforcement.
+# --- Verification history ---
+# Shipped in "complain" mode initially (2.29.0) — written from this
+# app's actual Dockerfile/run.sh and known file/network footprint, but
+# never run against a real AppArmor-enabled host before that release,
+# so it logged instead of blocking anything it didn't explicitly cover,
+# per Home Assistant's own documented process for a new custom profile.
 #
-# To verify and then tighten this for real:
-#   1. Deploy this, restart the add-on, and confirm it actually loaded —
-#      Supervisor's own log (not this add-on's) should show a line like
-#      "Load AppArmor Profiles: {'family_chat'}" around when it starts.
-#   2. Use the add-on normally for a while — chat, upload a file, add a
-#      calendar event, whatever exercises real code paths.
-#   3. On the host (not in this add-on's own log), check for anything
-#      this profile *would* have blocked:
-#        journalctl _TRANSPORT="audit" -g 'apparmor="ALLOWED"' | grep family_chat
-#      Anything specific to this profile there is something the rules
-#      below are missing, not something wrong with the app itself.
-#   4. Add whatever's actually missing, based on what that command
-#      shows — not by guessing.
-#   5. Only once that comes back clean, remove ",complain" from the
-#      flags on the line below so it actually enforces rather than just
-#      logging. Skipping straight to this step without 1-4 is exactly
-#      how a profile ends up blocking something real.
-profile family_chat flags=(attach_disconnected,mediate_deleted,complain) {
+# Verified clean on a real instance: profile confirmed loaded
+# (Supervisor's own log showed "Adding/updating AppArmor profile:
+# c2f85679_family_chat"), then exercised deliberately broad real usage
+# — chat, file upload, avatar upload, the admin panel, adding a
+# calendar event (outbound to Home Assistant's own Supervisor API),
+# and posting a GIF (outbound to GIPHY's API) — covering every distinct
+# code path this app has, not just the common chat one. `dmesg | grep
+# -i apparmor` stayed empty throughout, which in complain mode
+# specifically means nothing fell outside the rules below (complain
+# mode logs exactly the actions that would've been denied — it doesn't
+# log ordinary, already-permitted activity, so "nothing logged" here is
+# a real positive result, not just an absence of testing). Switched to
+# enforcing on that basis.
+#
+# If a future version of this app does something new — a different
+# outbound API, a new file location, anything — and something breaks
+# after that, that's the first place to look: add whatever's missing
+# to the rules below based on what actually failed, the same way this
+# profile was verified the first time, rather than guessing.
+profile family_chat flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/base>
   #include <abstractions/python>
 
