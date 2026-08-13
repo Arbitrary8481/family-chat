@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.29.3
+
+### Changed
+- **Removed `armv7` from the supported architecture list**, resolving the "uses deprecated 'arch' values" warning in the Supervisor log. This isn't specific to this app — Home Assistant officially sunset all 32-bit architectures (`armhf`, `armv7`, `i386`) in May 2025, and Supervisor now warns on any add-on still listing them. `amd64` and `aarch64` (the two current, supported architectures this add-on already listed) are unaffected.
+
 ## 2.29.2
 
 ### Fixed

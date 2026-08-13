@@ -1,11 +1,10 @@
 name: "Family Chat"
-version: "2.29.2"
+version: "2.29.3"
 slug: "family_chat"
 description: "Private Discord-like chat for your family with file sharing and emojis"
 arch:
   - amd64
   - aarch64
-  - armv7
 url: "https://github.com/Arbitrary8481/family-chat"
 ingress: true
 ingress_port: 8099
