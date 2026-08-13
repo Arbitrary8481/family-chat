@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.29.7
+
+### Fixed
+- **Full re-sync, not a new fix.** The last several updates were delivered as individual files (`Dockerfile`, `apparmor.txt`, `config.yaml`) rather than a complete zip, and at least one of those individually-delivered fixes (the Dockerfile base-image pin) apparently didn't fully carry forward into the actual deployed repo, causing the same crash to resurface after seemingly being fixed. The "avatars need a second manual refresh after changing your photo" report just now looks like the same underlying pattern — the per-request cache-busting fix from 2.28.3 not being confirmed present in what's actually running. Rather than patch individual files again and hope, this version is a complete, verified snapshot of everything: the AppArmor fix (complain mode, with the corrected `/usr/local/lib/` rule), the Dockerfile pin, the arch list cleanup, and the cache-busting fixes, all confirmed consistent together in one place before packaging.
+
+## 2.29.6
+
+### Fixed
+- **The actual cause of the repeated startup crash — AppArmor, not the base image.** The Dockerfile pin from 2.29.2 was correct all along and never the problem; re-examining the full timeline (crash exactly when enforcing turned on, gone exactly when it went back to complain mode, back exactly when enforcing was re-enabled — with the Dockerfile unchanged throughout) makes clear this was misdiagnosed. `apparmor.txt` never actually granted access to `/usr/local/lib/` itself — only the `/usr/local/lib/python3.11/` subdirectory — so the interpreter's own shared library (`libpython3.11.so.1.0`, which lives directly in `/usr/local/lib/`) was never covered by the profile. Fixed the rule and reverted to complain mode again pending real re-verification, rather than trusting reasoning alone a third time.
+
+## 2.29.5
+
+### Fixed
+- **The base-image crash from 2.29.2 came back** — same exact error (`Error loading shared library libpython3.11.so.1.0`). The Dockerfile pin fixing it was never re-delivered after that version; only `apparmor.txt` and `config.yaml` went out individually in the two updates since, and the Dockerfile fix apparently didn't carry forward into the actual deployed repo. Re-sending the pinned Dockerfile (`FROM python:3.11-alpine3.19`) along with this version bump so Supervisor actually rebuilds against it.
+
+## 2.29.4
+
+### Changed
+- **AppArmor switched back to enforcing mode.** Re-verified on the fixed base image (2.29.3) with a full real-usage pass — chat, file upload, avatar upload, the admin panel, adding a calendar event, posting a GIF — the same breadth as the first verification. `dmesg` stayed clean of any AppArmor activity throughout, meaning nothing fell outside the profile's rules. This is the second time this profile has cleared full verification (once before the base-image issue, once after it was fixed), so the container is now genuinely confined again, not just observed.
+
 ## 2.29.3
 
 ### Changed
