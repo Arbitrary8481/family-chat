@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.28.3
+
+### Fixed
+- **The actual root cause of "F5 doesn't help, only a hard refresh does"** — found from that exact detail. Every `fetch()` call in this app already gets a unique timestamp in its URL, which should make those immune to caching regardless of F5 vs. hard refresh; if the problem persisted through F5 anyway, the fetch calls weren't the real culprit. The `<script src="...script.js?v=...">` tag was: that version number only ever changed once per container restart, so within a single running session, every normal page load requested the *exact same URL* — giving Home Assistant's ingress layer (already documented, twice before, as not reliably honoring `Cache-Control: no-store`) something consistent to keep matching and re-serving stale. A hard refresh works because it forces the browser to bypass its own cache regardless of URL; a normal F5 has no reason to, since nothing about the URL told it anything had changed. Now computed fresh on every single page load, not just every restart — the same "never the same URL twice" approach already used for the fetch calls, just finally applied to the one request that was still missing it.
+
 ## 2.28.2
 
 ### Fixed

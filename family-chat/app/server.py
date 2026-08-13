@@ -181,13 +181,20 @@ if not SUPERVISOR_TOKEN:
     logger.warning('SUPERVISOR_TOKEN is not set — Home Assistant notifications will be '
                     'unavailable until this add-on is rebuilt with homeassistant_api access.')
 
-# Cache-busting token for static assets (CSS/JS). Home Assistant's ingress
-# "soft" panel navigation (clicking the sidebar entry again) can reuse a
-# browser-cached copy of style.css instead of always fetching fresh, which
-# shows up as "styling doesn't apply until I hit refresh". Appending this
-# to asset URLs (?v=...) and disabling caching on the static route below
-# means every container start serves guaranteed-fresh assets.
-ASSET_VERSION = str(int(datetime.now().timestamp()))
+# Cache-busting token for static assets (CSS/JS). This used to be
+# computed once at process start, changing only on a container restart
+# — which turned out not to be aggressive enough. Home Assistant's
+# ingress iframe layer has now shown a pattern, across several separate
+# incidents in this app's history, of not reliably honoring
+# Cache-Control: no-store (see set_cache_headers()'s own comment for
+# the earlier ones) — the *only* thing that reliably defeats a cache
+# that ignores headers entirely is a URL that's never the same twice,
+# which a once-per-restart version string doesn't provide: every page
+# load within a session requested the exact same script.js?v=... URL,
+# giving a header-ignoring cache something consistent to keep matching
+# and re-serving stale. Computed fresh per request instead now — see
+# index() — the same "unique on every load, not just every deploy"
+# approach already used for this app's own fetch() calls.
 
 # Inlined directly into index.html (see below) instead of served as a
 # separate <link rel="stylesheet"> request. Home Assistant's ingress
@@ -866,10 +873,17 @@ def index():
     auto_user_id, auto_user = resolve_ha_identity()
     server_identity = get_server_identity()
 
+    # Fresh on every single page load, not just once per container
+    # restart — see the comment where this used to be a module-level
+    # constant, above, for why a once-per-restart version wasn't
+    # aggressive enough to reliably defeat Home Assistant's ingress
+    # caching behavior.
+    asset_version = secrets.token_hex(8)
+
     return render_template('index.html',
                           members=get_known_people(),
                           theme=THEME,
-                          asset_version=ASSET_VERSION,
+                          asset_version=asset_version,
                           inline_css=INLINE_CSS,
                           channels=get_channels(),
                           auto_user=auto_user,
