@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.28.1
+
+### Fixed
+- **Avatars and the calendar panel sometimes not loading without a manual refresh, on some sessions/devices.** The calendar's own fetch already had a defensive fix for this (added when it hit the same symptom earlier) — Home Assistant's ingress iframe layer has a known history of not reliably honoring `Cache-Control: no-store` for in-page fetches, so on top of that header, the request URL itself is now made unique with a timestamp, and the browser's own fetch cache is bypassed too. That same protection just hadn't been applied everywhere else it was equally needed. Applied it to every other load-critical fetch: the message history request (which is what actually carries each message's avatar), the emoji list, and — arguably more important, since it runs on an unattended 30-second timer hitting the exact same URL every time — both mention-badge and unread-channel-indicator polling, where a single cached response could otherwise get silently re-served forever, defeating the entire point of polling for freshness.
+
 ## 2.28.0
 
 ### Added

@@ -270,7 +270,14 @@ function initializeChat() {
         alert(data.message || 'Something went wrong. Check the add-on log for details.');
     });
     
-    fetch(apiUrl(`/api/messages?channel=${currentChannel}`))
+    // Same reasoning as loadUpcomingEvents()'s fetch below: the server
+    // already sends Cache-Control: no-store, but Home Assistant's
+    // ingress iframe layer has a known history of not reliably honoring
+    // that for in-page fetches. This is exactly the request that
+    // decides what avatars show up in the message list on first load —
+    // a stale cached response here looks exactly like "avatars don't
+    // load until I refresh", which is precisely what was reported.
+    fetch(apiUrl(`/api/messages?channel=${currentChannel}&_=${Date.now()}`), { cache: 'no-store' })
         .then(r => r.json())
         .then(messages => {
             messages.forEach(msg => addMessage(msg));
@@ -287,7 +294,7 @@ function initializeChat() {
             }
         });
     
-    fetch(apiUrl('/api/emojis'))
+    fetch(apiUrl(`/api/emojis?_=${Date.now()}`), { cache: 'no-store' })
         .then(r => r.json())
         .then(emojis => {
             customEmojis = emojis;
@@ -1212,7 +1219,7 @@ function switchChannel(slug, onLoaded) {
 
     if (socket) socket.emit('join', {room: currentChannel});
 
-    fetch(apiUrl(`/api/messages?channel=${currentChannel}`))
+    fetch(apiUrl(`/api/messages?channel=${currentChannel}&_=${Date.now()}`), { cache: 'no-store' })
         .then(r => r.json())
         .then(messages => {
             messages.forEach(msg => addMessage(msg));
@@ -1493,7 +1500,14 @@ function submitCalendarEvent() {
 // if a mention happened while this device wasn't even connected.
 
 function refreshMentionBadges() {
-    fetch(apiUrl('/api/mentions/unread-counts'))
+    // Cache-busted the same way loadUpcomingEvents() is, and arguably
+    // more important here: this runs on a 30-second timer hitting the
+    // exact same URL every time. If anything along the way (HA's
+    // ingress layer has a known history here) ever decided to cache
+    // that URL's response, every single poll after the first would
+    // silently keep re-serving the same stale answer — the entire
+    // point of polling for freshness, defeated.
+    fetch(apiUrl(`/api/mentions/unread-counts?_=${Date.now()}`), { cache: 'no-store' })
         .then(r => r.json())
         .then(counts => {
             if (counts.error) return; // not accessed through HA, or similar — just leave badges as they are
@@ -1516,7 +1530,9 @@ function refreshMentionBadges() {
 // matching how Discord/Slack keep "unread" and "you were mentioned"
 // visually distinct rather than conflating them into one indicator.
 function refreshUnreadChannelIndicators() {
-    fetch(apiUrl('/api/channels/unread-status'))
+    // Same cache-busting reasoning as refreshMentionBadges() just above
+    // — this runs on the same timer, hitting the same URL repeatedly.
+    fetch(apiUrl(`/api/channels/unread-status?_=${Date.now()}`), { cache: 'no-store' })
         .then(r => r.json())
         .then(unreadChannels => {
             if (!Array.isArray(unreadChannels)) return;
