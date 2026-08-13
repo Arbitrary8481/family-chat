@@ -1,32 +1,27 @@
 #include <tunables/global>
 
 # --- Verification history ---
-# Shipped in "complain" mode initially (2.29.0) — written from this
-# app's actual Dockerfile/run.sh and known file/network footprint, but
-# never run against a real AppArmor-enabled host before that release,
-# so it logged instead of blocking anything it didn't explicitly cover,
-# per Home Assistant's own documented process for a new custom profile.
+# Shipped in "complain" mode initially (2.29.0) — verified against a
+# real instance across every distinct feature this app has, then
+# switched to enforcing (2.29.1) on that basis.
 #
-# Verified clean on a real instance: profile confirmed loaded
-# (Supervisor's own log showed "Adding/updating AppArmor profile:
-# c2f85679_family_chat"), then exercised deliberately broad real usage
-# — chat, file upload, avatar upload, the admin panel, adding a
-# calendar event (outbound to Home Assistant's own Supervisor API),
-# and posting a GIF (outbound to GIPHY's API) — covering every distinct
-# code path this app has, not just the common chat one. `dmesg | grep
-# -i apparmor` stayed empty throughout, which in complain mode
-# specifically means nothing fell outside the rules below (complain
-# mode logs exactly the actions that would've been denied — it doesn't
-# log ordinary, already-permitted activity, so "nothing logged" here is
-# a real positive result, not just an absence of testing). Switched to
-# enforcing on that basis.
-#
-# If a future version of this app does something new — a different
-# outbound API, a new file location, anything — and something breaks
-# after that, that's the first place to look: add whatever's missing
-# to the rules below based on what actually failed, the same way this
-# profile was verified the first time, rather than guessing.
-profile family_chat flags=(attach_disconnected,mediate_deleted) {
+# Reverted back to complain mode here (2.29.2) as a precaution, not
+# because there's strong evidence this profile was actually the cause
+# of anything — the add-on failed to start right after this switched to
+# enforcing, but the actual error ("Error loading shared library
+# libpython3.11.so.1.0: No such file or directory") is a known,
+# unrelated bug in the python:3.11-alpine base image itself when it
+# resolves to a newer Alpine release (see the Dockerfile's own comment,
+# and CHANGELOG 2.29.2) — AppArmor denying access produces "Permission
+# denied", not "No such file or directory", which doesn't match this
+# failure. Reverted anyway while that Dockerfile fix gets verified,
+# since there was no way to be completely certain from outside a real
+# instance, and complain mode costs nothing to fall back to. Once the
+# add-on is confirmed stable again on the pinned base image, this
+# should go back through the same verification as before (real usage
+# across every feature, confirm dmesg stays clean, then remove
+# ",complain" again) rather than being switched back on faith.
+profile family_chat flags=(attach_disconnected,mediate_deleted,complain) {
   #include <abstractions/base>
   #include <abstractions/python>
 

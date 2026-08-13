@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.29.2
+
+### Fixed
+- **Add-on completely failed to start** — crash-looping on `Error loading shared library libpython3.11.so.1.0: No such file or directory` / `Error relocating /usr/local/bin/python: Py_BytesMain: symbol not found`. This is not this app's own code failing — it's a well-documented, widely-reported bug in the `python:3.11-alpine` Docker base image itself when that (unpinned) tag resolves to Alpine 3.20 or newer (docker-library/python#927, #930 on GitHub; the identical issue affects the `python:3.12-alpine` tag too). The Dockerfile's build always runs with `--pull`, fetching whatever that tag currently points to on every single rebuild — this add-on had been running fine on it for a long stretch, then broke the moment a rebuild happened to land on a newer, broken Alpine release. Fixed by pinning to `python:3.11-alpine3.19` specifically, the version the community has confirmed does not have this problem, instead of the always-moving `python:3.11-alpine`.
+- **AppArmor reverted from enforcing back to complain mode** (2.29.1 → this) as a precaution while the above gets confirmed fixed on a real instance — not because there's real evidence it was the actual cause. AppArmor denying access produces "Permission denied," not "No such file or directory," which doesn't match this specific failure, and the fix above addresses a well-documented cause unrelated to it. Reverted anyway since there was no way to be fully certain from outside a real running instance, and complain mode costs nothing to fall back to. Once this version is confirmed stable, this should go back through the same real-usage verification as before — not be switched back to enforcing on faith alone.
+
 ## 2.29.1
 
 ### Changed
