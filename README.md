@@ -38,6 +38,10 @@ Everyone who can open this add-on at all is, by necessity, a Home Assistant admi
 - **Admin** — a separate password (set in the add-on configuration) unlocks the admin panel: rename the chat, delete channels, manage everyone's display names, restrict which calendars can be added to, and designate a server owner.
 - **Server Owner** — an admin can designate one Home Assistant account as the owner, from the admin panel. The owner gets the same message- and channel-deletion powers an admin has, but tied to their own Home Assistant login — no admin password needed day-to-day.
 
+## Security
+
+Ships with a custom [AppArmor](https://developers.home-assistant.io/docs/apps/presentation/) profile (`apparmor.txt`) scoping the container down to only what it actually needs — its own code, `/data` for the database and uploads, and network access, nothing else. It currently runs in AppArmor's "complain" mode (logs anything outside those rules instead of blocking it) rather than full enforcement, since it hasn't yet been run against a real instance to confirm the rules are complete — see the comments at the top of the file for how to verify and then switch it to enforcing.
+
 ## Requirements
 
 - **Every family member needs Home Assistant admin access.** Home Assistant doesn't currently support granting a non-admin user access to just one specific add-on — ingress-based add-ons like this one are only reachable by admin accounts, full stop. This isn't something this add-on chose; it's a limitation of Home Assistant's permission model today. If Home Assistant adds more granular, per-add-on permissions for non-admin users in the future, this requirement should be able to relax to match.

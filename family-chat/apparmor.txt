@@ -1,0 +1,84 @@
+#include <tunables/global>
+
+# --- READ BEFORE ENFORCING ---
+# Shipped in "complain" mode deliberately, not full enforcement. This
+# profile was written from this app's actual Dockerfile/run.sh and the
+# code's own known file/network footprint, but never run against a
+# real AppArmor-enabled Home Assistant host — there's no way to
+# validate that from outside one. "complain" logs anything the profile
+# doesn't explicitly allow instead of blocking it, which is the
+# officially-documented, safe way to roll out any new custom profile
+# (see developers.home-assistant.io/docs/apps/presentation, the
+# AppArmor section) rather than risking exactly the "inoperable setup"
+# outcome others have hit shipping one straight to enforcement.
+#
+# To verify and then tighten this for real:
+#   1. Deploy this, restart the add-on, and confirm it actually loaded —
+#      Supervisor's own log (not this add-on's) should show a line like
+#      "Load AppArmor Profiles: {'family_chat'}" around when it starts.
+#   2. Use the add-on normally for a while — chat, upload a file, add a
+#      calendar event, whatever exercises real code paths.
+#   3. On the host (not in this add-on's own log), check for anything
+#      this profile *would* have blocked:
+#        journalctl _TRANSPORT="audit" -g 'apparmor="ALLOWED"' | grep family_chat
+#      Anything specific to this profile there is something the rules
+#      below are missing, not something wrong with the app itself.
+#   4. Add whatever's actually missing, based on what that command
+#      shows — not by guessing.
+#   5. Only once that comes back clean, remove ",complain" from the
+#      flags on the line below so it actually enforces rather than just
+#      logging. Skipping straight to this step without 1-4 is exactly
+#      how a profile ends up blocking something real.
+profile family_chat flags=(attach_disconnected,mediate_deleted,complain) {
+  #include <abstractions/base>
+  #include <abstractions/python>
+
+  # Inbound HTTP/WebSocket on the ingress port; outbound to Home
+  # Assistant's own Supervisor API (calendar, notifications) and to
+  # GIPHY's API when a key is configured. Nothing in this app ever
+  # needs a raw socket.
+  network inet stream,
+  network inet6 stream,
+  deny network raw,
+
+  # The actual startup chain, matching this app's real Dockerfile —
+  # plain python:3.11-alpine, not one of the s6-overlay-based add-on
+  # base images, so there's no bashio/s6 supervision tree to account
+  # for here the way most add-on profiles need.
+  /bin/sh ix,
+  /run.sh r,
+  /usr/local/bin/python3* ix,
+  /usr/local/lib/python3.11/** r,
+  /usr/local/lib/python3.11/**.so* mr,
+  /usr/lib/*.so* mr,
+  /lib/*.so* mr,
+
+  # The app's own code — read-only. This process never has a
+  # legitimate reason to modify its own source after the image is
+  # built.
+  /app/** r,
+
+  # Everything this app ever persists lives under /data and nowhere
+  # else: the add-on's own configuration (read-only — this app never
+  # writes it), the SQLite database plus its journal/WAL sidecar files,
+  # uploaded files, and the generated session-signing secret.
+  /data/options.json r,
+  /data/chat.db rwk,
+  /data/chat.db-journal rwk,
+  /data/chat.db-wal rwk,
+  /data/chat.db-shm rwk,
+  /data/uploads/** rwk,
+  /data/secret_key rw,
+
+  # Explicit defense-in-depth denials — this app has no legitimate
+  # reason to ever touch Home Assistant's own core config, another
+  # add-on's TLS material, or write to /proc or /sys.
+  deny /data/homeassistant rw,
+  deny /data/ssl rw,
+  deny /proc/** wl,
+  deny /sys/** wl,
+
+  / r,
+  /etc/resolv.conf r,
+  /tmp/** rwk,
+}

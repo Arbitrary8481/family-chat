@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.29.0
+
+### Added
+- **Custom AppArmor profile** (`apparmor.txt`), scoping the container down to only what it actually needs to run: its own code (read-only), `/data` for the SQLite database and uploaded files, and network access for the ingress port plus outbound calls to Home Assistant's Supervisor API and GIPHY. Built from this app's actual Dockerfile and known file/network footprint, following Home Assistant's own documented process for a custom add-on profile — but shipped in AppArmor's "complain" mode (logs anything the profile doesn't explicitly allow, rather than blocking it) rather than full enforcement, since it hasn't been run against a real instance yet to confirm the rules are complete. See the comments at the top of `apparmor.txt` for exactly how to verify it and then switch it to enforcing.
+
 ## 2.28.3
 
 ### Fixed
