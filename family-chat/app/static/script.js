@@ -276,8 +276,17 @@ function initializeChat() {
     // that for in-page fetches. This is exactly the request that
     // decides what avatars show up in the message list on first load —
     // a stale cached response here looks exactly like "avatars don't
-    // load until I refresh", which is precisely what was reported.
-    fetch(apiUrl(`/api/messages?channel=${currentChannel}&_=${Date.now()}`), { cache: 'no-store' })
+    // load until I refresh", which is precisely what was reported. The
+    // timestamp query param alone is what actually does the work here —
+    // it makes every request URL unique, so there's simply nothing for
+    // any cache in that path to match against regardless of whether
+    // it's honoring headers correctly. An earlier version of this fix
+    // also added the fetch-level `cache: 'no-store'` option on top,
+    // which turned out to make things worse rather than better —
+    // avatars and the calendar stopped loading outright rather than
+    // just being stale, on at least one real session. Removed again;
+    // the URL uniqueness alone is the part actually doing anything.
+    fetch(apiUrl(`/api/messages?channel=${currentChannel}&_=${Date.now()}`))
         .then(r => r.json())
         .then(messages => {
             messages.forEach(msg => addMessage(msg));
@@ -294,7 +303,7 @@ function initializeChat() {
             }
         });
     
-    fetch(apiUrl(`/api/emojis?_=${Date.now()}`), { cache: 'no-store' })
+    fetch(apiUrl(`/api/emojis?_=${Date.now()}`))
         .then(r => r.json())
         .then(emojis => {
             customEmojis = emojis;
@@ -1219,7 +1228,7 @@ function switchChannel(slug, onLoaded) {
 
     if (socket) socket.emit('join', {room: currentChannel});
 
-    fetch(apiUrl(`/api/messages?channel=${currentChannel}&_=${Date.now()}`), { cache: 'no-store' })
+    fetch(apiUrl(`/api/messages?channel=${currentChannel}&_=${Date.now()}`))
         .then(r => r.json())
         .then(messages => {
             messages.forEach(msg => addMessage(msg));
@@ -1507,7 +1516,7 @@ function refreshMentionBadges() {
     // that URL's response, every single poll after the first would
     // silently keep re-serving the same stale answer — the entire
     // point of polling for freshness, defeated.
-    fetch(apiUrl(`/api/mentions/unread-counts?_=${Date.now()}`), { cache: 'no-store' })
+    fetch(apiUrl(`/api/mentions/unread-counts?_=${Date.now()}`))
         .then(r => r.json())
         .then(counts => {
             if (counts.error) return; // not accessed through HA, or similar — just leave badges as they are
@@ -1532,7 +1541,7 @@ function refreshMentionBadges() {
 function refreshUnreadChannelIndicators() {
     // Same cache-busting reasoning as refreshMentionBadges() just above
     // — this runs on the same timer, hitting the same URL repeatedly.
-    fetch(apiUrl(`/api/channels/unread-status?_=${Date.now()}`), { cache: 'no-store' })
+    fetch(apiUrl(`/api/channels/unread-status?_=${Date.now()}`))
         .then(r => r.json())
         .then(unreadChannels => {
             if (!Array.isArray(unreadChannels)) return;
@@ -1583,10 +1592,13 @@ function loadUpcomingEvents() {
     // for in-page fetches (see set_cache_headers() server-side). A
     // timestamp query param makes every request URL unique instead, so
     // there's simply nothing for any cache in that path to match against,
-    // regardless of whether it's respecting headers correctly. `cache:
-    // 'no-store'` on top of that stops the browser's own fetch cache from
-    // getting involved at all.
-    fetch(apiUrl(`/api/calendar/upcoming?_=${Date.now()}`), { cache: 'no-store' })
+    // regardless of whether it's respecting headers correctly. This used
+    // to also set the fetch-level `cache: 'no-store'` option on top —
+    // removed after it turned out to make things worse rather than
+    // better on at least one real session (this panel, and avatars in
+    // the message list, stopped loading at all rather than just being
+    // stale). The URL uniqueness alone is doing the actual work here.
+    fetch(apiUrl(`/api/calendar/upcoming?_=${Date.now()}`))
         .then(r => r.json())
         .then(data => {
             if (data.error) {

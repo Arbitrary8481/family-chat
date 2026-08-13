@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.28.2
+
+### Fixed
+- **2.28.1 made things worse, not better — avatars and the calendar stopped loading entirely rather than just being stale.** That fix added two things together: a unique timestamp on each request URL, and the fetch-level `cache: 'no-store'` option. The timestamp alone is what actually defeats caching (nothing to serve from cache when the URL is different every time, regardless of whether anything in between is honoring headers correctly) — the `cache: 'no-store'` option was meant as pure belt-and-suspenders on top of that. Removed it again: it's the one concrete thing that changed between "eventually loads with a refresh" and "doesn't load at all," and is the most plausible explanation for Home Assistant's ingress layer handling that specific request option worse than it handles a merely-uncached URL. The timestamp-based cache-busting stays in place on all six of the fetches it was added to in 2.28.1 — that part of the fix should still be doing real work.
+
 ## 2.28.1
 
 ### Fixed
