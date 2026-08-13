@@ -113,6 +113,28 @@ function getIngressBasePath() {
     return path.endsWith('/') ? path : path.substring(0, path.lastIndexOf('/') + 1);
 }
 
+// Every other place in this app that needed to guarantee a genuinely
+// fresh response — the script tag's own version, every fetch() call —
+// works by making the URL different every single time, never by
+// trusting reload/cache-control behavior alone, because Home
+// Assistant's ingress layer has a well-documented history throughout
+// this app's own life of not reliably honoring Cache-Control: no-store.
+// location.reload() was the one place that principle never got
+// applied: it reloads the *exact same* URL, so if anything along the
+// way ever cached that response even once, reload has nothing to force
+// a fresh fetch with — confirmed as the actual cause of a real report
+// (avatars needing a second manual refresh after changing one) that
+// only showed up in Firefox, not Chrome, consistent with browsers
+// genuinely differing in how aggressively they fall back to caching
+// when a proxy's headers can't be fully trusted. Navigating to a URL
+// with a fresh, unique query param instead guarantees a genuinely new
+// request regardless of any of that.
+function forceFreshReload() {
+    const url = new URL(location.href);
+    url.searchParams.set('_', Date.now());
+    location.href = url.toString();
+}
+
 // The server returns root-relative API paths ("/api/messages") and file
 // URLs ("/uploads/x.png"). A root-relative path resolves from the domain
 // root in the browser, not from the current ingress-prefixed page, so
@@ -1967,7 +1989,7 @@ function saveMyAlias() {
         .then(() => {
             // Reload so the new name applies everywhere at once — the
             // sidebar, the header, and every past message you've sent.
-            location.reload();
+            forceFreshReload();
         })
         .catch(() => {
             alert("Couldn't save your display name. Please try again.");
@@ -2007,7 +2029,7 @@ function uploadMyAvatar(event) {
             // Reload so the new photo applies everywhere at once — the
             // sidebar, the header, and every past message you've sent —
             // same reasoning as saveMyAlias() above.
-            location.reload();
+            forceFreshReload();
         })
         .catch(() => alert("Couldn't upload your avatar. Please try again."))
         .finally(() => { fileInput.value = ''; });
@@ -2023,7 +2045,7 @@ function removeMyAvatar() {
                 alert(data.error);
                 return;
             }
-            location.reload();
+            forceFreshReload();
         })
         .catch(() => alert("Couldn't remove your avatar. Please try again."));
 }

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.29.8
+
+### Fixed
+- **Avatars needing a second manual refresh after changing one, in Firefox specifically (not Chrome).** Every other place in this app that needed to guarantee a genuinely fresh response — the script tag's own version, every fetch() call — works by making the URL different every single time, never by trusting reload/cache behavior alone, given Home Assistant's ingress layer's well-documented history of not reliably honoring `Cache-Control: no-store`. `location.reload()` (used after saving your display name, uploading an avatar, or removing one) was the one place that principle was never applied — it reloads the *exact same* URL every time, so if anything along the way ever cached that response even once, reload had nothing to force a fresh fetch with. Firefox-specific rather than universal is consistent with browsers genuinely differing in how aggressively they fall back to their own caching heuristics when a proxy's headers can't be fully trusted. Replaced with a navigation to a URL carrying a fresh, unique query parameter instead, guaranteeing a genuinely new request regardless of browser or what's in between.
+
 ## 2.29.7
 
 ### Fixed
