@@ -2,26 +2,45 @@
 
 # --- Verification history ---
 # Shipped in "complain" mode initially (2.29.0) — verified against a
-# real instance across every distinct feature this app has, then
-# switched to enforcing (2.29.1) on that basis.
+# real instance, switched to enforcing (2.29.1) on that basis.
 #
-# Reverted back to complain mode (2.29.2) as a precaution when the
-# add-on failed to start right after that — turned out to be an
-# unrelated bug in the python:3.11-alpine base image itself (see the
-# Dockerfile's own comment, and CHANGELOG 2.29.2), not this profile;
-# AppArmor denials produce "Permission denied", not the "No such file
-# or directory" error that actually occurred. Reverted anyway at the
-# time since there was no way to be fully certain from outside a real
-# instance, and complain mode costs nothing to fall back to.
+# That crashed the add-on outright: "Error loading shared library
+# libpython3.11.so.1.0" / "Error relocating ...: Py_BytesMain: symbol
+# not found". Wrongly attributed at the time (2.29.2) to an unrelated
+# python:3.11-alpine base-image bug, based on the assumption that an
+# AppArmor denial always produces "Permission denied" rather than "No
+# such file or directory" — that assumption doesn't hold for a denied
+# *executable mapping* of a library specifically (how the dynamic
+# loader actually loads a shared library, as opposed to a plain file
+# read), which can surface through the loader's own generic error
+# message instead. The real evidence was the timing, not the base
+# image: this crashed exactly when enforcing was turned on (2.29.1),
+# went away when reverted to complain mode *together with* the
+# (unnecessary, in hindsight) Dockerfile pin (2.29.2), and came right
+# back the instant enforcing was turned on again (2.29.4) with that
+# same Dockerfile pin still in place, unchanged. That's AppArmor, not
+# the base image.
 #
-# Re-verified on the fixed build (2.29.3, pinned base image): same
-# real-usage pass as the first verification — chat, file upload,
-# avatar upload, the admin panel, adding a calendar event, posting a
-# GIF — covering every distinct code path this app has. dmesg stayed
-# clean of any AppArmor activity throughout, which in complain mode
-# specifically means nothing fell outside the rules below. Switched
-# back to enforcing on that basis.
-profile family_chat flags=(attach_disconnected,mediate_deleted) {
+# The actual gap: libpython3.11.so.1.0 lives directly in
+# /usr/local/lib/ on this image (confirmed by the exact paths in the
+# base-image bug reports that were originally — wrongly — treated as
+# the cause: "/usr/local/bin/../lib/libpython3.11.so.1.0" resolves to
+# /usr/local/lib/). The rules below only ever covered the
+# /usr/local/lib/python3.11/ *subdirectory*, never /usr/local/lib/
+# itself — so the interpreter's own shared library was never actually
+# granted, in either verification pass. Complain mode not catching
+# this either time remains an open question (a clean dmesg check after
+# real usage, twice, should have logged it if the container was ever
+# freshly started with this rule missing while in complain mode) — but
+# given the enforce/complain correlation is unambiguous across two
+# separate incidents, the missing rule is fixed below regardless of
+# fully explaining why complain mode didn't surface it.
+#
+# Back in complain mode again (2.29.5-fix) until this is re-verified
+# for real — go through the same process as before (real usage across
+# every feature, confirm dmesg stays clean, *then* remove ",complain")
+# rather than trusting this fix on reasoning alone a third time.
+profile family_chat flags=(attach_disconnected,mediate_deleted,complain) {
   #include <abstractions/base>
   #include <abstractions/python>
 
@@ -40,6 +59,10 @@ profile family_chat flags=(attach_disconnected,mediate_deleted) {
   /bin/sh ix,
   /run.sh r,
   /usr/local/bin/python3* ix,
+  # The interpreter's own shared library (libpython3.11.so.1.0) lives
+  # directly here, as a sibling of the python3.11/ subdirectory below —
+  # not inside it. This is the rule that was missing.
+  /usr/local/lib/*.so* mr,
   /usr/local/lib/python3.11/** r,
   /usr/local/lib/python3.11/**.so* mr,
   /usr/lib/*.so* mr,
