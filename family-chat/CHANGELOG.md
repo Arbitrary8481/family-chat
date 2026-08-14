@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.29.11
+
+### Fixed
+- **AppArmor enforcing mode broke Python's own startup entirely** — "Fatal Python error: init_fs_encoding" / "ModuleNotFoundError: No module named 'encodings'", before any application code runs. Reverted to complain mode immediately to restore service. Not guessing at the specific missing rule this time — see the next update once real evidence (a dmesg check from the actual failure) comes in.
+
 ## 2.29.10
 
 ### Changed

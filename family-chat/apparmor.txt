@@ -48,7 +48,15 @@
 # first verification pass done with real confidence that the code
 # under test actually matched what was intended. Switched to enforcing
 # on that basis.
-profile family_chat flags=(attach_disconnected,mediate_deleted) {
+#
+# That broke immediately anyway (2.29.11): "Fatal Python error:
+# init_fs_encoding: failed to get the Python codec of the filesystem
+# encoding" / "ModuleNotFoundError: No module named 'encodings'" — the
+# interpreter can't even complete its own startup, before any
+# application code runs. Reverted to complain mode again pending real
+# evidence (a dmesg check from the actual failure) rather than guessing
+# at the specific rule a third time.
+profile family_chat flags=(attach_disconnected,mediate_deleted,complain) {
   #include <abstractions/base>
   #include <abstractions/python>
 
