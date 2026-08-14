@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.29.10
+
+### Changed
+- **AppArmor switched back to enforcing mode**, on the strongest verification this profile has had. The two earlier "clean" complain-mode passes turned out to have a real, separate explanation for why they might not have been trustworthy: Home Assistant Supervisor's own local git clone of this repository had fallen out of sync with GitHub (see 2.29.9), meaning the code actually running during those checks may not have matched what was intended. That's now fixed — confirmed via a genuinely fresh clone. Re-verified from that build: real usage across every feature this app has, specifically including a deliberate container restart (the exact scenario the earlier missing-library-rule bug lived in), followed by the full feature pass including the avatar-in-message check. `dmesg` stayed clean of any AppArmor activity throughout.
+
+## 2.29.9
+
+### Fixed
+- **The deployed `script.js` had been silently out of date for months, across many versions.** Traced the avatar-in-messages bug all the way down and confirmed via direct inspection of the live browser's loaded source: the actually-running file had no `avatarInnerHtml()` function at all, no mentions feature, no mention badges or unread channel indicators, and `saveMyAlias()` still called plain `location.reload()` instead of the `forceFreshReload()` fix from 2.29.8. Meanwhile `server.py` and `config.yaml` were confirmed correctly up to date. Whatever's been applying these zips to the actual repo has apparently been failing specifically on this one file, version after version, while everything else landed fine. This version is unchanged from 2.29.8's actual intended content — it's not new work, it's making sure `script.js` genuinely gets there this time. If applying this doesn't work either, delete `app/static/script.js` from the repo first and add the new one fresh, rather than overwriting in place.
+
 ## 2.29.8
 
 ### Fixed

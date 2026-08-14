@@ -22,25 +22,33 @@
 # the base image.
 #
 # The actual gap: libpython3.11.so.1.0 lives directly in
-# /usr/local/lib/ on this image (confirmed by the exact paths in the
-# base-image bug reports that were originally — wrongly — treated as
-# the cause: "/usr/local/bin/../lib/libpython3.11.so.1.0" resolves to
-# /usr/local/lib/). The rules below only ever covered the
+# /usr/local/lib/ on this image. The rules below only ever covered the
 # /usr/local/lib/python3.11/ *subdirectory*, never /usr/local/lib/
 # itself — so the interpreter's own shared library was never actually
-# granted, in either verification pass. Complain mode not catching
-# this either time remains an open question (a clean dmesg check after
-# real usage, twice, should have logged it if the container was ever
-# freshly started with this rule missing while in complain mode) — but
-# given the enforce/complain correlation is unambiguous across two
-# separate incidents, the missing rule is fixed below regardless of
-# fully explaining why complain mode didn't surface it.
+# granted. Fixed at 2.29.6.
 #
-# Back in complain mode again (2.29.5-fix) until this is re-verified
-# for real — go through the same process as before (real usage across
-# every feature, confirm dmesg stays clean, *then* remove ",complain")
-# rather than trusting this fix on reasoning alone a third time.
-profile family_chat flags=(attach_disconnected,mediate_deleted,complain) {
+# Why complain mode hadn't already caught this in two earlier "clean"
+# passes turned out to have a real explanation, discovered later and
+# unrelated to this profile itself: Home Assistant Supervisor's own
+# local git clone of this add-on's repository had fallen out of sync
+# with GitHub, and app/static/script.js specifically had been silently
+# stale across many versions — confirmed by inspecting the actual
+# browser-loaded source, which was missing features known to exist in
+# the real repo. It's plausible the deployed container's overall
+# footprint during those earlier verification passes wasn't fully
+# representative of the intended build for the same reason. Fixed by
+# removing and re-adding the repository in the add-on store, forcing a
+# fresh clone (confirmed via the same script.js inspection).
+#
+# Re-verified from that genuinely fresh, correctly-synced build
+# (2.29.9): real usage across every feature this app has, specifically
+# including a deliberate container restart (the exact scenario the
+# missing-library-rule bug lived in) followed by the full feature pass.
+# dmesg stayed clean of any AppArmor activity throughout. This is the
+# first verification pass done with real confidence that the code
+# under test actually matched what was intended. Switched to enforcing
+# on that basis.
+profile family_chat flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/base>
   #include <abstractions/python>
 
