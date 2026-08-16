@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.29.12
+
+### Changed
+- **Rethought the AppArmor troubleshooting approach entirely, rather than a third narrow guess.** dmesg has never actually surfaced a usable denial for either Python-startup crash this profile has caused — most likely a rapidly-repeating crash loop pushing relevant lines out of its limited buffer, and/or the host's `auditd` intercepting kernel audit events before they reach the generic ring buffer dmesg reads from. Continuing to ask for that data wasn't going to work. Instead of trying a third time to precisely enumerate which specific path under `/usr/local/` was still missing, broadened the rule to cover that whole tree — the interpreter, its shared library, the standard library, any installed packages. Everything there is trusted, base-image-provided code, never anything user-supplied, so this isn't a meaningful security tradeoff; this profile's real value is in restricting `/data` access and network/capability use, not in micromanaging which stdlib files a trusted interpreter can read. Still in complain mode — needs the full real-usage verification again before enforcing is reconsidered.
+
 ## 2.29.11
 
 ### Fixed

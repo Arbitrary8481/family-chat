@@ -53,9 +53,18 @@
 # init_fs_encoding: failed to get the Python codec of the filesystem
 # encoding" / "ModuleNotFoundError: No module named 'encodings'" — the
 # interpreter can't even complete its own startup, before any
-# application code runs. Reverted to complain mode again pending real
-# evidence (a dmesg check from the actual failure) rather than guessing
-# at the specific rule a third time.
+# application code runs. Reverted to complain mode again immediately.
+#
+# dmesg never surfaced a usable denial for this failure either, same
+# as the first crash — most likely explained by a rapidly-repeating
+# crash loop pushing relevant lines out of dmesg's limited buffer
+# before anyone could check, and/or auditd on the host intercepting
+# kernel audit events before they reach the generic ring buffer dmesg
+# reads from. Rather than a third narrow guess at exactly which path
+# under /usr/local/ was still missing, broadened the rule for that
+# whole tree instead (see below) — everything under it is trusted,
+# base-image-provided code, so there's little real security cost to
+# not micromanaging it further.
 profile family_chat flags=(attach_disconnected,mediate_deleted,complain) {
   #include <abstractions/base>
   #include <abstractions/python>
@@ -75,12 +84,25 @@ profile family_chat flags=(attach_disconnected,mediate_deleted,complain) {
   /bin/sh ix,
   /run.sh r,
   /usr/local/bin/python3* ix,
-  # The interpreter's own shared library (libpython3.11.so.1.0) lives
-  # directly here, as a sibling of the python3.11/ subdirectory below —
-  # not inside it. This is the rule that was missing.
-  /usr/local/lib/*.so* mr,
-  /usr/local/lib/python3.11/** r,
-  /usr/local/lib/python3.11/**.so* mr,
+  # Everything else Python needs to boot and run lives somewhere under
+  # /usr/local/ on this image — the interpreter's own shared library,
+  # the standard library (including encodings/, needed before the
+  # interpreter can even finish starting), and any installed packages
+  # under site-packages/. Two earlier attempts to enumerate specific
+  # subpaths here (a rule for the stdlib subdirectory but not its
+  # sibling shared library; later, still not covering whatever
+  # init_fs_encoding's codec lookup actually touches) each broke
+  # startup outright in a different, narrow way — both only found
+  # after real production downtime, since dmesg never actually
+  # surfaced a denial for either failure to diagnose them properly in
+  # advance. Broad access to this whole tree instead, rather than a
+  # third attempt at precision: everything under /usr/local/ on this
+  # image is trusted, base-image-provided code, never anything
+  # user-supplied or externally influenced, so there's no real security
+  # value being given up here — this profile's actual value is in
+  # restricting /data access and network/capability use below, not in
+  # micromanaging which specific files a trusted interpreter can read.
+  /usr/local/** mr,
   /usr/lib/*.so* mr,
   /lib/*.so* mr,
 
