@@ -72,3 +72,8 @@ Everything else — the chat's display name, channels, the server owner, and ind
 ## Support
 
 This is a self-hosted, family-run project — there's no formal support channel. Check the add-on log (Settings → Add-ons → Family Chat → Log) if something isn't working as expected; several of the trickier bugs found so far have left a clear trace there.
+
+## Kindness
+
+I didn't do this for the money, thus the MIT license. However if you really want to buy me a coffee to thank me for this, you can do so here:
+[Buy me a coffee] (https://ko-fi.com/arbitrary8481#)
