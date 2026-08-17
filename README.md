@@ -1,6 +1,6 @@
 # Family Chat
 
-A private, Discord-style chat for your family that runs entirely inside Home Assistant. There's no separate account to create — Family Chat signs everyone in automatically using whoever's already logged into Home Assistant, so each person just shows up as themselves.
+A private chat for your family that runs entirely inside Home Assistant. There's no separate account to create — Family Chat signs everyone in automatically using whoever's already logged into Home Assistant, so each person just shows up as themselves. There are no ads, the data is all hosted on your Home Assistant system (make sure you have room for all those gifs and images your family posts) and no monetization being forced down your throat. 
 
 ## Features
 
@@ -14,6 +14,8 @@ A private, Discord-style chat for your family that runs entirely inside Home Ass
 
 **Custom emoji** — Upload your own emoji from Settings and use them anywhere the regular emoji picker appears.
 
+**Calendar integration** - Integrates directly with your home assistant calendar. However if you have more than one you can control which calendars it displays from the admin panel. Want to add a calendar item from a discussion with the family? Just click the calendar button in the messaging interface to do so!
+
 **File & screenshot sharing** — Attach a file with the 📎 button, or just paste a screenshot straight from your clipboard (Ctrl+V / Cmd+V) — no need to save it to disk first.
 
 **Clickable links** — URLs posted in a message become real, clickable links automatically.
@@ -22,7 +24,7 @@ A private, Discord-style chat for your family that runs entirely inside Home Ass
 
 **Delete messages** — Delete your own messages any time. Admins and the server owner can delete anyone's.
 
-**Push notifications** — Opt in (per channel) to get notified on your phone when a new message comes in, using Home Assistant's own notification system — specifically the Home Assistant Companion App. No separate push service, no extra accounts; just pick which of your devices to notify from Settings.
+**Push notifications** — Each user can opt in (per channel) to get notified on your phone when a new message comes in, using Home Assistant's own notification system — specifically the Home Assistant Companion App. No separate push service, no extra accounts; just pick which of your devices to notify from Settings. To be clear, this means you can use any currently configured notification system you have set up.
 
 **Personal display names** — Set your own display name (independent of your Home Assistant username) from Settings. An admin can also set or override anyone's from the admin panel.
 
