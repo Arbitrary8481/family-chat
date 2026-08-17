@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.30.4
+
+### Changed
+- **AppArmor switched back to enforcing mode**, on the `/etc/ssl/**` fix from 2.30.3. Verified with real usage covering GIPHY specifically (the feature that surfaced the gap) and the calendar (the other outbound-HTTPS feature this app has), on top of the standard restart-plus-full-feature-pass.
+
 ## 2.30.3
 
 ### Fixed

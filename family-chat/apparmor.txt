@@ -87,12 +87,14 @@
 # by this profile, only /etc/resolv.conf. Every outbound HTTPS call
 # this app makes (GIPHY, and Home Assistant's own Supervisor API) needs
 # this to verify the far end's certificate, so this gap would affect
-# both, not just GIPHY specifically. Reverted to complain mode again
-# pending the same real-usage re-verification as every previous fix to
-# this profile — specifically including GIPHY this time, since that's
-# the feature that surfaced the gap and the one most likely to still
-# be broken if the fix is incomplete.
-profile family_chat flags=(attach_disconnected,mediate_deleted,complain) {
+# both, not just GIPHY specifically.
+#
+# Re-verified on 2.30.3 (added /etc/ssl/** r,, still complain mode):
+# real usage covering GIPHY specifically (the feature that surfaced the
+# gap) and the calendar (the other outbound-HTTPS feature this app has,
+# worth confirming the same fix covers it too), on top of the standard
+# restart-plus-full-feature-pass. Switched to enforcing on that basis.
+profile family_chat flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/base>
   #include <abstractions/python>
 
