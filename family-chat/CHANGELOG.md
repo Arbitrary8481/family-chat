@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.30.1
+
+### Fixed
+- **Re-deploy only — the 2.30.0 avatar cropper's HTML never actually landed in the deployed app.** `script.js` deployed correctly this time (confirmed present in the browser's loaded source, including the cropper functions), but `index.html` — specifically the `avatarCropModal` element — didn't, confirmed directly via `document.getElementById('avatarCropModal')` returning `null` in the browser console. Same underlying pattern as the earlier script.js sync issue, just landing on a different file this time. No code changes in this version; it's the same 2.30.0 content, re-packaged.
+
 ## 2.30.0
 
 ### Added
