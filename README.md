@@ -76,4 +76,4 @@ This is a self-hosted, family-run project — there's no formal support channel.
 ## Kindness
 
 I didn't do this for the money, thus the MIT license. However if you really want to buy me a coffee to thank me for this, you can do so here:
-[Buy me a coffee] (https://ko-fi.com/arbitrary8481#)
+[Buy me a coffee](https://ko-fi.com/arbitrary8481#)
