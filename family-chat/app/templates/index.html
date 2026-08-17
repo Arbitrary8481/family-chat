@@ -263,6 +263,29 @@
         </div>
     </div>
 
+    <!-- Avatar crop modal. GIFs skip this entirely (see uploadMyAvatar in
+         script.js) since rasterizing to a canvas would strip animation —
+         this only ever handles static PNG/JPEG/WEBP selections. -->
+    <div class="modal hidden" id="avatarCropModal">
+        <div class="modal-content avatar-crop-content">
+            <div class="file-preview-header">
+                <h3>Adjust your photo</h3>
+                <button class="close-btn" onclick="closeAvatarCropper()">×</button>
+            </div>
+            <div class="avatar-crop-viewport" id="avatarCropViewport">
+                <img id="avatarCropImage" alt="" draggable="false">
+            </div>
+            <div class="avatar-crop-zoom-row">
+                <span class="avatar-crop-zoom-icon">🔍</span>
+                <input type="range" id="avatarCropZoom" min="0" max="100" value="0">
+            </div>
+            <div class="file-preview-actions">
+                <button class="btn btn-primary" onclick="applyAvatarCrop()">Save</button>
+                <button class="btn btn-secondary" onclick="closeAvatarCropper()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <div class="modal hidden" id="settingsModal">
         <div class="modal-content settings-modal-content">
             <div class="modal-header">

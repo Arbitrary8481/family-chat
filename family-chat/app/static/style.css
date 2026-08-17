@@ -1467,6 +1467,66 @@ body {
     color: var(--text-normal);
 }
 
+.avatar-crop-content {
+    max-width: 400px;
+}
+
+/* Fixed-size square window onto the image, masked to a circle so what's
+   visible here previews exactly the shape the final avatar renders as
+   everywhere else in the app (see .avatar-img's own border-radius:50%).
+   overflow:hidden is what actually does the cropping visually — the
+   <img> inside is free to be larger than this and get dragged/scaled
+   around underneath it. */
+.avatar-crop-viewport {
+    width: 280px;
+    height: 280px;
+    margin: 0 auto;
+    border-radius: 50%;
+    overflow: hidden;
+    position: relative;
+    background: var(--bg-tertiary);
+    cursor: grab;
+    /* Prevents the browser's own touch-scroll/pan gesture from
+       competing with drag-to-reposition on mobile — without this, a
+       finger-drag on a touchscreen scrolls the page instead of moving
+       the photo. */
+    touch-action: none;
+}
+
+.avatar-crop-viewport.dragging {
+    cursor: grabbing;
+}
+
+#avatarCropImage {
+    position: absolute;
+    top: 0;
+    left: 0;
+    /* Width/height and transform are both set from JS (see
+       renderAvatarCropTransform() in script.js) based on the current
+       zoom level and drag offset — nothing here is meaningful as a
+       static default beyond avoiding a flash of an unstyled, full-size
+       image before JS first positions it. */
+    transform-origin: top left;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+.avatar-crop-zoom-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 24px 0;
+}
+
+.avatar-crop-zoom-icon {
+    font-size: 14px;
+    opacity: 0.7;
+}
+
+.avatar-crop-zoom-row input[type="range"] {
+    flex: 1;
+}
+
 /* Buttons */
 .btn {
     padding: 10px 20px;

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.30.0
+
+### Added
+- **Avatar cropper.** Picking a photo for your avatar now opens a circular crop tool instead of uploading whatever you selected as-is — drag to reposition, use the zoom slider to scale, then Save. Built as a plain canvas-based tool (no external library), matching this app's existing pattern for its other custom pickers. Animated GIFs deliberately skip the cropper and upload directly as before, since rendering to a canvas only ever captures one static frame and would silently strip the animation — everything else (PNG/JPEG/WEBP) goes through cropping. The crop math (keeping the photo always fully covering the circular frame, however it's dragged or zoomed) was verified directly against a battery of cases — wide, tall, square, and undersized source images, minimum and maximum zoom, and recovery from a drag pushed intentionally out of bounds — all confirmed to never leave a gap or sample outside the original image's edges.
+
 ## 2.29.13
 
 ### Changed

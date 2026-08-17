@@ -987,6 +987,26 @@ function handlePasteImage(event) {
 }
 document.addEventListener('paste', handlePasteImage);
 
+// Avatar crop drag — mouse/touch listeners live on the document (not
+// just the viewport element) for move/end specifically, since a drag
+// that started inside the circular viewport should keep tracking even
+// if the pointer moves outside it mid-drag, rather than dropping the
+// gesture the instant the cursor crosses the viewport's edge.
+document.addEventListener('DOMContentLoaded', () => {
+    const viewport = document.getElementById('avatarCropViewport');
+    if (!viewport) return;
+    viewport.addEventListener('mousedown', onAvatarCropDragStart);
+    viewport.addEventListener('touchstart', onAvatarCropDragStart, { passive: false });
+    document.addEventListener('mousemove', onAvatarCropDragMove);
+    document.addEventListener('touchmove', onAvatarCropDragMove, { passive: false });
+    document.addEventListener('mouseup', onAvatarCropDragEnd);
+    document.addEventListener('touchend', onAvatarCropDragEnd);
+
+    const zoomSlider = document.getElementById('avatarCropZoom');
+    if (zoomSlider) zoomSlider.addEventListener('input', onAvatarCropZoomChange);
+});
+
+
 function showFilePreview(data, file) {
     const modal = document.getElementById('fileModal');
     const content = document.getElementById('filePreviewContent');
@@ -2013,8 +2033,27 @@ function uploadMyAvatar(event) {
     const file = fileInput.files[0];
     if (!file) return;
 
+    // GIFs skip the cropper entirely and upload as-is — cropping means
+    // rendering to a canvas, which only ever captures a single static
+    // frame and would silently strip the animation from an animated
+    // avatar. Everything else (PNG/JPEG/WEBP) goes through cropping.
+    if (file.type === 'image/gif') {
+        submitAvatarFile(file, fileInput);
+        return;
+    }
+
+    openAvatarCropper(file, fileInput);
+}
+
+function submitAvatarFile(file, fileInputToReset) {
     const formData = new FormData();
-    formData.append('file', file);
+    // A real File (the GIF-bypass path) already carries its own
+    // filename; a bare Blob (canvas.toBlob()'s output, from the crop
+    // flow) doesn't, and would otherwise default to the generic name
+    // "blob" — giving it a real one is purely for clarity/debugging,
+    // not correctness, since the server derives the saved extension
+    // from the declared mimetype either way, never the filename.
+    formData.append('file', file, file.name || 'avatar-cropped.png');
 
     fetch(apiUrl('/api/my-avatar'), {
         method: 'POST',
@@ -2032,7 +2071,180 @@ function uploadMyAvatar(event) {
             forceFreshReload();
         })
         .catch(() => alert("Couldn't upload your avatar. Please try again."))
-        .finally(() => { fileInput.value = ''; });
+        .finally(() => { if (fileInputToReset) fileInputToReset.value = ''; });
+}
+
+// --- Avatar cropper ---
+// A fixed-size circular viewport (see .avatar-crop-viewport in CSS) onto
+// an image the person can drag to reposition and zoom to scale, always
+// kept large enough to fully cover the viewport (no gaps). All position
+// state below is in "already scaled" CSS pixels — offsetX/offsetY are
+// where the image's top-left corner sits relative to the viewport's,
+// not raw image coordinates.
+let avatarCropState = null; // null when the modal isn't open
+let avatarCropDrag = null; // null when not actively dragging
+const AVATAR_CROP_VIEWPORT_SIZE = 280;
+const AVATAR_CROP_MAX_ZOOM_MULTIPLIER = 3;
+const AVATAR_CROP_OUTPUT_SIZE = 400;
+
+function openAvatarCropper(file, fileInputToReset) {
+    const modal = document.getElementById('avatarCropModal');
+    const img = document.getElementById('avatarCropImage');
+    if (!modal || !img) return;
+
+    const objectUrl = URL.createObjectURL(file);
+    img.src = objectUrl;
+    img.onerror = () => {
+        // Without this, a corrupted file or a format quirk that passes
+        // the file input's accept filter but isn't actually decodable
+        // fails completely silently — the modal never opens, nothing
+        // tells the person anything went wrong, and the object URL
+        // leaks since nothing ever revokes it.
+        URL.revokeObjectURL(objectUrl);
+        img.onload = null;
+        img.onerror = null;
+        if (fileInputToReset) fileInputToReset.value = '';
+        alert("Couldn't open that image. Please try a different photo.");
+    };
+    img.onload = () => {
+        img.onerror = null;
+        const minScale = AVATAR_CROP_VIEWPORT_SIZE / Math.min(img.naturalWidth, img.naturalHeight);
+        avatarCropState = {
+            file,
+            fileInputToReset,
+            objectUrl,
+            naturalWidth: img.naturalWidth,
+            naturalHeight: img.naturalHeight,
+            minScale,
+            scale: minScale,
+            // Centered by default — the dimension that overflows the
+            // viewport (whichever one isn't the constraining one that
+            // minScale was based on) starts evenly split on both sides.
+            offsetX: (AVATAR_CROP_VIEWPORT_SIZE - img.naturalWidth * minScale) / 2,
+            offsetY: (AVATAR_CROP_VIEWPORT_SIZE - img.naturalHeight * minScale) / 2,
+        };
+        const zoomSlider = document.getElementById('avatarCropZoom');
+        if (zoomSlider) zoomSlider.value = 0;
+        renderAvatarCropTransform();
+        modal.classList.remove('hidden');
+    };
+}
+
+function clampAvatarCropOffsets(state) {
+    const displayedWidth = state.naturalWidth * state.scale;
+    const displayedHeight = state.naturalHeight * state.scale;
+    // Image edges can never pull inward past the viewport edges — right
+    // edge must reach at least the viewport's right side, left edge can
+    // never be right of the viewport's left side, and so on for top/bottom.
+    state.offsetX = Math.min(0, Math.max(AVATAR_CROP_VIEWPORT_SIZE - displayedWidth, state.offsetX));
+    state.offsetY = Math.min(0, Math.max(AVATAR_CROP_VIEWPORT_SIZE - displayedHeight, state.offsetY));
+}
+
+function renderAvatarCropTransform() {
+    if (!avatarCropState) return;
+    const img = document.getElementById('avatarCropImage');
+    if (!img) return;
+    clampAvatarCropOffsets(avatarCropState);
+    img.style.width = `${avatarCropState.naturalWidth * avatarCropState.scale}px`;
+    img.style.height = `${avatarCropState.naturalHeight * avatarCropState.scale}px`;
+    img.style.transform = `translate(${avatarCropState.offsetX}px, ${avatarCropState.offsetY}px)`;
+}
+
+function onAvatarCropZoomChange() {
+    if (!avatarCropState) return;
+    const slider = document.getElementById('avatarCropZoom');
+    if (!slider) return;
+    const t = Number(slider.value) / 100; // 0..1
+    avatarCropState.scale = avatarCropState.minScale * (1 + t * (AVATAR_CROP_MAX_ZOOM_MULTIPLIER - 1));
+    // Re-clamping (inside renderAvatarCropTransform) rather than
+    // re-centering keeps whatever part of the photo was framed before
+    // the zoom change as close to framed as it can still validly be,
+    // instead of snapping back to center on every slider move.
+    renderAvatarCropTransform();
+}
+
+function avatarCropPointerPos(e) {
+    if (e.touches && e.touches.length > 0) {
+        return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+    return { x: e.clientX, y: e.clientY };
+}
+
+function onAvatarCropDragStart(e) {
+    if (!avatarCropState) return;
+    const pos = avatarCropPointerPos(e);
+    avatarCropDrag = {
+        startX: pos.x,
+        startY: pos.y,
+        startOffsetX: avatarCropState.offsetX,
+        startOffsetY: avatarCropState.offsetY,
+    };
+    const viewport = document.getElementById('avatarCropViewport');
+    if (viewport) viewport.classList.add('dragging');
+    e.preventDefault();
+}
+
+function onAvatarCropDragMove(e) {
+    if (!avatarCropDrag || !avatarCropState) return;
+    const pos = avatarCropPointerPos(e);
+    avatarCropState.offsetX = avatarCropDrag.startOffsetX + (pos.x - avatarCropDrag.startX);
+    avatarCropState.offsetY = avatarCropDrag.startOffsetY + (pos.y - avatarCropDrag.startY);
+    renderAvatarCropTransform();
+    e.preventDefault();
+}
+
+function onAvatarCropDragEnd() {
+    avatarCropDrag = null;
+    const viewport = document.getElementById('avatarCropViewport');
+    if (viewport) viewport.classList.remove('dragging');
+}
+
+function applyAvatarCrop() {
+    if (!avatarCropState) return;
+    const img = document.getElementById('avatarCropImage');
+    if (!img) return;
+
+    // Working backward from the current on-screen transform to figure
+    // out which square region of the *original, full-resolution* image
+    // is currently visible in the viewport — dividing by scale converts
+    // from on-screen (already-scaled) pixels back to natural image
+    // pixels.
+    const sourceX = -avatarCropState.offsetX / avatarCropState.scale;
+    const sourceY = -avatarCropState.offsetY / avatarCropState.scale;
+    const sourceSize = AVATAR_CROP_VIEWPORT_SIZE / avatarCropState.scale;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = AVATAR_CROP_OUTPUT_SIZE;
+    canvas.height = AVATAR_CROP_OUTPUT_SIZE;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, sourceX, sourceY, sourceSize, sourceSize, 0, 0, AVATAR_CROP_OUTPUT_SIZE, AVATAR_CROP_OUTPUT_SIZE);
+
+    const fileInputToReset = avatarCropState.fileInputToReset;
+    canvas.toBlob(blob => {
+        if (!blob) {
+            alert("Couldn't process that image. Please try a different photo.");
+            return;
+        }
+        closeAvatarCropper();
+        submitAvatarFile(blob, fileInputToReset);
+    }, 'image/png');
+}
+
+function closeAvatarCropper() {
+    const modal = document.getElementById('avatarCropModal');
+    if (modal) modal.classList.add('hidden');
+    if (avatarCropState) {
+        // Selecting Cancel (rather than Save) still leaves a picked file
+        // sitting in the <input> — without resetting it here, choosing
+        // the exact same file again afterward wouldn't even fire a
+        // change event (browsers only fire "change" when the value
+        // actually differs from before), so the cropper would silently
+        // fail to reopen.
+        if (avatarCropState.fileInputToReset) avatarCropState.fileInputToReset.value = '';
+        URL.revokeObjectURL(avatarCropState.objectUrl);
+    }
+    avatarCropState = null;
+    avatarCropDrag = null;
 }
 
 function removeMyAvatar() {
