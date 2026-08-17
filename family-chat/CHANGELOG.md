@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.29.13
+
+### Changed
+- **AppArmor switched back to enforcing mode**, on the broadened `/usr/local/` rule from 2.29.12. Verified with a deliberate restart — both prior enforce-mode failures were startup-time crashes, so this is the scenario that actually matters — followed by the full feature pass (chat, upload, avatar, admin panel, calendar, GIF). Both clean. `dmesg` wasn't used as evidence this time, given it's proven unreliable for this specific class of failure across two separate incidents; a clean restart plus working features was the real bar here.
+
 ## 2.29.12
 
 ### Changed

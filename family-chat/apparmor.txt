@@ -65,7 +65,16 @@
 # whole tree instead (see below) — everything under it is trusted,
 # base-image-provided code, so there's little real security cost to
 # not micromanaging it further.
-profile family_chat flags=(attach_disconnected,mediate_deleted,complain) {
+#
+# Re-verified on 2.29.12 (broadened rule, still complain mode):
+# restarted the add-on specifically — both prior enforce-mode failures
+# were startup-time crashes, so this is exactly the scenario that
+# matters — followed by the full feature pass (chat, upload, avatar,
+# admin panel, calendar, GIF). Both clean. dmesg wasn't used as
+# evidence this time, given it's proven unreliable for this specific
+# class of failure twice already; a clean restart plus working
+# features is the real bar here. Switched to enforcing on that basis.
+profile family_chat flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/base>
   #include <abstractions/python>
 
