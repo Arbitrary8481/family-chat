@@ -1,6 +1,6 @@
 # Family Chat
 
-A private chat for your family that runs entirely inside Home Assistant. There's no separate account to create — Family Chat signs everyone in automatically using whoever's already logged into Home Assistant, so each person just shows up as themselves. There are no ads, the data is all hosted on your Home Assistant system (make sure you have room for all those gifs and images your family posts) and no monetization being forced down your throat. 
+A private chat for your family that runs entirely inside Home Assistant. There's no separate account to create — Family Chat signs everyone in automatically using whoever's already logged into Home Assistant, so each person just shows up as themselves. There are no ads, the data is all hosted on your Home Assistant system (make sure you have room for all those gifs and images your family posts) and no monetization being forced down your throat.
 
 ## Features
 
@@ -61,13 +61,13 @@ Some features (channel add/delete permissions, notifications) rely on add-on per
 
 ## Configuration
 
-| Option | Description |
-|---|---|
-| `theme` | `dark` or `light`. |
-| `max_file_size` | Maximum upload size, in MB. |
-| `admin_password` | Password for the admin panel (`/admin`). Change this from the default. |
-| `giphy_api_key` | Optional. Enables the GIF picker when set; the picker is hidden until it's configured. |
-| `allowed_file_types` | MIME type patterns permitted for uploads (e.g. `image/*`, `application/pdf`). |
+| Option               | Description                                                                            |
+| -------------------- | -------------------------------------------------------------------------------------- |
+| `theme`              | `dark` or `light`.                                                                     |
+| `max_file_size`      | Maximum upload size, in MB.                                                            |
+| `admin_password`     | Password for the admin panel (`/admin`). Change this from the default.                 |
+| `giphy_api_key`      | Optional. Enables the GIF picker when set; the picker is hidden until it's configured. |
+| `allowed_file_types` | MIME type patterns permitted for uploads (e.g. `image/*`, `application/pdf`).          |
 
 Everything else — the chat's display name, channels, the server owner, and individual display names — is configured from within the app itself (the admin panel, or each person's own Settings), not from this options screen.
 
@@ -77,5 +77,4 @@ This is a self-hosted, family-run project — there's no formal support channel.
 
 ## Kindness
 
-I didn't do this for the money, thus the MIT license. However if you really want to buy me a coffee to thank me for this, you can do so here:
-[Buy me a coffee](https://ko-fi.com/arbitrary8481#)
+I didn't do this for the money, thus the MIT license. However if you really want to buy me a coffee to thank me for this, you can do so here: [Buy me a coffee](https://ko-fi.com/arbitrary8481)

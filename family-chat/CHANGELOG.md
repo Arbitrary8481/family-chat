@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.31.0
+
+### Added
+- **Channel categories.** The sidebar now groups channels under category headers (Discord-style). Only an admin can create or remove a category, from the admin panel — anyone can still add a channel themselves, same as before, but now has to pick which existing category it belongs to. Existing installs get migrated automatically: every channel that existed before this update lands in a new "General" category created just for that purpose, so nothing changes visually on upgrade beyond the new header. A category with channels still in it can't be deleted, and there always has to be at least one category, for the same reason there always has to be at least one channel — nothing can be left without a place to belong.
+
 ## 2.30.4
 
 ### Changed

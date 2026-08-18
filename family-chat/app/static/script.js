@@ -1897,6 +1897,36 @@ function loadChannelsSettings() {
         .catch(() => {
             list.innerHTML = '<p class="settings-hint">Couldn\'t load channels.</p>';
         });
+
+    loadChannelCategoriesForAddForm();
+}
+
+// Populates the category dropdown in the "Add a channel" form — a
+// channel always needs a real, existing category to belong to, so this
+// has to be current every time the form could be used, not just
+// fetched once at page load.
+function loadChannelCategoriesForAddForm() {
+    const select = document.getElementById('newChannelCategory');
+    if (!select) return;
+    select.innerHTML = '<option value="">Loading categories…</option>';
+
+    fetch(apiUrl('/api/categories'))
+        .then(r => r.json())
+        .then(categories => {
+            if (!categories || categories.length === 0) {
+                // Shouldn't actually happen — the server always keeps at
+                // least one category — but a channel truly cannot be
+                // added without one, so this is the honest state to show
+                // if it somehow ever does.
+                select.innerHTML = '<option value="">No categories yet — ask an admin to add one</option>';
+                return;
+            }
+            select.innerHTML = '<option value="">Choose a category…</option>' +
+                categories.map(cat => `<option value="${cat.id}">${escapeHtml(cat.name)}</option>`).join('');
+        })
+        .catch(() => {
+            select.innerHTML = '<option value="">Couldn\'t load categories — try again</option>';
+        });
 }
 
 function deleteChannelSettings(slug) {
@@ -1938,9 +1968,16 @@ function removeChannelFromSidebar(slug, remainingChannels) {
 // without a full page reload needs the same treatment here to actually
 // be clickable.
 function addChannelToSidebar(ch) {
-    const channelList = document.querySelector('.channel-sidebar .channel-list');
-    if (!channelList) return;
-    if (channelList.querySelector(`.channel[data-channel="${CSS.escape(ch.slug)}"]`)) return;
+    // Channels are now grouped by category in the sidebar (see
+    // index.html) — this has to land in the right category's own
+    // container, not just get appended to a flat list the way it used
+    // to. The category itself is guaranteed to already be there: a
+    // channel can only ever be added into a category that already
+    // exists, and the sidebar renders every category server-side at
+    // page load.
+    const categoryGroup = document.querySelector(`.category-channels[data-category-id="${ch.category_id}"]`);
+    if (!categoryGroup) return;
+    if (categoryGroup.querySelector(`.channel[data-channel="${CSS.escape(ch.slug)}"]`)) return;
 
     const el = document.createElement('div');
     el.className = 'channel';
@@ -1949,25 +1986,31 @@ function addChannelToSidebar(ch) {
     el.addEventListener('click', function() {
         switchChannel(this.dataset.channel);
     });
-    channelList.appendChild(el);
+    categoryGroup.appendChild(el);
 }
 
 function addChannel() {
     const iconInput = document.getElementById('newChannelIcon');
     const nameInput = document.getElementById('newChannelName');
+    const categorySelect = document.getElementById('newChannelCategory');
     const status = document.getElementById('addChannelStatus');
     const icon = iconInput ? iconInput.value.trim() : '';
     const name = nameInput ? nameInput.value.trim() : '';
+    const category_id = categorySelect ? categorySelect.value : '';
 
     if (!name) {
         alert('Give the channel a name first.');
+        return;
+    }
+    if (!category_id) {
+        alert('Choose a category first.');
         return;
     }
 
     fetch(apiUrl('/api/channels/add'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, icon })
+        body: JSON.stringify({ name, icon, category_id })
     })
         .then(r => r.json())
         .then(data => {

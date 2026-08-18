@@ -351,6 +351,37 @@ def init_db():
             ]
         )
 
+    # Channel categories — sidebar section headers a channel belongs
+    # under (Discord-style). Only an admin can create one; anyone can
+    # still add a channel, but only into a category that already
+    # exists.
+    c.execute('''CREATE TABLE IF NOT EXISTS channel_categories
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  name TEXT NOT NULL,
+                  created_at TEXT NOT NULL)''')
+
+    c.execute("PRAGMA table_info(channels)")
+    if 'category_id' not in [col[1] for col in c.fetchall()]:
+        c.execute('ALTER TABLE channels ADD COLUMN category_id INTEGER')
+
+    # Added after channels already existed, on every install — nothing
+    # created before this point has a category yet, and the sidebar now
+    # always groups by category rather than falling back to a flat
+    # list, so every existing channel needs a real home rather than
+    # silently becoming invisible. Only creates the fallback category
+    # if it's actually needed for something.
+    c.execute('SELECT COUNT(*) FROM channels WHERE category_id IS NULL')
+    if c.fetchone()[0] > 0:
+        c.execute('SELECT id FROM channel_categories WHERE name = ?', ('General',))
+        row = c.fetchone()
+        if row:
+            default_category_id = row[0]
+        else:
+            c.execute('INSERT INTO channel_categories (name, created_at) VALUES (?, ?)',
+                       ('General', datetime.now().isoformat()))
+            default_category_id = c.lastrowid
+        c.execute('UPDATE channels SET category_id = ? WHERE category_id IS NULL', (default_category_id,))
+
     # Per-person notification preference, keyed by the same stable HA user
     # ID used everywhere else. notify_service is a Home Assistant
     # notify.* service name (e.g. "mobile_app_johns_iphone") created
@@ -572,15 +603,70 @@ def slugify(text):
     slug = re.sub(r'[^a-z0-9]+', '-', text.strip().lower()).strip('-')
     return slug[:30]
 
+def get_categories():
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('SELECT id, name FROM channel_categories ORDER BY id ASC')
+    rows = c.fetchall()
+    conn.close()
+    return [{'id': r[0], 'name': r[1]} for r in rows]
+
+def add_category(name):
+    name = name.strip()[:30]
+    if not name:
+        return None, 'Category name is required.'
+
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('SELECT 1 FROM channel_categories WHERE name = ?', (name,))
+    if c.fetchone():
+        conn.close()
+        return None, 'A category with that name already exists.'
+    c.execute('INSERT INTO channel_categories (name, created_at) VALUES (?, ?)',
+               (name, datetime.now().isoformat()))
+    category_id = c.lastrowid
+    conn.commit()
+    conn.close()
+    return category_id, None
+
+def delete_category(category_id):
+    try:
+        category_id = int(category_id)
+    except (TypeError, ValueError):
+        return False, 'Invalid category.'
+
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    # A category with channels still in it can't just vanish — those
+    # channels would be left with a category_id pointing at nothing,
+    # and the sidebar has no "uncategorized" fallback section to show
+    # them in. Move or delete its channels first, same reasoning as
+    # "can't delete the last channel" below.
+    c.execute('SELECT COUNT(*) FROM channels WHERE category_id = ?', (category_id,))
+    if c.fetchone()[0] > 0:
+        conn.close()
+        return False, "Move or delete this category's channels first."
+    c.execute('SELECT COUNT(*) FROM channel_categories')
+    if c.fetchone()[0] <= 1:
+        conn.close()
+        return False, "Can't delete the last remaining category — every channel needs one to belong to."
+    c.execute('DELETE FROM channel_categories WHERE id = ?', (category_id,))
+    conn.commit()
+    conn.close()
+    return True, None
+
 def get_channels():
     conn = sqlite3.connect('/data/chat.db')
     c = conn.cursor()
-    c.execute('SELECT slug, name, icon FROM channels ORDER BY id ASC')
+    c.execute('''SELECT ch.slug, ch.name, ch.icon, ch.category_id, cc.name
+                 FROM channels ch
+                 LEFT JOIN channel_categories cc ON cc.id = ch.category_id
+                 ORDER BY ch.category_id ASC, ch.id ASC''')
     rows = c.fetchall()
     conn.close()
-    return [{'slug': r[0], 'name': r[1], 'icon': r[2]} for r in rows]
+    return [{'slug': r[0], 'name': r[1], 'icon': r[2], 'category_id': r[3], 'category_name': r[4]} for r in rows]
 
-def add_channel(name, icon):
+def add_channel(name, icon, category_id):
     name = name.strip()[:30]
     icon = (icon.strip() or '#')[:8]
     slug = slugify(name)
@@ -589,11 +675,27 @@ def add_channel(name, icon):
 
     conn = sqlite3.connect('/data/chat.db')
     c = conn.cursor()
+
+    # A channel always belongs to a real category — admins create
+    # categories, everyone else picks from what already exists.
+    # Validated here against the actual table, not just trusted from
+    # whatever the client's dropdown happened to submit.
+    try:
+        category_id = int(category_id)
+    except (TypeError, ValueError):
+        conn.close()
+        return None, 'Choose a category for this channel.'
+    c.execute('SELECT 1 FROM channel_categories WHERE id = ?', (category_id,))
+    if not c.fetchone():
+        conn.close()
+        return None, 'Choose a valid category.'
+
     c.execute('SELECT 1 FROM channels WHERE slug = ?', (slug,))
     if c.fetchone():
         conn.close()
         return None, 'A channel with that name already exists.'
-    c.execute('INSERT INTO channels (slug, name, icon) VALUES (?, ?, ?)', (slug, name, icon))
+    c.execute('INSERT INTO channels (slug, name, icon, category_id) VALUES (?, ?, ?, ?)',
+               (slug, name, icon, category_id))
     conn.commit()
     conn.close()
     return slug, None
@@ -886,6 +988,7 @@ def index():
                           asset_version=asset_version,
                           inline_css=INLINE_CSS,
                           channels=get_channels(),
+                          categories=get_categories(),
                           auto_user=auto_user,
                           auto_user_id=auto_user_id,
                           auto_avatar=get_avatar(auto_user_id) if auto_user_id else None,
@@ -900,17 +1003,23 @@ def index():
 def api_channels():
     return jsonify(get_channels())
 
+@app.route('/api/categories')
+def api_categories():
+    return jsonify(get_categories())
+
 @app.route('/api/channels/add', methods=['POST'])
 def api_add_channel():
     # Adding a channel is self-service for any signed-in family member.
     # Deleting one is more disruptive (affects everyone, drops it out of
     # the sidebar for the whole family at once) — see api_delete_channel
-    # below for who's allowed to do that.
+    # below for who's allowed to do that. Categories are the other way
+    # around: only an admin can create one (see admin_add_category),
+    # but anyone can add a channel into one that already exists.
     ha_user_id = request.headers.get('X-Remote-User-Id')
     if not ha_user_id:
         return jsonify({'error': 'Not accessed through Home Assistant'}), 403
     data = request.get_json(silent=True) or {}
-    slug, error = add_channel(data.get('name', ''), data.get('icon', '#'))
+    slug, error = add_channel(data.get('name', ''), data.get('icon', '#'), data.get('category_id'))
     if error:
         return jsonify({'error': error}), 400
     return jsonify({'success': True, 'slug': slug, 'channels': get_channels()})
@@ -1096,6 +1205,7 @@ def admin_panel():
                           saved=request.args.get('saved'),
                           active_tab=request.args.get('tab', 'chatname'),
                           channels=get_channels(),
+                          categories=get_categories(),
                           channel_error=request.args.get('channel_error'),
                           ha_accounts=get_known_ha_accounts(),
                           current_owner_id=get_owner_user_id(),
@@ -1157,6 +1267,22 @@ def admin_logout():
 def admin_delete_channel():
     slug = request.form.get('slug', '')
     ok, error = delete_channel(slug)
+    if error:
+        return ingress_redirect(url_for('admin_panel', channel_error=error, tab='channels'))
+    return ingress_redirect(url_for('admin_panel', saved='1', tab='channels'))
+
+@app.route('/admin/categories/add', methods=['POST'])
+@require_admin
+def admin_add_category():
+    category_id, error = add_category(request.form.get('name', ''))
+    if error:
+        return ingress_redirect(url_for('admin_panel', channel_error=error, tab='channels'))
+    return ingress_redirect(url_for('admin_panel', saved='1', tab='channels'))
+
+@app.route('/admin/categories/delete', methods=['POST'])
+@require_admin
+def admin_delete_category():
+    ok, error = delete_category(request.form.get('category_id', ''))
     if error:
         return ingress_redirect(url_for('admin_panel', channel_error=error, tab='channels'))
     return ingress_redirect(url_for('admin_panel', saved='1', tab='channels'))

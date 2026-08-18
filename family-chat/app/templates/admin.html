@@ -247,6 +247,24 @@
             margin-top: 20px;
             line-height: 1.5;
         }
+        .channel-row-category {
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+        .inline-add-form {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .inline-add-form input[type="text"] {
+            flex: 1;
+        }
+        .inline-add-form button {
+            width: auto;
+            margin-top: 0;
+            padding: 10px 16px;
+            white-space: nowrap;
+        }
     </style>
 </head>
 <body>
@@ -307,12 +325,30 @@
 
                 <!-- Channels -->
                 <div class="admin-tab-panel{% if active_tab == 'channels' %} active{% endif %}" id="adminTab-channels">
-                    <h2 class="section-title">Channels</h2>
+                    <h2 class="section-title">Categories</h2>
                     {% if channel_error %}<div class="message error">{{ channel_error }}</div>{% endif %}
+                    <div class="channel-manage-list">
+                        {% for cat in categories %}
+                        <div class="channel-row">
+                            <span class="channel-row-label">{{ cat.name }}</span>
+                            <form method="post" action="./admin/categories/delete">
+                                <input type="hidden" name="category_id" value="{{ cat.id }}">
+                                <button type="submit" class="delete-btn" title="Delete category"{% if categories|length <= 1 %} disabled{% endif %}>✕</button>
+                            </form>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <form method="post" action="./admin/categories/add" class="inline-add-form">
+                        <input type="text" name="name" placeholder="New category name" maxlength="30" required>
+                        <button type="submit">Add Category</button>
+                    </form>
+                    <p class="hint">Only an admin can create or remove a category. A category with channels still in it can't be deleted — move or delete those channels first. At least one category must always exist, since every channel needs one to belong to.</p>
+
+                    <h2 class="section-title" style="margin-top: 32px;">Channels</h2>
                     <div class="channel-manage-list">
                         {% for ch in channels %}
                         <div class="channel-row">
-                            <span class="channel-row-label">{{ ch.icon }} {{ ch.name }}</span>
+                            <span class="channel-row-label">{{ ch.icon }} {{ ch.name }} <span class="channel-row-category">— {{ ch.category_name }}</span></span>
                             <form method="post" action="./admin/channels/delete">
                                 <input type="hidden" name="slug" value="{{ ch.slug }}">
                                 <button type="submit" class="delete-btn" title="Delete channel"{% if channels|length <= 1 %} disabled{% endif %}>✕</button>
@@ -320,7 +356,7 @@
                         </div>
                         {% endfor %}
                     </div>
-                    <p class="hint">Adding a channel is self-service now — anyone can do it from the chat's own Settings (✏️) → Channels tab. Deleting one here just hides it from the sidebar — its messages aren't deleted, and reappear if a channel with the same name is added again later. At least one channel must always exist.</p>
+                    <p class="hint">Adding a channel is self-service — anyone can do it from the chat's own Settings (✏️) → Channels tab, into any category that already exists. Deleting one here just hides it from the sidebar — its messages aren't deleted, and reappear if a channel with the same name is added again later. At least one channel must always exist.</p>
                 </div>
 
                 <!-- Server Owner -->

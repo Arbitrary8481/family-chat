@@ -28,12 +28,17 @@
                 <h3>{{ server_icon }} {{ server_name }}</h3>
             </div>
             <div class="channel-list">
-                <div class="category">TEXT CHANNELS</div>
-                {% for ch in channels %}
-                <div class="channel{% if loop.first %} active{% endif %}" data-channel="{{ ch.slug }}">
+                {% for cat in categories %}
+                {% set is_first_category = loop.first %}
+                <div class="category">{{ cat.name }}</div>
+                <div class="category-channels" data-category-id="{{ cat.id }}">
+                {% for ch in channels if ch.category_id == cat.id %}
+                <div class="channel{% if is_first_category and loop.first %} active{% endif %}" data-channel="{{ ch.slug }}">
                     <span class="channel-icon">{{ ch.icon }}</span>
                     <span class="channel-name">{{ ch.name }}</span>
                     <span class="mention-badge hidden" data-mention-badge="{{ ch.slug }}"></span>
+                </div>
+                {% endfor %}
                 </div>
                 {% endfor %}
             </div>
@@ -384,6 +389,9 @@
                             <label style="display:block; font-size: 13px; color: var(--text-muted); margin: 16px 0 6px;">
                                 Add a channel
                             </label>
+                            <select id="newChannelCategory" class="settings-select" style="margin-bottom: 8px;">
+                                <option value="">Loading categories…</option>
+                            </select>
                             <div class="emoji-upload" style="padding: 0; border-bottom: none;">
                                 <input type="text" id="newChannelIcon" maxlength="8" placeholder="#" style="flex: 0 1 60px;">
                                 <input type="text" id="newChannelName" maxlength="30" placeholder="e.g. school-stuff" style="flex: 1 1 140px;">
@@ -391,7 +399,7 @@
                             </div>
                             <p id="addChannelStatus" class="settings-save-status hidden"></p>
                             <p style="font-size: 12px; color: var(--text-muted); margin-top: 12px;">
-                                Anyone can add a channel. Removing one is admin-only, from the admin panel.
+                                Anyone can add a channel, into any category that already exists. Categories themselves are admin-only, from the admin panel.
                             </p>
                         </div>
                     </div>
