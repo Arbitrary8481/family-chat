@@ -2,6 +2,7 @@ name: "Family Chat"
 version: "2.31.2"
 slug: "family_chat"
 description: "Private Discord-like chat for your family with file sharing and emojis"
+"icon": "icon.png"
 arch:
   - amd64
   - aarch64
