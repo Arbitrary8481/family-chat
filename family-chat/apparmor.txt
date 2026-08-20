@@ -1,0 +1,201 @@
+#include <tunables/global>
+
+# --- Verification history ---
+# Shipped in "complain" mode initially (2.29.0) — verified against a
+# real instance, switched to enforcing (2.29.1) on that basis.
+#
+# That crashed the add-on outright: "Error loading shared library
+# libpython3.11.so.1.0" / "Error relocating ...: Py_BytesMain: symbol
+# not found". Wrongly attributed at the time (2.29.2) to an unrelated
+# python:3.11-alpine base-image bug, based on the assumption that an
+# AppArmor denial always produces "Permission denied" rather than "No
+# such file or directory" — that assumption doesn't hold for a denied
+# *executable mapping* of a library specifically (how the dynamic
+# loader actually loads a shared library, as opposed to a plain file
+# read), which can surface through the loader's own generic error
+# message instead. The real evidence was the timing, not the base
+# image: this crashed exactly when enforcing was turned on (2.29.1),
+# went away when reverted to complain mode *together with* the
+# (unnecessary, in hindsight) Dockerfile pin (2.29.2), and came right
+# back the instant enforcing was turned on again (2.29.4) with that
+# same Dockerfile pin still in place, unchanged. That's AppArmor, not
+# the base image.
+#
+# The actual gap: libpython3.11.so.1.0 lives directly in
+# /usr/local/lib/ on this image. The rules below only ever covered the
+# /usr/local/lib/python3.11/ *subdirectory*, never /usr/local/lib/
+# itself — so the interpreter's own shared library was never actually
+# granted. Fixed at 2.29.6.
+#
+# Why complain mode hadn't already caught this in two earlier "clean"
+# passes turned out to have a real explanation, discovered later and
+# unrelated to this profile itself: Home Assistant Supervisor's own
+# local git clone of this add-on's repository had fallen out of sync
+# with GitHub, and app/static/script.js specifically had been silently
+# stale across many versions — confirmed by inspecting the actual
+# browser-loaded source, which was missing features known to exist in
+# the real repo. It's plausible the deployed container's overall
+# footprint during those earlier verification passes wasn't fully
+# representative of the intended build for the same reason. Fixed by
+# removing and re-adding the repository in the add-on store, forcing a
+# fresh clone (confirmed via the same script.js inspection).
+#
+# Re-verified from that genuinely fresh, correctly-synced build
+# (2.29.9): real usage across every feature this app has, specifically
+# including a deliberate container restart (the exact scenario the
+# missing-library-rule bug lived in) followed by the full feature pass.
+# dmesg stayed clean of any AppArmor activity throughout. This is the
+# first verification pass done with real confidence that the code
+# under test actually matched what was intended. Switched to enforcing
+# on that basis.
+#
+# That broke immediately anyway (2.29.11): "Fatal Python error:
+# init_fs_encoding: failed to get the Python codec of the filesystem
+# encoding" / "ModuleNotFoundError: No module named 'encodings'" — the
+# interpreter can't even complete its own startup, before any
+# application code runs. Reverted to complain mode again immediately.
+#
+# dmesg never surfaced a usable denial for this failure either, same
+# as the first crash — most likely explained by a rapidly-repeating
+# crash loop pushing relevant lines out of dmesg's limited buffer
+# before anyone could check, and/or auditd on the host intercepting
+# kernel audit events before they reach the generic ring buffer dmesg
+# reads from. Rather than a third narrow guess at exactly which path
+# under /usr/local/ was still missing, broadened the rule for that
+# whole tree instead (see below) — everything under it is trusted,
+# base-image-provided code, so there's little real security cost to
+# not micromanaging it further.
+#
+# Re-verified on 2.29.12 (broadened rule, still complain mode):
+# restarted the add-on specifically — both prior enforce-mode failures
+# were startup-time crashes, so this is exactly the scenario that
+# matters — followed by the full feature pass (chat, upload, avatar,
+# admin panel, calendar, GIF). Both clean. dmesg wasn't used as
+# evidence this time, given it's proven unreliable for this specific
+# class of failure twice already; a clean restart plus working
+# features is the real bar here. Switched to enforcing on that basis.
+#
+# A third gap surfaced after that (2.30.3): GIPHY posting failed with
+# "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable
+# to get local issuer certificate" — not a crash this time (the app
+# kept running, this one specific feature just silently couldn't
+# complete a TLS handshake), but the same underlying pattern as the
+# earlier two: a runtime dependency this app needs that was never
+# actually granted. Python's ssl module on this image looks for
+# certificates at /etc/ssl/certs/ and /etc/ssl/cert.pem (confirmed via
+# ssl.get_default_verify_paths()) — neither path had ever been granted
+# by this profile, only /etc/resolv.conf. Every outbound HTTPS call
+# this app makes (GIPHY, and Home Assistant's own Supervisor API) needs
+# this to verify the far end's certificate, so this gap would affect
+# both, not just GIPHY specifically.
+#
+# Re-verified on 2.30.3 (added /etc/ssl/** r,, still complain mode):
+# real usage covering GIPHY specifically (the feature that surfaced the
+# gap) and the calendar (the other outbound-HTTPS feature this app has,
+# worth confirming the same fix covers it too), on top of the standard
+# restart-plus-full-feature-pass. Switched to enforcing on that basis.
+#
+# A fourth gap surfaced (2.32.2), reported by a third party trying this
+# add-on for the first time on their own server: PermissionError on
+# /data/uploads.mkdir() at startup, blocking the app from starting at
+# all. This never once showed up here, for a specific reason worth
+# recording — /data/uploads/** rwk, (added when uploads were first
+# built) only ever covers *contents* of that directory, never the act
+# of creating the directory entry itself. AppArmor treats "create this
+# directory" as a distinct operation from "write this file inside an
+# existing directory", requiring its own rule matching the directory
+# path with a trailing slash. Every server this has run on so far
+# already had /data/uploads sitting there from before this rule ever
+# existed, so Path.mkdir(exist_ok=True) was always a silent no-op —
+# only a genuinely fresh install, where the directory has never been
+# created even once, was ever going to hit this.
+#
+# Switched directly to enforcing on 2.32.3 without the usual complain-
+# mode re-verification step, at explicit request, specifically to test
+# the fix under real enforcement against a fresh /data. Flagged at the
+# time: every previous enforce-mode failure on this profile (the shared
+# library gap, the encodings module gap, the CA certificates gap) only
+# ever got caught because complain mode let the app keep running long
+# enough to observe what broke. If this fix also turns out incomplete,
+# the failure mode is the app not starting at all, with nothing else to
+# go on but this same class of traceback.
+profile family_chat flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+  #include <abstractions/python>
+
+  # Inbound HTTP/WebSocket on the ingress port; outbound to Home
+  # Assistant's own Supervisor API (calendar, notifications) and to
+  # GIPHY's API when a key is configured. Nothing in this app ever
+  # needs a raw socket.
+  network inet stream,
+  network inet6 stream,
+  deny network raw,
+
+  # The actual startup chain, matching this app's real Dockerfile —
+  # plain python:3.11-alpine, not one of the s6-overlay-based add-on
+  # base images, so there's no bashio/s6 supervision tree to account
+  # for here the way most add-on profiles need.
+  /bin/sh ix,
+  /run.sh r,
+  /usr/local/bin/python3* ix,
+  # Everything else Python needs to boot and run lives somewhere under
+  # /usr/local/ on this image — the interpreter's own shared library,
+  # the standard library (including encodings/, needed before the
+  # interpreter can even finish starting), and any installed packages
+  # under site-packages/. Two earlier attempts to enumerate specific
+  # subpaths here (a rule for the stdlib subdirectory but not its
+  # sibling shared library; later, still not covering whatever
+  # init_fs_encoding's codec lookup actually touches) each broke
+  # startup outright in a different, narrow way — both only found
+  # after real production downtime, since dmesg never actually
+  # surfaced a denial for either failure to diagnose them properly in
+  # advance. Broad access to this whole tree instead, rather than a
+  # third attempt at precision: everything under /usr/local/ on this
+  # image is trusted, base-image-provided code, never anything
+  # user-supplied or externally influenced, so there's no real security
+  # value being given up here — this profile's actual value is in
+  # restricting /data access and network/capability use below, not in
+  # micromanaging which specific files a trusted interpreter can read.
+  /usr/local/** mr,
+  /usr/lib/*.so* mr,
+  /lib/*.so* mr,
+
+  # The app's own code — read-only. This process never has a
+  # legitimate reason to modify its own source after the image is
+  # built.
+  /app/** r,
+
+  # Everything this app ever persists lives under /data and nowhere
+  # else: the add-on's own configuration (read-only — this app never
+  # writes it), the SQLite database plus its journal/WAL sidecar files,
+  # uploaded files, and the generated session-signing secret.
+  /data/options.json r,
+  /data/chat.db rwk,
+  /data/chat.db-journal rwk,
+  /data/chat.db-wal rwk,
+  /data/chat.db-shm rwk,
+  # The trailing-slash rule is what actually grants creating the
+  # uploads directory itself (a fresh install's very first run) — the
+  # /** rule below only ever covers files already inside it.
+  /data/uploads/ w,
+  /data/uploads/** rwk,
+  /data/secret_key rw,
+
+  # Explicit defense-in-depth denials — this app has no legitimate
+  # reason to ever touch Home Assistant's own core config, another
+  # add-on's TLS material, or write to /proc or /sys.
+  deny /data/homeassistant rw,
+  deny /data/ssl rw,
+  deny /proc/** wl,
+  deny /sys/** wl,
+
+  / r,
+  /etc/resolv.conf r,
+  # CA certificates for verifying the far end's TLS certificate on any
+  # outbound HTTPS call this app makes (GIPHY, Home Assistant's own
+  # Supervisor API) — read-only, and like everything under /usr/local/,
+  # this is trusted, base-image-provided material, not anything
+  # user-influenced.
+  /etc/ssl/** r,
+  /tmp/** rwk,
+}

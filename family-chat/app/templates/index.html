@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="{{ theme }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Family Chat</title>
+    
+    <!-- Socket.IO (required for chat) -->
+    <script src="./static/socket.io.min.js?v={{ asset_version }}"></script>
+
+    <!-- Inlined (not a separate request) so styling can never race against
+         Home Assistant's ingress session being established on reload -->
+    <style>{{ inline_css|safe }}</style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Dims/blocks the chat behind the channel sidebar when it's
+             open as a mobile slide-over drawer (see the <768px media
+             query in style.css) — tapping it closes the drawer, same as
+             tapping outside any other overlay in this app. Invisible
+             and inert at wider widths, where the sidebar sits inline
+             instead of overlaying anything. -->
+        <div class="sidebar-backdrop hidden" id="channelSidebarBackdrop" onclick="toggleChannelSidebar()"></div>
+
+        <!-- Channel List -->
+        <div class="channel-sidebar" id="channelSidebar">
+            <div class="server-header">
+                <h3>{{ server_icon }} {{ server_name }}</h3>
+            </div>
+            <div class="channel-list">
+                {% for cat in categories %}
+                {% set is_first_category = loop.first %}
+                <div class="category">{{ cat.name }}</div>
+                <div class="category-channels" data-category-id="{{ cat.id }}">
+                {% for ch in channels if ch.category_id == cat.id %}
+                <div class="channel{% if is_first_category and loop.first %} active{% endif %}" data-channel="{{ ch.slug }}">
+                    <span class="channel-icon">{{ ch.icon }}</span>
+                    <span class="channel-name">{{ ch.name }}</span>
+                    <span class="mention-badge hidden" data-mention-badge="{{ ch.slug }}"></span>
+                </div>
+                {% endfor %}
+                </div>
+                {% endfor %}
+            </div>
+            <div class="user-panel">
+                <div class="user-info">
+                    <div class="avatar" id="currentAvatar"></div>
+                    <div class="user-details">
+                        <span class="username" id="currentUsername">Select User</span>
+                        <span class="user-status">🏠 At Home</span>
+                    </div>
+                </div>
+                <!-- Closes the drawer from inside it, on mobile — this
+                     lives here rather than in the header specifically
+                     to avoid colliding with the drawer's own "server
+                     name" heading at the top (see the <768px CSS for
+                     why). Hidden on desktop, where the sidebar isn't a
+                     drawer that needs closing this way. -->
+                <button class="header-btn drawer-close-btn" onclick="toggleChannelSidebar()" title="Close channel list" id="drawerCloseBtn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+                <button class="header-btn" onclick="openMySettings()" title="Settings">✏️</button>
+            </div>
+        </div>
+
+        <!-- Main Chat Area -->
+        <div class="chat-container">
+            <div class="chat-header">
+                <div class="chat-header-left">
+                    <button class="header-btn sidebar-toggle-btn" onclick="toggleChannelSidebar()" title="Toggle channel list" id="channelSidebarToggle">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="4" width="18" height="16" rx="2"/>
+                            <line x1="9" y1="4" x2="9" y2="20"/>
+                        </svg>
+                    </button>
+                    <div class="channel-info">
+                        <span class="channel-hash">{{ channels[0].icon if channels else '#' }}</span>
+                        <span id="currentChannel">{{ channels[0].slug if channels else 'general' }}</span>
+                        <span class="channel-topic">Family communication center</span>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <button class="header-btn" onclick="toggleSearch()" title="Search">🔍</button>
+                    <button class="header-btn" onclick="openFileBrowser()" title="Files">📎</button>
+                    <button class="header-btn sidebar-toggle-btn" onclick="toggleMembersSidebar()" title="Toggle member list" id="membersSidebarToggle">
+                        👥
+                    </button>
+                    <a class="header-btn" href="./admin" title="Admin settings" style="display:inline-block; text-decoration:none;">⚙️</a>
+                </div>
+            </div>
+            
+            <div class="messages-container" id="messagesContainer">
+                <div class="welcome-message">
+                    <h1>Welcome to #<span id="welcomeChannel">{{ channels[0].slug if channels else 'general' }}</span>!</h1>
+                    <p>Stay connected with your family 👨‍👩‍👧‍👦</p>
+                </div>
+            </div>
+
+            <!-- Jump-to-bottom: hidden until you scroll up away from the
+                 newest message, or a new message arrives while you're not
+                 there. -->
+            <button class="scroll-to-bottom-btn hidden" id="scrollToBottomBtn" onclick="jumpToBottom()" title="Jump to latest messages">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 16l-6-6h12l-6 6z"/>
+                </svg>
+                <span class="scroll-to-bottom-badge hidden" id="scrollToBottomBadge">0</span>
+            </button>
+
+            <!-- Typing indicator -->
+            <div class="typing-indicator hidden" id="typingIndicator">
+                <span id="typingUser">Someone</span> is typing<span class="dots">...</span>
+            </div>
+
+            <div class="input-container">
+                <div class="input-wrapper">
+                    <button class="attach-btn" onclick="document.getElementById('fileInput').click()" title="Upload file">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z"/>
+                        </svg>
+                    </button>
+                    <input type="file" id="fileInput" hidden onchange="handleFileSelect(event)">
+                    
+                    <div class="input-area">
+                        <textarea id="messageInput" 
+                               placeholder="Message #general" 
+                               maxlength="2000"
+                               autocomplete="off"
+                               rows="1"></textarea>
+                    </div>
+                    
+                    {% if giphy_enabled %}
+                    <button class="gif-btn" onclick="toggleGifPicker()" title="Send a GIF">
+                        GIF
+                    </button>
+                    {% endif %}
+
+                    {% if calendar_enabled %}
+                    <button class="calendar-btn" onclick="openCalendarModal()" title="Add a calendar event">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="5" width="18" height="16" rx="2"/>
+                            <line x1="3" y1="10" x2="21" y2="10"/>
+                            <line x1="8" y1="3" x2="8" y2="7"/>
+                            <line x1="16" y1="3" x2="16" y2="7"/>
+                        </svg>
+                    </button>
+                    {% endif %}
+
+                    <button class="emoji-btn" onclick="toggleEmojiPicker()" title="Add emoji">
+                        😊
+                    </button>
+                    
+                    <button class="send-btn" onclick="sendMessageClick()" title="Send">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- @mention autocomplete — appears while typing @Name in
+                     the message box, positioned right above it like the
+                     emoji/GIF pickers. Populated and driven entirely from
+                     script.js; nothing here is server-rendered since the
+                     match list changes on every keystroke. -->
+                <div class="mention-picker hidden" id="mentionPicker"></div>
+                
+                <!-- Emoji Picker -->
+                <div class="emoji-picker hidden" id="emojiPicker">
+                    <div class="emoji-tabs">
+                        <button class="emoji-tab active" onclick="switchEmojiTab('recent')">Recent</button>
+                        <button class="emoji-tab" onclick="switchEmojiTab('people')">😀</button>
+                        <button class="emoji-tab" onclick="switchEmojiTab('nature')">🌸</button>
+                        <button class="emoji-tab" onclick="switchEmojiTab('food')">🍕</button>
+                        <button class="emoji-tab" onclick="switchEmojiTab('activities')">⚽</button>
+                        <button class="emoji-tab" onclick="switchEmojiTab('custom')">Custom</button>
+                    </div>
+                    <div class="emoji-search">
+                        <input type="text" placeholder="Search emojis..." id="emojiSearch">
+                    </div>
+                    <div class="emoji-grid" id="emojiGrid">
+                        <!-- Emojis loaded here -->
+                    </div>
+                </div>
+
+                {% if giphy_enabled %}
+                <!-- GIF Picker -->
+                <div class="gif-picker hidden" id="gifPicker">
+                    <div class="gif-search">
+                        <input type="text" placeholder="Search GIPHY..." id="gifSearchInput" autocomplete="off">
+                    </div>
+                    <div class="gif-grid" id="gifGrid">
+                        <!-- GIFs loaded here -->
+                    </div>
+                    <div class="gif-attribution">Powered by GIPHY</div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Members List -->
+        <div class="members-sidebar" id="membersSidebar">
+            <div class="members-top-section">
+                <div class="members-header">👨‍👩‍👧‍👦 FAMILY — {{ members|length }}</div>
+                {% for m in members %}
+                <div class="member online" data-user="{{ m.name }}">
+                    <div class="member-avatar" style="{% if not m.avatar %}background: {{ loop.cycle(
+                        'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                        'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+                        'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+                        'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+                        'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+                        'linear-gradient(135deg, #30cfd0 0%, #330867 100%)'
+                    ) }};{% endif %}">
+                        {% if m.avatar %}<img src="./{{ m.avatar[1:] }}" alt="" class="avatar-img">{% else %}{{ m.name[0] }}{% endif %}
+                    </div>
+                    <div class="member-info">
+                        <div class="member-name">{{ m.name }}</div>
+                        <div class="member-status-text">🏠 Online</div>
+                    </div>
+                </div>
+                {% endfor %}
+                
+                <div class="shared-media">
+                    <div class="media-header">📸 Family Photos</div>
+                    <div class="media-grid" id="sharedMedia">
+                        <!-- Photos will appear here -->
+                    </div>
+                </div>
+            </div>
+
+            {% if calendar_enabled %}
+            <!-- Real Home Assistant calendar events, aggregated across
+                 every calendar and sorted by when they actually happen
+                 — not limited to whatever's come through chat, and not
+                 sorted by post time the way a channel would be. Fixed to
+                 the bottom third of the sidebar with its own scroll,
+                 independent of the member list above it. -->
+            <div class="upcoming-events">
+                <div class="media-header">
+                    📅 UPCOMING
+                    <button class="upcoming-refresh-btn" onclick="loadUpcomingEvents()" title="Refresh">⟳</button>
+                </div>
+                <div id="upcomingEventsList" class="upcoming-events-list">
+                    <p class="settings-hint">Loading…</p>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- File Preview Modal -->
+    <div class="modal hidden" id="fileModal">
+        <div class="modal-content file-preview">
+            <div class="file-preview-header">
+                <h3>Send File</h3>
+                <button class="close-btn" onclick="closeFileModal()">×</button>
+            </div>
+            <div class="file-preview-content" id="filePreviewContent">
+                <!-- Preview content -->
+            </div>
+            <div class="file-preview-actions">
+                <input type="text" id="fileCaption" placeholder="Add a caption...">
+                <button class="btn btn-primary" onclick="sendFile()">Send</button>
+                <button class="btn btn-secondary" onclick="closeFileModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Avatar crop modal. GIFs skip this entirely (see uploadMyAvatar in
+         script.js) since rasterizing to a canvas would strip animation —
+         this only ever handles static PNG/JPEG/WEBP selections. -->
+    <div class="modal hidden" id="avatarCropModal">
+        <div class="modal-content avatar-crop-content">
+            <div class="file-preview-header">
+                <h3>Adjust your photo</h3>
+                <button class="close-btn" onclick="closeAvatarCropper()">×</button>
+            </div>
+            <div class="avatar-crop-viewport" id="avatarCropViewport">
+                <img id="avatarCropImage" alt="" draggable="false">
+            </div>
+            <div class="avatar-crop-zoom-row">
+                <span class="avatar-crop-zoom-icon">🔍</span>
+                <input type="range" id="avatarCropZoom" min="0" max="100" value="0">
+            </div>
+            <div class="file-preview-actions">
+                <button class="btn btn-primary" onclick="applyAvatarCrop()">Save</button>
+                <button class="btn btn-secondary" onclick="closeAvatarCropper()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal hidden" id="settingsModal">
+        <div class="modal-content settings-modal-content">
+            <div class="modal-header">
+                <h3>Settings</h3>
+                <button class="close-btn" onclick="closeMySettings()">×</button>
+            </div>
+            <div class="settings-body">
+                <div class="settings-tabs">
+                    <button class="settings-tab active" data-tab="profile" onclick="switchSettingsTab('profile')">
+                        <span class="settings-tab-icon">👤</span><span class="settings-tab-label">Profile</span>
+                    </button>
+                    <button class="settings-tab" data-tab="notifications" onclick="switchSettingsTab('notifications')">
+                        <span class="settings-tab-icon">🔔</span><span class="settings-tab-label">Notifications</span>
+                    </button>
+                    <button class="settings-tab" data-tab="channels" onclick="switchSettingsTab('channels')">
+                        <span class="settings-tab-icon">#️⃣</span><span class="settings-tab-label">Channels</span>
+                    </button>
+                    <button class="settings-tab" data-tab="emojis" onclick="switchSettingsTab('emojis')">
+                        <span class="settings-tab-icon">😀</span><span class="settings-tab-label">Emojis</span>
+                    </button>
+                </div>
+
+                <div class="settings-panels">
+                    <!-- Profile -->
+                    <div class="settings-panel active" id="settingsPanel-profile">
+                        <div class="settings-section">
+                            <label style="display:block; font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">
+                                Avatar
+                            </label>
+                            <div class="avatar-settings-row">
+                                <div class="avatar avatar-preview" id="myAvatarPreview"></div>
+                                <div class="avatar-settings-actions">
+                                    <input type="file" id="avatarFileInput" accept="image/png,image/jpeg,image/gif,image/webp" hidden onchange="uploadMyAvatar(event)">
+                                    <button class="btn btn-secondary" onclick="document.getElementById('avatarFileInput').click()">Upload photo</button>
+                                    <button class="btn btn-secondary" id="removeAvatarBtn" onclick="removeMyAvatar()">Remove</button>
+                                </div>
+                            </div>
+                            <p style="font-size: 12px; color: var(--text-muted); margin-top: 12px;">
+                                PNG, JPG, GIF, or WEBP. This changes your photo everywhere, including messages you've already sent.
+                            </p>
+                        </div>
+                        <div class="settings-section">
+                            <label for="myAliasInput" style="display:block; font-size: 13px; color: var(--text-muted); margin-bottom: 6px;">
+                                Display name <span id="myHaNameHint"></span>
+                            </label>
+                            <div class="emoji-upload" style="padding: 0; border-bottom: none;">
+                                <input type="text" id="myAliasInput" maxlength="30" placeholder="Your display name">
+                                <button class="btn btn-primary" onclick="saveMyAlias()">Save</button>
+                            </div>
+                            <p style="font-size: 12px; color: var(--text-muted); margin-top: 12px;">
+                                This changes how your name appears everywhere, including messages you've already sent.
+                                Leave it blank and save to go back to your Home Assistant name.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Notifications -->
+                    <div class="settings-panel" id="settingsPanel-notifications">
+                        <div class="settings-section">
+                            <label style="display:block; font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">
+                                Notify my phone about new messages in
+                            </label>
+                            <div id="notifyChannelList" class="notify-channel-list">
+                                <p class="settings-hint">Loading channels…</p>
+                            </div>
+                            <div id="notifySettingsBody" style="margin-top: 12px;">
+                                <label for="notifyServiceSelect" style="display:block; font-size: 13px; color: var(--text-muted); margin-bottom: 6px;">
+                                    Send to
+                                </label>
+                                <select id="notifyServiceSelect" class="settings-select">
+                                    <option value="">Loading devices…</option>
+                                </select>
+                                <div style="display:flex; align-items:center; gap:8px; margin-top: 8px;">
+                                    <button class="btn btn-primary" style="flex:1;" onclick="saveNotifyPrefs()">Save</button>
+                                    <button class="btn btn-secondary" style="flex:1;" onclick="sendTestNotification()">Send Test</button>
+                                </div>
+                                <p id="notifySaveStatus" class="settings-save-status hidden">Saved</p>
+                            </div>
+                            <p style="font-size: 12px; color: var(--text-muted); margin-top: 12px;">
+                                Uses Home Assistant's own notifications. Install the Home Assistant Companion App on your
+                                phone and make sure it's connected first — it'll then show up in the list above. You won't
+                                be notified about your own messages.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Channels -->
+                    <div class="settings-panel" id="settingsPanel-channels">
+                        <div class="settings-section">
+                            <label style="display:block; font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">
+                                Categories
+                            </label>
+                            <div id="settingsCategoryList" class="settings-channel-list">
+                                <p class="settings-hint">Loading categories…</p>
+                            </div>
+                            <label style="display:block; font-size: 13px; color: var(--text-muted); margin: 16px 0 8px;">
+                                Existing channels
+                            </label>
+                            <div id="settingsChannelList" class="settings-channel-list">
+                                <p class="settings-hint">Loading channels…</p>
+                            </div>
+                            <label style="display:block; font-size: 13px; color: var(--text-muted); margin: 16px 0 6px;">
+                                Add a channel
+                            </label>
+                            <select id="newChannelCategory" class="settings-select" style="margin-bottom: 8px;">
+                                <option value="">Loading categories…</option>
+                            </select>
+                            <div class="emoji-upload" style="padding: 0; border-bottom: none;">
+                                <input type="text" id="newChannelIcon" maxlength="8" placeholder="#" style="flex: 0 1 60px;">
+                                <input type="text" id="newChannelName" maxlength="30" placeholder="e.g. school-stuff" style="flex: 1 1 140px;">
+                                <button class="btn btn-primary" onclick="addChannel()">Add Channel</button>
+                            </div>
+                            <p id="addChannelStatus" class="settings-save-status hidden"></p>
+                            <p style="font-size: 12px; color: var(--text-muted); margin-top: 12px;">
+                                Anyone can add a channel, into any category that already exists. Categories themselves are admin-only, from the admin panel.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Emojis -->
+                    <div class="settings-panel" id="settingsPanel-emojis">
+                        <div class="emoji-upload">
+                            <input type="text" id="newEmojiName" placeholder=":emoji_name:">
+                            <input type="file" id="emojiFileInput" accept="image/*">
+                            <button class="btn btn-primary" onclick="uploadEmoji()">Upload Emoji</button>
+                        </div>
+                        <div class="custom-emoji-list" id="customEmojiList">
+                            <!-- Custom emojis loaded here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Search: across all channels, per the family's request to be able
+         to search previous chats, not just the current one. -->
+    <div class="modal hidden" id="searchModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Search Messages</h3>
+                <button class="close-btn" onclick="closeSearch()">×</button>
+            </div>
+            <div class="emoji-upload">
+                <input type="text" id="searchInput" placeholder="Search all channels…" onkeypress="if(event.key==='Enter') runSearch();">
+                <button class="btn btn-primary" onclick="runSearch()">Search</button>
+            </div>
+            <div id="searchResults" class="search-results"></div>
+        </div>
+    </div>
+
+    <!-- Calendar: creates a real event on one of Home Assistant's own
+         calendars (calendar.create_event) and posts a confirmation card
+         into whichever channel is chosen — not a calendar of its own,
+         just a form in front of the one(s) already in Home Assistant. -->
+    <div class="modal hidden" id="calendarModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>📅 Add to Calendar</h3>
+                <button class="close-btn" onclick="closeCalendarModal()">×</button>
+            </div>
+            <div class="settings-section">
+                <label for="calEventTitle" class="form-label">Title</label>
+                <input type="text" id="calEventTitle" class="settings-select" maxlength="200" placeholder="Dentist appointment">
+
+                <label class="settings-toggle-label" style="margin-top: 14px;">
+                    <input type="checkbox" id="calEventAllDay" onchange="toggleCalendarAllDay()">
+                    All-day event
+                </label>
+
+                <div id="calEventTimedFields" class="calendar-date-row">
+                    <div>
+                        <label for="calEventStartDateTime" class="form-label">Starts</label>
+                        <input type="datetime-local" id="calEventStartDateTime" class="settings-select">
+                    </div>
+                    <div>
+                        <label for="calEventEndDateTime" class="form-label">Ends</label>
+                        <input type="datetime-local" id="calEventEndDateTime" class="settings-select">
+                    </div>
+                </div>
+                <div id="calEventAllDayFields" class="calendar-date-row hidden">
+                    <div>
+                        <label for="calEventStartDate" class="form-label">Starts</label>
+                        <input type="date" id="calEventStartDate" class="settings-select">
+                    </div>
+                    <div>
+                        <label for="calEventEndDate" class="form-label">Ends <span class="settings-hint">(optional — for multi-day)</span></label>
+                        <input type="date" id="calEventEndDate" class="settings-select">
+                    </div>
+                </div>
+
+                <label for="calEventLocation" class="form-label">Location <span class="settings-hint">(optional)</span></label>
+                <input type="text" id="calEventLocation" class="settings-select" maxlength="200">
+
+                <label for="calEventDescription" class="form-label">Notes <span class="settings-hint">(optional)</span></label>
+                <input type="text" id="calEventDescription" class="settings-select" maxlength="2000">
+
+                <label for="calEventCalendar" class="form-label">Calendar</label>
+                <select id="calEventCalendar" class="settings-select">
+                    <option value="">Loading calendars…</option>
+                </select>
+
+                <label for="calEventChannelSelect" class="form-label">Post confirmation to</label>
+                <select id="calEventChannelSelect" class="settings-select"></select>
+
+                <button class="btn btn-primary" onclick="submitCalendarEvent()" style="width:100%; margin-top:14px;">Add to Calendar</button>
+                <p id="calendarEventStatus" class="settings-save-status hidden"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Files: everything shared in the current channel. -->
+    <div class="modal hidden" id="filesModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Shared Files</h3>
+                <button class="close-btn" onclick="closeFileBrowser()">×</button>
+            </div>
+            <div id="filesList" class="search-results"></div>
+        </div>
+    </div>
+
+    <!-- Identity Gate: shown only if Home Assistant auto sign-in hasn't
+         resolved a name yet. There is no manual picker anymore — identity
+         comes entirely from who's logged into Home Assistant. -->
+    <div class="modal{% if auto_user %} hidden{% endif %}" id="identityGate">
+        <div class="modal-content user-select">
+            <div class="family-header">
+                <span class="family-icon">🏠</span>
+                <h2>Open from Home Assistant</h2>
+                <p>Family Chat signs you in automatically using your Home Assistant login.<br>Please open it from the Home Assistant sidebar rather than this address directly.</p>
+            </div>
+            <button class="user-option" onclick="location.reload()" style="--accent: #667eea; margin: 24px auto 0;">
+                <span>↻ Try Again</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Image Viewer -->
+    <div class="image-viewer hidden" id="imageViewer" onclick="closeImageViewer()">
+        <img id="viewerImage" src="" alt="Full size">
+        <button class="viewer-close">×</button>
+    </div>
+
+    <!-- Resolved automatically from the Home Assistant login -->
+    <script>
+        window.AUTO_CHAT_USER = {{ auto_user|tojson }};
+        window.AUTO_CHAT_USER_ID = {{ auto_user_id|tojson }};
+        window.AUTO_CHAT_USER_AVATAR = {{ auto_avatar|tojson }};
+        window.IS_ADMIN = {{ is_admin|tojson }};
+        window.IS_OWNER = {{ is_owner|tojson }};
+        window.DEFAULT_CHANNEL = {{ (channels[0].slug if channels else 'general')|tojson }};
+    </script>
+    <script src="./static/script.js?v={{ asset_version }}"></script>
+</body>
+</html>
