@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.32.1
+
+### Fixed
+- **Composer buttons (GIF, calendar, emoji, send) weren't vertically aligned with each other.** `.gif-btn` has always had different padding and a visible border than the other plain icon buttons, giving it different actual dimensions — combined with the row using `align-items: flex-end`, that difference showed up as visible misalignment rather than being absorbed invisibly. Fixed at the root rather than just nudging one button: every button in the row now shares an explicit height so they're all identical regardless of their individual padding/border, and the row itself switched to `align-items: center`. Verified with an actual headless-browser render rather than reasoning about the CSS alone — every button now measures pixel-identical (36px tall, same vertical center).
+
 ## 2.32.0
 
 ### Added
