@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Family Chat — Admin</title>
+    <style>
+        :root {
+            --bg-primary: #36393f;
+            --bg-secondary: #2f3136;
+            --bg-tertiary: #202225;
+            --bg-accent: #5865f2;
+            --bg-accent-hover: #4752c4;
+            --text-normal: #dcddde;
+            --text-muted: #96989d;
+            --danger: #ed4245;
+            --success: #3ba55d;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg-tertiary);
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            color: var(--text-normal);
+        }
+        .panel {
+            width: 100%;
+            max-width: 440px;
+            background: var(--bg-primary);
+            border-radius: 8px;
+            padding: 32px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+        }
+        .panel.admin-panel-wide {
+            max-width: 680px;
+            padding: 0;
+            overflow: hidden;
+        }
+        .admin-panel-wide .panel-inner {
+            padding: 32px 32px 0;
+        }
+        .admin-body {
+            display: flex;
+            margin-top: 24px;
+            min-height: 420px;
+        }
+        .admin-tabs {
+            width: 180px;
+            flex-shrink: 0;
+            background: var(--bg-tertiary);
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            padding: 12px;
+        }
+        .admin-tab {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            padding: 10px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            text-align: left;
+            width: auto;
+            margin-top: 0;
+            font-weight: 400;
+            transition: all 0.15s;
+        }
+        .admin-tab:hover {
+            background: rgba(255,255,255,0.06);
+            color: var(--text-normal);
+        }
+        .admin-tab.active {
+            background: var(--bg-accent);
+            color: white;
+        }
+        .admin-tab span {
+            font-size: 16px;
+        }
+        .admin-tab-panels {
+            flex: 1;
+            padding: 24px 32px 32px;
+            min-width: 0;
+            overflow-y: auto;
+            max-height: 70vh;
+        }
+        .admin-tab-panel {
+            display: none;
+        }
+        .admin-tab-panel.active {
+            display: block;
+        }
+        @media (max-width: 600px) {
+            .panel.admin-panel-wide { max-width: 100%; }
+            .admin-body { flex-direction: column; }
+            .admin-tabs { width: 100%; flex-direction: row; overflow-x: auto; }
+            .admin-tab-panels { padding: 20px; }
+        }
+        .section-title {
+            font-size: 15px;
+            margin: 0 0 4px;
+        }
+        select {
+            width: 100%;
+            padding: 10px;
+            border-radius: 4px;
+            border: none;
+            background: var(--bg-tertiary);
+            color: var(--text-normal);
+            font-size: 15px;
+            margin-bottom: 4px;
+        }
+        .channel-manage-list {
+            margin-top: 12px;
+        }
+        .channel-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 10px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            margin-bottom: 6px;
+        }
+        .channel-row-label {
+            font-size: 14px;
+        }
+        .calendar-checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            margin-bottom: 6px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        .calendar-checkbox-row input[type="checkbox"] {
+            width: auto;
+            margin: 0;
+            accent-color: var(--bg-accent);
+        }
+        .channel-row form {
+            width: auto;
+            margin: 0;
+        }
+        .channel-row-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .reorder-btns {
+            display: flex;
+            gap: 4px;
+        }
+        .reorder-btn {
+            width: auto;
+            margin-top: 0;
+            padding: 4px 8px;
+            font-size: 11px;
+            background: transparent;
+            border: 1px solid var(--text-muted);
+            color: var(--text-muted);
+        }
+        .reorder-btn:hover {
+            background: var(--bg-accent);
+            border-color: var(--bg-accent);
+            color: white;
+        }
+        .reorder-btn:disabled {
+            opacity: 0.25;
+            cursor: not-allowed;
+        }
+        .reorder-btn:disabled:hover {
+            background: transparent;
+            border-color: var(--text-muted);
+            color: var(--text-muted);
+        }
+        .delete-btn {
+            width: auto;
+            margin-top: 0;
+            padding: 4px 10px;
+            font-size: 13px;
+            background: transparent;
+            border: 1px solid var(--danger);
+            color: var(--danger);
+        }
+        .delete-btn:hover {
+            background: var(--danger);
+            color: white;
+        }
+        .delete-btn:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+            border-color: var(--text-muted);
+            color: var(--text-muted);
+        }
+        .delete-btn:disabled:hover {
+            background: transparent;
+        }
+        h1 {
+            font-size: 20px;
+            margin: 0 0 4px;
+        }
+        p.subtitle {
+            color: var(--text-muted);
+            margin: 0 0 24px;
+            font-size: 14px;
+        }
+        label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            margin-top: 16px;
+        }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 10px;
+            border-radius: 4px;
+            border: none;
+            background: var(--bg-tertiary);
+            color: var(--text-normal);
+            font-size: 15px;
+        }
+        input:focus { outline: 2px solid var(--bg-accent); }
+        button {
+            width: 100%;
+            margin-top: 24px;
+            padding: 11px;
+            border: none;
+            border-radius: 4px;
+            background: var(--bg-accent);
+            color: white;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        button:hover { background: var(--bg-accent-hover); }
+        .message {
+            border-radius: 4px;
+            padding: 10px 12px;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+        .message.error { background: rgba(237,66,69,0.15); color: var(--danger); }
+        .message.success { background: rgba(59,165,93,0.15); color: var(--success); }
+        .logout-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .logout-row form { margin: 0; width: auto; }
+        .logout-row button {
+            width: auto;
+            margin-top: 0;
+            padding: 6px 12px;
+            font-size: 13px;
+            background: transparent;
+            border: 1px solid var(--text-muted);
+            color: var(--text-muted);
+        }
+        .logout-row button:hover { color: var(--text-normal); border-color: var(--text-normal); background: transparent; }
+        .hint {
+            color: var(--text-muted);
+            font-size: 12px;
+            margin-top: 20px;
+            line-height: 1.5;
+        }
+        .channel-row-category {
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+        .inline-add-form {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .inline-add-form input[type="text"] {
+            flex: 1;
+        }
+        .inline-add-form button {
+            width: auto;
+            margin-top: 0;
+            padding: 10px 16px;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="panel{% if logged_in %} admin-panel-wide{% endif %}">
+        {% if not logged_in %}
+            <h1>🔒 Admin Login</h1>
+            <p class="subtitle">Enter the admin password to manage Family Chat settings.</p>
+            {% if error %}<div class="message error">{{ error }}</div>{% endif %}
+            <form method="post" action="./admin/login">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" autofocus required>
+                <button type="submit">Log In</button>
+            </form>
+        {% else %}
+        <div class="panel-inner">
+            <div class="logout-row">
+                <h1 style="margin:0;">⚙️ Admin</h1>
+                <form method="post" action="./admin/logout">
+                    <button type="submit">Log Out</button>
+                </form>
+            </div>
+            <p class="subtitle">Manage channels. Who can chat is entirely automatic — anyone who opens this from the Home Assistant sidebar signs in as themselves, using their own Home Assistant name.</p>
+            {% if saved == '1' %}<div class="message success">Saved. Reload the chat to see changes.</div>{% endif %}
+        </div>
+
+        <div class="admin-body">
+            <div class="admin-tabs">
+                <button class="admin-tab{% if active_tab == 'chatname' %} active{% endif %}" data-tab="chatname" onclick="switchAdminTab('chatname')">
+                    <span>🏠</span> Chat Name
+                </button>
+                <button class="admin-tab{% if active_tab == 'channels' %} active{% endif %}" data-tab="channels" onclick="switchAdminTab('channels')">
+                    <span>#️⃣</span> Channels
+                </button>
+                <button class="admin-tab{% if active_tab == 'owner' %} active{% endif %}" data-tab="owner" onclick="switchAdminTab('owner')">
+                    <span>👑</span> Server Owner
+                </button>
+                <button class="admin-tab{% if active_tab == 'aliases' %} active{% endif %}" data-tab="aliases" onclick="switchAdminTab('aliases')">
+                    <span>🏷️</span> Display Names
+                </button>
+                <button class="admin-tab{% if active_tab == 'calendars' %} active{% endif %}" data-tab="calendars" onclick="switchAdminTab('calendars')">
+                    <span>📅</span> Calendars
+                </button>
+            </div>
+
+            <div class="admin-tab-panels">
+                <!-- Chat Name -->
+                <div class="admin-tab-panel{% if active_tab == 'chatname' %} active{% endif %}" id="adminTab-chatname">
+                    <h2 class="section-title">Chat Name</h2>
+                    <p class="subtitle">Shown at the top of the channel sidebar, in the upper-left of the chat.</p>
+                    <form method="post" action="./admin/server-name/set">
+                        <label for="server_icon">Icon</label>
+                        <input type="text" id="server_icon" name="server_icon" maxlength="8" value="{{ server_identity.icon }}" style="max-width: 80px;">
+                        <label for="server_name">Name</label>
+                        <input type="text" id="server_name" name="server_name" maxlength="40" value="{{ server_identity.name }}" required>
+                        <button type="submit">Save Name</button>
+                    </form>
+                </div>
+
+                <!-- Channels -->
+                <div class="admin-tab-panel{% if active_tab == 'channels' %} active{% endif %}" id="adminTab-channels">
+                    <h2 class="section-title">Categories</h2>
+                    {% if channel_error %}<div class="message error">{{ channel_error }}</div>{% endif %}
+                    <div class="channel-manage-list">
+                        {% for cat in categories %}
+                        <div class="channel-row">
+                            <span class="channel-row-label">{{ cat.name }}</span>
+                            <div class="channel-row-actions">
+                                <div class="reorder-btns">
+                                    <form method="post" action="./admin/categories/move">
+                                        <input type="hidden" name="category_id" value="{{ cat.id }}">
+                                        <input type="hidden" name="direction" value="up">
+                                        <button type="submit" class="reorder-btn" title="Move up"{% if loop.first %} disabled{% endif %}>▲</button>
+                                    </form>
+                                    <form method="post" action="./admin/categories/move">
+                                        <input type="hidden" name="category_id" value="{{ cat.id }}">
+                                        <input type="hidden" name="direction" value="down">
+                                        <button type="submit" class="reorder-btn" title="Move down"{% if loop.last %} disabled{% endif %}>▼</button>
+                                    </form>
+                                </div>
+                                <form method="post" action="./admin/categories/delete">
+                                    <input type="hidden" name="category_id" value="{{ cat.id }}">
+                                    <button type="submit" class="delete-btn" title="Delete category"{% if categories|length <= 1 %} disabled{% endif %}>✕</button>
+                                </form>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <form method="post" action="./admin/categories/add" class="inline-add-form">
+                        <input type="text" name="name" placeholder="New category name" maxlength="30" required>
+                        <button type="submit">Add Category</button>
+                    </form>
+                    <p class="hint">Only an admin can create or remove a category — the server owner can reorder them (here or from their own Settings), same as channels below. A category with channels still in it can't be deleted — move or delete those channels first. At least one category must always exist, since every channel needs one to belong to.</p>
+
+                    <h2 class="section-title" style="margin-top: 32px;">Channels</h2>
+                    <div class="channel-manage-list">
+                        {% for ch in channels %}
+                        {% set is_first_in_category = loop.first or channels[loop.index0 - 1].category_id != ch.category_id %}
+                        {% set is_last_in_category = loop.last or channels[loop.index0 + 1].category_id != ch.category_id %}
+                        <div class="channel-row">
+                            <span class="channel-row-label">{{ ch.icon }} {{ ch.name }} <span class="channel-row-category">— {{ ch.category_name }}</span></span>
+                            <div class="channel-row-actions">
+                                <div class="reorder-btns">
+                                    <form method="post" action="./admin/channels/move">
+                                        <input type="hidden" name="slug" value="{{ ch.slug }}">
+                                        <input type="hidden" name="direction" value="up">
+                                        <button type="submit" class="reorder-btn" title="Move up"{% if is_first_in_category %} disabled{% endif %}>▲</button>
+                                    </form>
+                                    <form method="post" action="./admin/channels/move">
+                                        <input type="hidden" name="slug" value="{{ ch.slug }}">
+                                        <input type="hidden" name="direction" value="down">
+                                        <button type="submit" class="reorder-btn" title="Move down"{% if is_last_in_category %} disabled{% endif %}>▼</button>
+                                    </form>
+                                </div>
+                                <form method="post" action="./admin/channels/delete">
+                                    <input type="hidden" name="slug" value="{{ ch.slug }}">
+                                    <button type="submit" class="delete-btn" title="Delete channel"{% if channels|length <= 1 %} disabled{% endif %}>✕</button>
+                                </form>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <p class="hint">Adding a channel is self-service — anyone can do it from the chat's own Settings (✏️) → Channels tab, into any category that already exists. Reordering and deleting are owner/admin only. A channel only moves within its own category — deleting one just hides it from the sidebar, its messages aren't deleted, and it reappears if a channel with the same name is added again later. At least one channel must always exist.</p>
+                </div>
+
+                <!-- Server Owner -->
+                <div class="admin-tab-panel{% if active_tab == 'owner' %} active{% endif %}" id="adminTab-owner">
+                    <h2 class="section-title">Server Owner</h2>
+                    <p class="subtitle">
+                        The owner can delete any message and manage channels directly from the chat's own Settings —
+                        without needing the admin password. Only one at a time; leave it unset and only an admin
+                        session (this login) has those powers.
+                    </p>
+                    {% if ha_accounts %}
+                    <form method="post" action="./admin/owner/set">
+                        <label for="owner_user_id">Owner</label>
+                        <select id="owner_user_id" name="owner_user_id">
+                            <option value="">— No owner set —</option>
+                            {% for a in ha_accounts %}
+                            <option value="{{ a.user_id }}"{% if a.user_id == current_owner_id %} selected{% endif %}>
+                                {{ a.alias or a.ha_name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit">Save Owner</button>
+                    </form>
+                    {% else %}
+                    <p class="hint">No Home Assistant users detected yet. Open the chat from the Home Assistant sidebar first, then come back here.</p>
+                    {% endif %}
+                </div>
+
+                <!-- Display Names -->
+                <div class="admin-tab-panel{% if active_tab == 'aliases' %} active{% endif %}" id="adminTab-aliases">
+                    <h2 class="section-title">Display Names</h2>
+                    <p class="subtitle">
+                        Everyone can set their own display name from the settings menu (✏️) in the chat.
+                        From here you can change anyone's, or clear one back to their real Home Assistant name.
+                        Renaming updates all of that person's previous messages too, not just new ones.
+                    </p>
+                    {% if ha_accounts %}
+                    <form method="post" action="./admin/aliases">
+                        {% for a in ha_accounts %}
+                        <label for="alias_{{ a.user_id }}">{{ a.ha_name }}</label>
+                        <input type="text" id="alias_{{ a.user_id }}" name="alias_{{ a.user_id }}"
+                               maxlength="30" value="{{ a.alias }}" placeholder="{{ a.ha_name }}">
+                        {% endfor %}
+                        <button type="submit">Save Display Names</button>
+                    </form>
+                    {% else %}
+                    <p class="hint">No Home Assistant users detected yet. Open the chat from the Home Assistant sidebar first, then come back here.</p>
+                    {% endif %}
+                </div>
+
+                <!-- Calendars -->
+                <div class="admin-tab-panel{% if active_tab == 'calendars' %} active{% endif %}" id="adminTab-calendars">
+                    <h2 class="section-title">Calendars</h2>
+                    <p class="subtitle">
+                        Which of Home Assistant's calendars people can add new events to from the chat's 📅 button.
+                        Leave everything checked (the default) for no restriction. This only limits where new events
+                        can be <em>added</em> — the Upcoming panel in the chat still shows events from every calendar,
+                        restricted or not.
+                    </p>
+                    {% if calendar_error %}
+                    <p class="hint">{{ calendar_error }}</p>
+                    {% elif all_calendars %}
+                    <form method="post" action="./admin/calendars/set">
+                        <div class="channel-manage-list">
+                            {% for cal in all_calendars %}
+                            <label class="calendar-checkbox-row">
+                                <input type="checkbox" name="allowed_calendars" value="{{ cal.entity_id }}"{% if cal.checked %} checked{% endif %}>
+                                {{ cal.name }}
+                            </label>
+                            {% endfor %}
+                        </div>
+                        <button type="submit">Save Calendars</button>
+                    </form>
+                    {% else %}
+                    <p class="hint">No calendars found in Home Assistant.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <script>
+        function switchAdminTab(tab) {
+            document.querySelectorAll('.admin-tab').forEach(t => {
+                t.classList.toggle('active', t.dataset.tab === tab);
+            });
+            document.querySelectorAll('.admin-tab-panel').forEach(p => {
+                p.classList.toggle('active', p.id === `adminTab-${tab}`);
+            });
+        }
+    </script>
+</body>
+</html>
