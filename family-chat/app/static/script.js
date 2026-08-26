@@ -431,6 +431,58 @@ function autoResizeMessageInput(input) {
     input.style.height = input.scrollHeight + 'px';
 }
 
+// null when no reply is active, otherwise { id, sender, summary } —
+// read by sendMessage() to attach reply_to_id to the outgoing socket
+// payload, and cleared once that send actually goes out.
+let replyContext = null;
+
+function startReply(id) {
+    const msgDiv = document.querySelector(`.message[data-id="${id}"]`);
+    if (!msgDiv) return;
+    replyContext = { id: Number(id), sender: msgDiv.dataset.sender, summary: msgDiv.dataset.replySummary };
+    renderReplyPreview();
+    const input = document.getElementById('messageInput');
+    if (input) input.focus();
+}
+
+function cancelReply() {
+    replyContext = null;
+    renderReplyPreview();
+}
+
+function renderReplyPreview() {
+    const bar = document.getElementById('replyPreviewBar');
+    const senderEl = document.getElementById('replyPreviewSender');
+    const textEl = document.getElementById('replyPreviewText');
+    if (!bar || !senderEl || !textEl) return;
+    if (!replyContext) {
+        bar.classList.add('hidden');
+        return;
+    }
+    senderEl.textContent = replyContext.sender;
+    textEl.textContent = replyContext.summary;
+    bar.classList.remove('hidden');
+}
+
+// Clicking a reply's quoted preview jumps to the original if it's
+// currently loaded on-screen — delegated (rather than an inline
+// onclick on every quote block) for the same reason .reaction pills
+// already are: quote blocks come and go with every message rendered,
+// a single document-level listener doesn't need re-attaching each time.
+document.addEventListener('click', (e) => {
+    const quote = e.target.closest('.message-reply-quote');
+    if (!quote) return;
+    const targetId = quote.dataset.jumpTo;
+    const targetEl = document.querySelector(`.message[data-id="${targetId}"]`);
+    // Not currently loaded (older than the most recent 100 in this
+    // channel, or simply scrolled out and never rendered) — nothing
+    // to scroll to, so this is a silent no-op rather than an error.
+    if (!targetEl) return;
+    targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    targetEl.classList.add('highlight-flash');
+    setTimeout(() => targetEl.classList.remove('highlight-flash'), 2000);
+});
+
 // null when no @mention is actively being typed, otherwise
 // { triggerStart, matches, selectedIndex } — triggerStart is the index
 // of the '@' itself, so the whole "@partial" can be sliced out and
@@ -575,6 +627,13 @@ function sendMessage(content) {
         selectedFile = null;
         closeFileModal();
     }
+
+    // Covers both the plain-text and the file/caption send paths, since
+    // both funnel through here — a reply can carry an attachment too.
+    if (replyContext) {
+        msgData.reply_to_id = replyContext.id;
+        cancelReply();
+    }
     
     socket.emit('send_message', msgData);
 }
@@ -596,6 +655,13 @@ function addMessage(data) {
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message';
     messageDiv.dataset.id = data.id;
+    // Stashed here (rather than recomputed later) so startReply() can
+    // read them straight off the DOM when this message gets replied to
+    // — avoids needing a second, separate lookup path against the
+    // original data for every message ever rendered, most of which
+    // will never actually be replied to.
+    messageDiv.dataset.sender = data.sender || '';
+    messageDiv.dataset.replySummary = summarizeMessageForReply(data, msgType);
     
     const time = new Date(data.timestamp).toLocaleTimeString([], {
         hour: '2-digit', 
@@ -605,6 +671,20 @@ function addMessage(data) {
     let contentHtml = msgType === 'calendar_event'
         ? buildCalendarEventHtml(data.content)
         : `<div class="message-text">${renderMessageText(data.content)}</div>`;
+
+    // A reply's quote sits above its own content — built from the
+    // snapshot save_message() took server-side at send time (see
+    // reply_to_sender/reply_to_summary), not a live lookup against the
+    // original message, so it keeps showing correctly even if that
+    // original was since deleted or isn't currently loaded.
+    // data-jump-to is handled by a single delegated listener further
+    // down, which just no-ops if the original isn't on-screen to jump to.
+    const replyQuoteHtml = data.reply_to_id ? `
+        <div class="message-reply-quote" data-jump-to="${data.reply_to_id}">
+            <span class="reply-quote-sender">${escapeHtml(data.reply_to_sender || 'Someone')}</span>
+            <span class="reply-quote-text">${escapeHtml(data.reply_to_summary || '')}</span>
+        </div>
+    ` : '';
     
     if (data.file || data.file_url) {
         const rawFileName = data.file?.filename || data.file_name || '';
@@ -664,10 +744,12 @@ function addMessage(data) {
                 <span class="message-author">${escapeHtml(data.sender)}</span>
                 <span class="message-timestamp">${time}</span>
             </div>
+            ${replyQuoteHtml}
             ${contentHtml}
             ${reactionsHtml}
         </div>
         <div class="message-actions">
+            <button class="action-btn" onclick="startReply(${data.id})" title="Reply">↩️</button>
             <button class="action-btn" onclick="openReactionPicker(${data.id}, this)" title="Add reaction">😊</button>
             ${deleteBtnHtml}
         </div>
@@ -1224,6 +1306,12 @@ function switchChannel(slug, onLoaded) {
     });
     currentChannel = slug;
     try { localStorage.setItem('lastChannel', currentChannel); } catch (e) {}
+    // A reply is tied to a message in the channel you were just in —
+    // switching wipes that channel's messages from the DOM entirely, so
+    // the original wouldn't even be visible anymore. Left active, the
+    // preview bar would keep showing a stale "Replying to..." for a
+    // message the person can no longer even see.
+    cancelReply();
     markChannelRead(slug);
     // Marking the newly-active channel read only ever handles that one
     // channel — this is what actually picks up a mention (or general
@@ -1715,6 +1803,39 @@ function formatEventWhen(event) {
         }
     }
     return when;
+}
+
+// The client-side counterpart to summarize_message_for_notification()
+// server-side — kept as its own function rather than shared, since
+// this one runs for every message as it's rendered (any message might
+// later get replied to), while the server-side version only runs once,
+// at reply-send time. Deliberately mirrors the same logic/thresholds
+// so a reply's preview reads the same whether it was just typed or
+// loaded from history.
+function summarizeMessageForReply(data, msgType) {
+    if (msgType === 'calendar_event') {
+        let event;
+        try {
+            event = JSON.parse(data.content);
+        } catch (e) {
+            return 'Added a calendar event';
+        }
+        const when = formatEventWhen(event);
+        const title = event.title || 'Untitled event';
+        return when ? `📅 ${title} — ${when}` : `📅 ${title}`;
+    }
+    const content = (data.content || '').trim();
+    if (content) {
+        return content.length <= 200 ? content : content.slice(0, 197) + '…';
+    }
+    if (msgType === 'gif') return 'Sent a GIF';
+    if (msgType === 'image') return 'Sent a photo';
+    if (msgType === 'video') return 'Sent a video';
+    if (msgType === 'file') {
+        const name = data.file?.filename || data.file_name;
+        return name ? `Shared ${name}` : 'Shared a file';
+    }
+    return 'Sent a message';
 }
 
 // Details modal shared by both places a calendar event can be clicked

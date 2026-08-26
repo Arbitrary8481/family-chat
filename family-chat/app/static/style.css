@@ -645,6 +645,91 @@ body {
     position: relative;
 }
 
+.reply-preview-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: var(--bg-secondary);
+    border-left: 3px solid var(--bg-accent);
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-bottom: 6px;
+    font-size: 13px;
+}
+
+.reply-preview-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.reply-preview-label {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.reply-preview-label #replyPreviewSender {
+    color: var(--text-normal);
+    font-weight: 600;
+}
+
+.reply-preview-text {
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+}
+
+.reply-preview-cancel {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 18px;
+    padding: 4px;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.reply-preview-cancel:hover {
+    color: var(--interactive-hover);
+}
+
+.message-reply-quote {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+    padding-left: 10px;
+    border-left: 2px solid var(--text-muted);
+    cursor: pointer;
+    max-width: 480px;
+    overflow: hidden;
+}
+
+.message-reply-quote:hover {
+    color: var(--text-normal);
+    border-left-color: var(--bg-accent);
+}
+
+.reply-quote-sender {
+    font-weight: 600;
+    color: var(--text-normal);
+    flex-shrink: 0;
+}
+
+.reply-quote-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .input-wrapper {
     background: var(--bg-secondary);
     border-radius: 12px;

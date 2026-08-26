@@ -115,6 +115,13 @@
             </div>
 
             <div class="input-container">
+                <div class="reply-preview-bar hidden" id="replyPreviewBar">
+                    <div class="reply-preview-content">
+                        <span class="reply-preview-label">Replying to <span id="replyPreviewSender"></span></span>
+                        <span class="reply-preview-text" id="replyPreviewText"></span>
+                    </div>
+                    <button class="reply-preview-cancel" onclick="cancelReply()" title="Cancel reply">×</button>
+                </div>
                 <div class="input-wrapper">
                     <button class="attach-btn" onclick="document.getElementById('fileInput').click()" title="Upload file">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">

@@ -1,7 +1,7 @@
 # Family Chat
 
 A private chat for your family that runs entirely inside Home Assistant. There's no separate account to create — Family Chat signs everyone in automatically using whoever's already logged into Home Assistant, so each person just shows up as themselves. There are no ads, the data is all hosted on your Home Assistant system (make sure you have room for all those gifs and images your family posts) and no monetization being forced down your throat.
-
+<img width="1494" height="675" alt="screenshot - FC" src="https://github.com/user-attachments/assets/d5abe812-c1d3-480c-b479-165295354edd" />
 ## Features
 
 **Channels** — Organize conversations into channels (e.g. `#general`, `#memories`, `#plans`). Anyone can add a new channel from their own Settings; removing one is restricted to an admin or the server owner, since it affects everyone at once.
@@ -74,6 +74,12 @@ Everything else — the chat's display name, channels, the server owner, and ind
 ## Support
 
 This is a self-hosted, family-run project — there's no formal support channel. Check the add-on log (Settings → Add-ons → Family Chat → Log) if something isn't working as expected; several of the trickier bugs found so far have left a clear trace there.
+
+## Note:
+
+AI-assisted tools have been used in this project and will continue to be used where I find them useful. This project is built for my own needs and use cases, and I maintain it according to my own preferences.
+
+You are welcome to use it if it works for you, but I will not change the project's development approach to accommodate objections to the use of AI tools. I believe these tools can be genuinely useful when used appropriately. If the use of AI-assisted tools is a deal-breaker for you, this project may simply not be the right fit. You are, of course, free to use or build an alternative that better matches your preferences.
 
 ## Kindness
 

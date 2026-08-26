@@ -242,6 +242,24 @@ def init_db():
     if 'sender_id' not in [col[1] for col in c.fetchall()]:
         c.execute('ALTER TABLE messages ADD COLUMN sender_id TEXT')
 
+    # Reply context — a snapshot (sender + a short summary) taken at
+    # send time via summarize_message_for_notification(), not a live
+    # join against the original message. That means a reply's quote
+    # keeps showing correctly even if the original message is later
+    # deleted, or falls outside the most recent 100 messages a channel
+    # loads — see save_message() for where the snapshot actually gets
+    # built. reply_to_id itself is kept alongside it purely so the
+    # client can try to scroll to and highlight the original if it's
+    # still on-screen; nothing server-side depends on it still existing.
+    c.execute("PRAGMA table_info(messages)")
+    existing_cols = [col[1] for col in c.fetchall()]
+    if 'reply_to_id' not in existing_cols:
+        c.execute('ALTER TABLE messages ADD COLUMN reply_to_id INTEGER')
+    if 'reply_to_sender' not in existing_cols:
+        c.execute('ALTER TABLE messages ADD COLUMN reply_to_sender TEXT')
+    if 'reply_to_summary' not in existing_cols:
+        c.execute('ALTER TABLE messages ADD COLUMN reply_to_summary TEXT')
+
     # Display name aliases, keyed by the stable Home Assistant user ID (not
     # by name, since names can change). Looked up at read time so renaming
     # someone updates every message they've ever sent, not just future
@@ -871,16 +889,46 @@ def get_messages(limit=100, channel='general'):
 
 def save_message(sender, content, channel='general', msg_type='text', 
                  file_url=None, file_name=None, file_size=None, mime_type=None,
-                 sender_id=None):
+                 sender_id=None, reply_to_id=None):
     conn = sqlite3.connect('/data/chat.db')
     c = conn.cursor()
+
+    # A snapshot, not a live reference — taken once here at send time
+    # so the reply keeps showing correctly even if the original message
+    # is later deleted or falls outside the most recent 100 a channel
+    # loads. Reusing summarize_message_for_notification() rather than a
+    # separate truncation/type-summary implementation — it already
+    # handles every message type correctly (plain text, GIFs, images,
+    # files, calendar events), and this needs exactly the same thing a
+    # notification body does: a short, honest description of whatever
+    # that message actually was.
+    reply_to_sender = None
+    reply_to_summary = None
+    if reply_to_id is not None:
+        c.execute('SELECT sender, content, message_type, file_name FROM messages WHERE id = ? AND channel = ?',
+                   (reply_to_id, channel))
+        original = c.fetchone()
+        if original:
+            orig_sender, orig_content, orig_type, orig_file_name = original
+            reply_to_sender = orig_sender
+            reply_to_summary = summarize_message_for_notification(
+                orig_content, orig_type, {'filename': orig_file_name} if orig_file_name else None)
+        else:
+            # Original doesn't exist (bad id) or isn't in this channel —
+            # rather than rejecting the whole send over a reply
+            # reference that's already gone stale, it just posts as a
+            # normal message instead of blocking on it.
+            reply_to_id = None
+
     timestamp = datetime.now().isoformat()
     c.execute('''INSERT INTO messages 
                  (sender, content, timestamp, channel, message_type, 
-                  file_url, file_name, file_size, mime_type, sender_id) 
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                  file_url, file_name, file_size, mime_type, sender_id,
+                  reply_to_id, reply_to_sender, reply_to_summary) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
               (sender, content, timestamp, channel, msg_type,
-               file_url, file_name, file_size, mime_type, sender_id))
+               file_url, file_name, file_size, mime_type, sender_id,
+               reply_to_id, reply_to_sender, reply_to_summary))
     msg_id = c.lastrowid
     conn.commit()
     conn.close()
@@ -2412,6 +2460,7 @@ def handle_message(data):
     channel = data.get('channel', 'general')
     msg_type = data.get('type', 'text')
     file_info = data.get('file', None)
+    reply_to_id = data.get('reply_to_id')
     
     if not sender:
         logger.warning('send_message from a request with no resolvable HA identity (sender_id=%s)', sender_id)
@@ -2437,8 +2486,18 @@ def handle_message(data):
     
     msg_id = save_message(sender, content, channel, msg_type,
                          file_url, file_name, file_size, mime_type,
-                         sender_id=sender_id)
+                         sender_id=sender_id, reply_to_id=reply_to_id)
     record_unread_mentions(channel, msg_id, content, msg_type, sender_id)
+
+    # Read back the reply snapshot save_message() just built (if any)
+    # rather than duplicating that lookup/summarization logic here —
+    # this is the one message the sender's own client hasn't already
+    # seen rendered locally, so the broadcast has to carry it.
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('SELECT reply_to_id, reply_to_sender, reply_to_summary FROM messages WHERE id = ?', (msg_id,))
+    saved_reply_to_id, saved_reply_to_sender, saved_reply_to_summary = c.fetchone()
+    conn.close()
     
     emit('new_message', {
         'id': msg_id,
@@ -2450,7 +2509,10 @@ def handle_message(data):
         'channel': channel,
         'type': msg_type,
         'file': file_info,
-        'reactions': {}
+        'reactions': {},
+        'reply_to_id': saved_reply_to_id,
+        'reply_to_sender': saved_reply_to_sender,
+        'reply_to_summary': saved_reply_to_summary,
     }, room=channel)
 
     # In-app delivery above has already happened — this reaches people

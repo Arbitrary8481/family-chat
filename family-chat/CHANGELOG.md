@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.34.0
+
+### Added
+- **Reply to a specific message.** Click ↩️ on any message to quote it — a preview bar shows above the composer with who you're replying to and a short summary, and the sent message carries that context along with it, shown as a small quoted strip above your own message. Works for every message type (text, images, GIFs, files, calendar events), reusing the same summarization logic that already powers push notification text. The quote is a snapshot taken at send time, not a live link — it keeps showing correctly even if the original message is later deleted. Clicking a quote jumps to and briefly highlights the original if it's still loaded on-screen; if it's an older message that isn't (a channel only keeps the most recent 100 loaded), the quote text is still there, it just can't scroll to it. Switching channels while a reply is queued up cancels it, since the original wouldn't even be visible in the new channel.
+
 ## 2.33.0
 
 ### Added
