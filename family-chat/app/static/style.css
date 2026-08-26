@@ -1282,6 +1282,7 @@ body {
     border-radius: 8px;
     max-width: 640px;
     width: 92%;
+    height: 82vh;
     max-height: 82vh;
     overflow: hidden;
     box-shadow: 0 24px 48px rgba(0,0,0,0.4);
@@ -2109,6 +2110,7 @@ body {
     }
     .settings-modal-content {
         width: 96%;
+        height: 88vh;
         max-height: 88vh;
     }
     .settings-tabs {

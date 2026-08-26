@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.34.1
+
+### Fixed
+- **The Settings window resized every time you switched tabs.** It was only ever given a `max-height`, not an actual fixed height — so it shrank or grew to fit whichever tab's content happened to be showing (Profile's short form vs. Channels' potentially long category/channel list). Both the desktop and mobile versions now use a genuine fixed height, with the existing internal scrolling picking up any tab whose content runs longer than that — verified by measuring the modal's actual rendered height was pixel-identical across a short tab and a deliberately long one (15 rows), not just eyeballed.
+
 ## 2.34.0
 
 ### Added
