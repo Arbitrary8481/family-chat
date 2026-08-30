@@ -312,6 +312,14 @@ function initializeChat() {
         .then(r => r.json())
         .then(messages => {
             messages.forEach(msg => addMessage(msg));
+            // Establishes where "load older" should start from for this
+            // first channel view — switchChannel() does the equivalent
+            // for every channel switched to afterward.
+            historyLoadState = {
+                loading: false,
+                hasMore: messages.length === HISTORY_PAGE_SIZE,
+                oldestId: messages.length > 0 ? messages[0].id : null,
+            };
             scrollToBottomRobust();
         })
         .catch(err => {
@@ -638,7 +646,92 @@ function sendMessage(content) {
     socket.emit('send_message', msgData);
 }
 
-function addMessage(data) {
+// Per-channel state for "load older history on scroll up" — reset
+// whenever the active channel changes (see switchChannel() and
+// initializeChat()), since a fresh channel starts back at "we've only
+// loaded the most recent page, there might be more above it".
+// oldestId is always taken from whatever the most-recently-loaded
+// page's own first message was — every page /api/messages returns
+// comes back oldest-first (see get_messages() server-side), so that's
+// reliably the oldest message currently in the DOM.
+const HISTORY_PAGE_SIZE = 100; // must match get_messages()'s own default limit server-side
+let historyLoadState = { loading: false, hasMore: true, oldestId: null };
+
+function showHistoryLoadingIndicator(show) {
+    const container = document.getElementById('messagesContainer');
+    if (!container) return;
+    let indicator = document.getElementById('historyLoadingIndicator');
+    if (show) {
+        if (!indicator) {
+            indicator = document.createElement('div');
+            indicator.id = 'historyLoadingIndicator';
+            indicator.className = 'history-loading-indicator';
+            indicator.textContent = 'Loading older messages…';
+            container.insertBefore(indicator, container.firstChild);
+        }
+    } else if (indicator) {
+        indicator.remove();
+    }
+}
+
+// Triggered by scrolling near the top of the message list (see the
+// scroll listener further down) — fetches the next page of messages
+// older than whatever's currently the oldest loaded, and prepends them
+// without visibly jumping the scroll position.
+function loadOlderMessages() {
+    if (historyLoadState.loading || !historyLoadState.hasMore || historyLoadState.oldestId === null) return;
+    historyLoadState.loading = true;
+    showHistoryLoadingIndicator(true);
+
+    fetch(apiUrl(`/api/messages?channel=${currentChannel}&before_id=${historyLoadState.oldestId}&_=${Date.now()}`))
+        .then(r => r.json())
+        .then(messages => {
+            // Removed here, before any prepending — not in .finally(),
+            // since .finally() runs after this .then() body, which would
+            // leave the indicator sitting at the top *during* the prepend
+            // loop below and end up wedged between the new messages and
+            // the old ones instead of being cleanly gone first.
+            showHistoryLoadingIndicator(false);
+            historyLoadState.hasMore = messages.length === HISTORY_PAGE_SIZE;
+
+            const container = document.getElementById('messagesContainer');
+            if (messages.length > 0 && container) {
+                const previousScrollHeight = container.scrollHeight;
+                const previousScrollTop = container.scrollTop;
+                historyLoadState.oldestId = messages[0].id;
+
+                // The batch itself is oldest-first, but has to be walked
+                // backwards here — prepending one at a time, each new
+                // message goes at the very top, so inserting the batch's
+                // newest member first and its oldest member last is the
+                // only order that leaves the finished batch itself
+                // correctly oldest-to-newest once every insert is done.
+                for (let i = messages.length - 1; i >= 0; i--) {
+                    addMessage(messages[i], 'prepend');
+                }
+
+                // Prepending content above the visible area pushes
+                // everything else down by the same amount — scrollTop
+                // would stay numerically the same but now point at a
+                // completely different spot in the now-taller content,
+                // which from the person's perspective looks like the
+                // view suddenly jumping. Growing scrollTop by exactly how
+                // much scrollHeight grew keeps them looking at the same
+                // message they were already looking at.
+                const newScrollHeight = container.scrollHeight;
+                container.scrollTop = previousScrollTop + (newScrollHeight - previousScrollHeight);
+            }
+        })
+        .catch(err => {
+            console.error('Failed to load older messages:', err);
+            showHistoryLoadingIndicator(false);
+        })
+        .finally(() => {
+            historyLoadState.loading = false;
+        });
+}
+
+function addMessage(data, insertMode = 'append') {
     const container = document.getElementById('messagesContainer');
     if (!container) return;
 
@@ -755,7 +848,17 @@ function addMessage(data) {
         </div>
     `;
     
-    container.appendChild(messageDiv);
+    // 'prepend' is used when loading older history (see
+    // loadOlderMessages()) — inserting one at a time at the very top of
+    // an already-scrolled container is why that function walks its
+    // batch backwards rather than forwards; every other call site
+    // (live messages, initial channel load, search-result jumps) keeps
+    // the default append.
+    if (insertMode === 'prepend') {
+        container.insertBefore(messageDiv, container.firstChild);
+    } else {
+        container.appendChild(messageDiv);
+    }
 }
 
 // Reaction pills for every message currently rendered, keyed by message
@@ -1355,6 +1458,12 @@ function switchChannel(slug, onLoaded) {
             </div>
         `;
     }
+    // Cleared immediately rather than waiting on the fetch below to
+    // resolve — otherwise a scroll during that brief window could
+    // trigger loadOlderMessages() using the *previous* channel's
+    // oldestId against a container that no longer holds any of its
+    // messages.
+    historyLoadState = { loading: false, hasMore: false, oldestId: null };
 
     if (socket) socket.emit('join', {room: currentChannel});
 
@@ -1362,6 +1471,14 @@ function switchChannel(slug, onLoaded) {
         .then(r => r.json())
         .then(messages => {
             messages.forEach(msg => addMessage(msg));
+            // Same reasoning as initializeChat()'s equivalent — this
+            // channel's own "load older" cursor, freshly established
+            // for whatever just got loaded here.
+            historyLoadState = {
+                loading: false,
+                hasMore: messages.length === HISTORY_PAGE_SIZE,
+                oldestId: messages.length > 0 ? messages[0].id : null,
+            };
             if (onLoaded) {
                 // Jumping to a specific message (e.g. from search) — scroll
                 // there first, then let the caller's own scroll-into-view
@@ -2820,6 +2937,14 @@ document.addEventListener('DOMContentLoaded', () => {
     messagesContainer.addEventListener('scroll', () => {
         if (emojiPickerContext) hideEmojiPicker();
         updateScrollToBottomButton();
+        // 150px rather than exactly 0 — triggering the fetch a little
+        // before the person actually hits the very top means the next
+        // page is usually already loaded (or loading) by the time they
+        // get there, rather than them hitting a dead stop and having to
+        // wait.
+        if (messagesContainer.scrollTop < 150) {
+            loadOlderMessages();
+        }
     });
 });
 

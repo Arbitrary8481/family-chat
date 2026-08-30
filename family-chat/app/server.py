@@ -837,15 +837,30 @@ def delete_channel(slug):
     # re-creating a channel with the same slug would bring them back.
     return True, None
 
-def get_messages(limit=100, channel='general'):
+def get_messages(limit=100, channel='general', before_id=None):
     conn = sqlite3.connect('/data/chat.db')
     c = conn.cursor()
-    c.execute('''SELECT m.*, ua.alias as current_alias, av.avatar_url
-                 FROM messages m
-                 LEFT JOIN user_aliases ua ON ua.user_id = m.sender_id
-                 LEFT JOIN user_avatars av ON av.user_id = m.sender_id
-                 WHERE m.channel = ?
-                 ORDER BY m.timestamp DESC LIMIT ?''', (channel, limit))
+    # before_id (an existing message's id) is how "load older history"
+    # asks for the next page — a cursor into the id sequence rather than
+    # an offset, since an offset would silently skip or repeat messages
+    # if new ones get sent while someone's scrolling back through
+    # history. Ordering (and pagination) both key off timestamp, but
+    # ties are broken by id so two messages saved in the same instant
+    # never land on the wrong side of a page boundary.
+    if before_id is not None:
+        c.execute('''SELECT m.*, ua.alias as current_alias, av.avatar_url
+                     FROM messages m
+                     LEFT JOIN user_aliases ua ON ua.user_id = m.sender_id
+                     LEFT JOIN user_avatars av ON av.user_id = m.sender_id
+                     WHERE m.channel = ? AND m.id < ?
+                     ORDER BY m.timestamp DESC, m.id DESC LIMIT ?''', (channel, before_id, limit))
+    else:
+        c.execute('''SELECT m.*, ua.alias as current_alias, av.avatar_url
+                     FROM messages m
+                     LEFT JOIN user_aliases ua ON ua.user_id = m.sender_id
+                     LEFT JOIN user_avatars av ON av.user_id = m.sender_id
+                     WHERE m.channel = ?
+                     ORDER BY m.timestamp DESC, m.id DESC LIMIT ?''', (channel, limit))
     messages = c.fetchall()
 
     # Get columns
@@ -1497,7 +1512,8 @@ def admin_update_aliases():
 @app.route('/api/messages')
 def get_messages_api():
     channel = request.args.get('channel', 'general')
-    return jsonify(get_messages(channel=channel))
+    before_id = request.args.get('before_id', type=int)
+    return jsonify(get_messages(channel=channel, before_id=before_id))
 
 @app.route('/api/emojis')
 def get_emojis():

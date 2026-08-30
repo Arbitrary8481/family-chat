@@ -620,6 +620,13 @@ body {
 }
 
 /* Typing Indicator */
+.history-loading-indicator {
+    text-align: center;
+    padding: 12px 0;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
 .typing-indicator {
     padding: 8px 16px;
     color: var(--text-muted);

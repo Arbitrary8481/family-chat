@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.35.0
+
+### Added
+- **Older message history now loads as you scroll up.** Every channel used to hard-cap at its 100 most recent messages with no way to see anything older — for an active channel that's often just a few days. Scrolling near the top now fetches and prepends the next page automatically, without visibly jumping the view (the scroll position is adjusted by exactly however much content was just added above it). Uses cursor-based pagination (a message id, not an offset) specifically so it can't skip or duplicate a message if new ones arrive while someone's scrolled back through history.
+
 ## 2.34.1
 
 ### Fixed
