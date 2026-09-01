@@ -73,7 +73,7 @@ Everything else — the chat's display name, channels, the server owner, and ind
 
 ## Support
 
-Keep in mind that I built this for myself, so it is set up how I like it. If you are running into an issue, please check the add-on log (Settings → Add-ons → Family Chat → Log) if something isn't working as expected. Feel free to submit an issue if you find something that isn't working. You can submit ideas for improvements and feedback in the discussions here on github. 
+This is a self-hosted, family-run project — there's no formal support channel. Check the add-on log (Settings → Add-ons → Family Chat → Log) if something isn't working as expected; several of the trickier bugs found so far have left a clear trace there.
 
 ## Note:
 

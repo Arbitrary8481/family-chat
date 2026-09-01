@@ -6,7 +6,29 @@
     <title>Family Chat</title>
     
     <!-- Socket.IO (required for chat) -->
-    <script src="./static/socket.io.min.js?v={{ asset_version }}"></script>
+    <script>
+        // A server-rendered "?v=" query string with a random value only
+        // busts the cache if *this HTML document itself* was fetched
+        // fresh — Home Assistant's ingress iframe layer has a
+        // documented history throughout this app's life of not
+        // reliably honoring even Cache-Control: no-store for the page
+        // document (see set_cache_headers() server-side), so a stale
+        // copy of this page would carry an equally stale, already-baked
+        // asset_version" (as this app's earlier approach did), silently defeating the whole mechanism.
+        // document.write()'ing the tag with a value computed the moment
+        // this code actually runs in the browser — not one baked in
+        // server-side — means the fetched file is guaranteed fresh
+        // regardless of whether the surrounding page itself was cached.
+        // Deliberately document.write(), not createElement+appendChild:
+        // that would load asynchronously, risking script.js's own
+        // DOMContentLoaded listener (see the very bottom of this file)
+        // registering after that event had already fired, silently
+        // breaking the entire app's startup. document.write() during
+        // initial parsing blocks the parser the same way a normal
+        // static <script src> tag does, preserving the same execution
+        // order and timing guarantees.
+        document.write('<script src="./static/socket.io.min.js?v=' + Date.now() + '"><\/script>');
+    </script>
 
     <!-- Inlined (not a separate request) so styling can never race against
          Home Assistant's ingress session being established on reload -->
@@ -564,6 +586,12 @@
         window.IS_OWNER = {{ is_owner|tojson }};
         window.DEFAULT_CHANNEL = {{ (channels[0].slug if channels else 'general')|tojson }};
     </script>
-    <script src="./static/script.js?v={{ asset_version }}"></script>
+    <script>
+        // Same reasoning as the socket.io tag near the top of this file
+        // — see that comment for the full explanation of why this is
+        // document.write() rather than a static src= or a
+        // createElement+appendChild.
+        document.write('<script src="./static/script.js?v=' + Date.now() + '"><\/script>');
+    </script>
 </body>
 </html>

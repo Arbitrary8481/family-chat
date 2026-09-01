@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.35.1
+
+### Fixed
+- **New features intermittently missing on first load in Firefox until a manual refresh** (most recently noticed as the Reply button). The server-rendered `?v=` cache-busting query string on `script.js`/`socket.io.min.js` only ever worked if *this HTML page itself* was fetched fresh — Home Assistant's ingress iframe layer has a documented history in this app of not reliably honoring even `Cache-Control: no-store` for the page document. A stale copy of the page would carry an equally stale, already-baked version string, silently defeating the whole mechanism regardless of what the header said. Both script tags now use `document.write()` with a value computed the moment that code actually runs in the browser, not one baked in server-side — verified this stays genuinely fresh across repeated loads of the *same unchanged* HTML file, and confirmed (against a real running instance, real socket.io library included) that this doesn't disturb load order or break `DOMContentLoaded`-based startup.
+
 ## 2.35.0
 
 ### Added

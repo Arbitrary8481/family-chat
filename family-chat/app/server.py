@@ -1142,17 +1142,9 @@ def index():
     auto_user_id, auto_user = resolve_ha_identity()
     server_identity = get_server_identity()
 
-    # Fresh on every single page load, not just once per container
-    # restart — see the comment where this used to be a module-level
-    # constant, above, for why a once-per-restart version wasn't
-    # aggressive enough to reliably defeat Home Assistant's ingress
-    # caching behavior.
-    asset_version = secrets.token_hex(8)
-
     return render_template('index.html',
                           members=get_known_people(),
                           theme=THEME,
-                          asset_version=asset_version,
                           inline_css=INLINE_CSS,
                           channels=get_channels(),
                           categories=get_categories(),
