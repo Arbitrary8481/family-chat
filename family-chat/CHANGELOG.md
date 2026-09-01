@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.35.2
+
+### Changed
+- **Message length limit raised from 4,000 to 20,000 characters**, to comfortably cover a real reported case — pasting a whole conversation copied from elsewhere to share it. Also fixed a real gap this surfaced: the message box's own HTML `maxlength` was set to 2,000, *lower* than the old server-side limit — meaning a long paste was already being silently cut off by the browser before it ever reached the server-side check at all, regardless of what that check's number was. Both are now kept in sync at 20,000.
+
 ## 2.35.1
 
 ### Fixed

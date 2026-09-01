@@ -2479,10 +2479,17 @@ def handle_message(data):
     # payload gets stored as-is and broadcast to everyone in the
     # channel, then re-fetched on every future page load by every
     # member, so this is both a storage-bloat and bandwidth concern, not
-    # just a display one. 4000 characters is generous for a chat message
-    # while still being a hard ceiling.
-    if len(content) > 4000:
-        emit('server_error', {'message': 'That message is too long (4000 characters max).'})
+    # just a display one. Raised from an original 4000 to 20000 to
+    # comfortably cover a real reported use case (pasting a whole
+    # conversation copied from elsewhere) — still a generous ceiling
+    # relative to anything resembling ordinary chat messages, not an
+    # attempt to finely tune the exact right number. The message
+    # textarea's own maxlength (see index.html) has to be kept in sync
+    # with this — that HTML attribute is what a paste actually hits
+    # first, silently truncating before content ever reaches this check
+    # at all if the two numbers ever drift apart.
+    if len(content) > 20000:
+        emit('server_error', {'message': 'That message is too long (20,000 characters max).'})
         return
     if not content and not file_info:
         return
