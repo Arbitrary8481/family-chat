@@ -1873,6 +1873,63 @@ body {
     background: var(--bg-modifier-hover);
 }
 
+.link-preview-card {
+    display: block;
+    margin-top: 6px;
+    max-width: 400px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--bg-modifier-hover);
+    border-radius: 4px;
+    overflow: hidden;
+    text-decoration: none;
+    transition: background 0.15s;
+}
+
+.link-preview-card:hover {
+    background: var(--bg-modifier-hover);
+}
+
+.link-preview-image {
+    display: block;
+    width: 100%;
+    max-height: 200px;
+    object-fit: cover;
+    background: var(--bg-secondary);
+}
+
+.link-preview-body {
+    padding: 10px 12px;
+}
+
+.link-preview-site {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 2px;
+}
+
+.link-preview-title {
+    font-weight: 600;
+    color: var(--text-normal);
+    margin-bottom: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.link-preview-description {
+    font-size: 13px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
 .calendar-event-icon {
     font-size: 24px;
     flex-shrink: 0;

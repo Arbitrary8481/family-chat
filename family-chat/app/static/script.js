@@ -285,6 +285,34 @@ function initializeChat() {
         removeMessageFromDom(data.message_id);
     });
 
+    // Arrives some time after the message itself already did — see
+    // queue_link_preview() server-side, which runs as a background
+    // task specifically so posting a message never has to wait on some
+    // external site responding. Patches the preview onto a message
+    // that's already fully rendered and on-screen; a no-op if that
+    // message isn't currently loaded (scrolled out of the most recent
+    // page, or the person switched to a different channel since).
+    socket.on('link_preview_ready', function(data) {
+        const messageDiv = document.querySelector(`.message[data-id="${data.message_id}"]`);
+        if (!messageDiv) return;
+        const content = messageDiv.querySelector('.message-content');
+        if (!content || content.querySelector('.link-preview-card')) return;
+        // Inserted immediately before any reactions row specifically
+        // (rather than just appended to the very end) so the result
+        // matches the same ordering a freshly-loaded copy of this same
+        // message would have — contentHtml, then the preview, then
+        // reactions. Without this, reacting to a message before its
+        // preview happens to arrive would otherwise leave the preview
+        // stuck below the reactions instead of above them.
+        const reactionsEl = content.querySelector('.message-reactions');
+        const previewHtml = buildLinkPreviewHtml(data.preview);
+        if (reactionsEl) {
+            reactionsEl.insertAdjacentHTML('beforebegin', previewHtml);
+        } else {
+            content.insertAdjacentHTML('beforeend', previewHtml);
+        }
+    });
+
     // If something goes wrong server-side while handling an event (a
     // failed send, a bad reaction, etc.), this is what used to fail
     // completely silently — now at least tell the person something broke.
@@ -778,6 +806,12 @@ function addMessage(data, insertMode = 'append') {
             <span class="reply-quote-text">${escapeHtml(data.reply_to_summary || '')}</span>
         </div>
     ` : '';
+
+    // Present from the start for a history-loaded message that already
+    // has one; absent for a message that was *just* sent, until the
+    // separate 'link_preview_ready' event (handled elsewhere) patches
+    // it in once the background fetch actually completes.
+    const linkPreviewHtml = buildLinkPreviewHtml(data.link_preview);
     
     if (data.file || data.file_url) {
         const rawFileName = data.file?.filename || data.file_name || '';
@@ -839,6 +873,7 @@ function addMessage(data, insertMode = 'append') {
             </div>
             ${replyQuoteHtml}
             ${contentHtml}
+            ${linkPreviewHtml}
             ${reactionsHtml}
         </div>
         <div class="message-actions">
@@ -2002,6 +2037,25 @@ document.addEventListener('click', (e) => {
         openCalendarEventDetails(JSON.parse(payload));
     } catch (err) {}
 });
+
+// Shared by both the initial render (a history-loaded message that
+// already has a preview attached) and the live 'link_preview_ready'
+// socket handler (patching one onto a message already on-screen) — one
+// function so the actual markup can't drift between those two paths.
+function buildLinkPreviewHtml(preview) {
+    if (!preview || !preview.title) return '';
+    const safeHref = safeUrl(preview.url);
+    return `
+        <a href="${safeHref}" target="_blank" rel="noopener noreferrer nofollow" class="link-preview-card" onclick="event.stopPropagation()">
+            ${preview.image ? `<img class="link-preview-image" src="${safeUrl(preview.image)}" alt="" loading="lazy">` : ''}
+            <div class="link-preview-body">
+                ${preview.site_name ? `<div class="link-preview-site">${escapeHtml(preview.site_name)}</div>` : ''}
+                <div class="link-preview-title">${escapeHtml(preview.title)}</div>
+                ${preview.description ? `<div class="link-preview-description">${escapeHtml(preview.description)}</div>` : ''}
+            </div>
+        </a>
+    `;
+}
 
 // Renders a calendar_event message's JSON payload (see
 // api_create_calendar_event() server-side) as a small card rather than

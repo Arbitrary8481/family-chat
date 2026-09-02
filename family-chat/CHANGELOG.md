@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.36.0
+
+### Added
+- **Link previews.** Posting a message with a single link now shows a preview card (title, description, image, source) a moment after the message itself sends — never delays the message, since the fetch happens in the background and patches the preview in live once it's ready. YouTube links use YouTube's own oEmbed API specifically (more reliable than scraping the page); everything else reads standard Open Graph tags, the same metadata most sites already publish for this exact purpose. A message with more than one link skips preview generation entirely, by design. Includes SSRF protection as a non-negotiable part of the feature, not an afterthought — every hostname's actual resolved IP is checked before fetching anything, blocking private/internal network ranges, loopback, link-local, and cloud metadata addresses, so a pasted link can never trick this app's own server into reaching into your home network or Home Assistant's local API.
+
 ## 2.35.2
 
 ### Changed

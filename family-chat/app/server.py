@@ -10,11 +10,13 @@ eventlet.monkey_patch()
 import asyncio
 import functools
 import hmac
+import ipaddress
 import json
 import logging
 import os
 import re
 import secrets
+import socket
 import sqlite3
 import base64
 import hashlib
@@ -259,6 +261,17 @@ def init_db():
         c.execute('ALTER TABLE messages ADD COLUMN reply_to_sender TEXT')
     if 'reply_to_summary' not in existing_cols:
         c.execute('ALTER TABLE messages ADD COLUMN reply_to_summary TEXT')
+
+    # Link preview — a JSON blob ({title, description, image, site_name})
+    # fetched *after* the message is already saved and broadcast, not
+    # before, so posting a message never has to wait on some external
+    # site responding. Starts NULL and gets filled in later by a
+    # background task (see queue_link_preview()); the client patches it
+    # onto the already-rendered message live via a follow-up socket
+    # event, and it's included automatically for anyone loading this
+    # message from history afterward, same as the reply_to_* columns.
+    if 'link_preview' not in existing_cols:
+        c.execute('ALTER TABLE messages ADD COLUMN link_preview TEXT')
 
     # Display name aliases, keyed by the stable Home Assistant user ID (not
     # by name, since names can change). Looked up at read time so renaming
@@ -876,6 +889,18 @@ def get_messages(limit=100, channel='general', before_id=None):
             msg['sender'] = msg['current_alias']
         del msg['current_alias']
         msg['reactions'] = {}
+        # Stored as a JSON string (see queue_link_preview()) but handed
+        # back to the client as a proper nested object rather than a
+        # string it would have to parse itself a second time — None
+        # for the (very common) case of a message with no preview yet,
+        # rather than the literal string "null".
+        if msg.get('link_preview'):
+            try:
+                msg['link_preview'] = json.loads(msg['link_preview'])
+            except (json.JSONDecodeError, TypeError):
+                msg['link_preview'] = None
+        else:
+            msg['link_preview'] = None
         result.append(msg)
         message_ids.append(msg['id'])
 
@@ -1595,7 +1620,176 @@ def upload_emoji():
 def serve_file(filename):
     return send_from_directory(UPLOAD_FOLDER, filename)
 
-GIPHY_API_BASE = 'https://api.giphy.com/v1/gifs'
+LINK_PREVIEW_URL_PATTERN = re.compile(r'https?://[^\s<>"\']+')
+
+def extract_single_url(text):
+    """Returns the message's one URL, trimmed of trailing punctuation
+    the same way linkifyText() does client-side (so the URL that gets
+    previewed matches the one the person would actually click) — or
+    None if the message contains zero URLs or more than one. Multiple
+    links deliberately skip preview generation entirely rather than
+    guessing which one matters; see queue_link_preview()'s caller."""
+    matches = LINK_PREVIEW_URL_PATTERN.findall(text or '')
+    if len(matches) != 1:
+        return None
+    url = matches[0]
+    trimmed = True
+    while trimmed and url:
+        trimmed = False
+        if re.search(r'[.,!?:;]$', url):
+            url = url[:-1]
+            trimmed = True
+        elif url.endswith(')') and url.count('(') < url.count(')'):
+            url = url[:-1]
+            trimmed = True
+        elif url.endswith(']') and url.count('[') < url.count(']'):
+            url = url[:-1]
+            trimmed = True
+    return url or None
+
+def is_safe_external_url(url):
+    """Blocks this app's own server from being tricked into fetching an
+    internal/private network resource (Home Assistant's own local API,
+    a router's admin page, cloud metadata endpoints, etc.) via a pasted
+    link — checked against every IP a hostname actually resolves to,
+    not just whether the hostname string itself looks internal, since a
+    perfectly normal-looking hostname can still resolve to a private
+    address."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme not in ('http', 'https'):
+        return False
+    hostname = parsed.hostname
+    if not hostname:
+        return False
+    if hostname.lower() in ('localhost', '0.0.0.0'):
+        return False
+    try:
+        addrinfo = socket.getaddrinfo(hostname, None)
+    except socket.gaierror:
+        return False
+    for family, _, _, _, sockaddr in addrinfo:
+        try:
+            ip = ipaddress.ip_address(sockaddr[0])
+        except ValueError:
+            continue
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
+            return False
+    return True
+
+YOUTUBE_HOSTS = {'youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be', 'music.youtube.com'}
+
+def is_youtube_url(url):
+    try:
+        hostname = (urllib.parse.urlparse(url).hostname or '').lower()
+    except ValueError:
+        return False
+    return hostname in YOUTUBE_HOSTS
+
+def fetch_youtube_oembed(url):
+    """YouTube's own oEmbed endpoint — official and far more reliable
+    for a YouTube link specifically than scraping the page's Open Graph
+    tags would be, and it's a public API needing no key."""
+    oembed_url = f'https://www.youtube.com/oembed?url={urllib.parse.quote(url, safe="")}&format=json'
+    try:
+        req = urllib.request.Request(oembed_url, headers={'Accept': 'application/json'})
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
+        logger.warning('YouTube oEmbed fetch failed for %s: %s', url, e)
+        return None
+    return {
+        'url': url,
+        'title': (data.get('title') or '')[:200],
+        'description': (data.get('author_name') or '')[:200],
+        'image': data.get('thumbnail_url'),
+        'site_name': 'YouTube',
+    }
+
+_OG_TAG_PATTERN = re.compile(
+    r'<meta[^>]+property=["\']og:(title|description|image|site_name)["\'][^>]+content=["\']([^"\']*)["\']',
+    re.IGNORECASE
+)
+# Some sites order the attributes the other way around (content before
+# property) — covered by a second pass with the two swapped, rather
+# than one significantly more complex regex trying to handle both.
+_OG_TAG_PATTERN_REVERSED = re.compile(
+    r'<meta[^>]+content=["\']([^"\']*)["\'][^>]+property=["\']og:(title|description|image|site_name)["\']',
+    re.IGNORECASE
+)
+
+def fetch_open_graph_preview(url):
+    """General fallback for any link that isn't specifically YouTube —
+    reads the handful of standard Open Graph meta tags most sites
+    already publish for exactly this purpose (the same tags Discord,
+    Slack, and iMessage link previews all read)."""
+    try:
+        req = urllib.request.Request(url, headers={
+            'User-Agent': 'Mozilla/5.0 (compatible; FamilyChatLinkPreview/1.0)',
+            'Accept': 'text/html',
+        })
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            content_type = resp.headers.get('Content-Type', '')
+            if 'text/html' not in content_type:
+                return None
+            # A page's <head> is always near the very start of the
+            # document — reading only the first chunk avoids downloading
+            # an entire (possibly huge) page just to find a few meta
+            # tags, and bounds how long a slow/oversized response can
+            # tie up this background task for.
+            html = resp.read(65536).decode('utf-8', errors='replace')
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError) as e:
+        logger.warning('Open Graph fetch failed for %s: %s', url, e)
+        return None
+
+    tags = {}
+    for pattern, groups_order in ((_OG_TAG_PATTERN, ('key', 'value')), (_OG_TAG_PATTERN_REVERSED, ('value', 'key'))):
+        for match in pattern.finditer(html):
+            groups = dict(zip(groups_order, match.groups()))
+            if groups['key'] not in tags:
+                tags[groups['key']] = groups['value']
+
+    if not tags.get('title'):
+        return None
+
+    image = tags.get('image')
+    if image:
+        # og:image is often a relative path — resolved against the
+        # page's own URL the same way a browser would.
+        image = urllib.parse.urljoin(url, image)
+
+    return {
+        'url': url,
+        'title': tags.get('title', '')[:200],
+        'description': tags.get('description', '')[:300],
+        'image': image,
+        'site_name': tags.get('site_name') or (urllib.parse.urlparse(url).hostname or ''),
+    }
+
+def queue_link_preview(message_id, channel, content):
+    """Runs in a background task (see socketio.start_background_task in
+    handle_message()) — fetching a preview happens *after* the message
+    is already saved and broadcast, never before, so posting a message
+    never has to wait on some external site responding. Emits a
+    follow-up event once (if) a preview is actually found, which the
+    client uses to patch it onto the message that's already on-screen."""
+    url = extract_single_url(content)
+    if not url or not is_safe_external_url(url):
+        return
+
+    preview = fetch_youtube_oembed(url) if is_youtube_url(url) else fetch_open_graph_preview(url)
+    if not preview:
+        return
+
+    conn = sqlite3.connect('/data/chat.db')
+    c = conn.cursor()
+    c.execute('UPDATE messages SET link_preview = ? WHERE id = ?', (json.dumps(preview), message_id))
+    conn.commit()
+    conn.close()
+
+    socketio.emit('link_preview_ready', {'message_id': message_id, 'preview': preview}, room=channel)
 
 def _clamp_int(value, default, minimum, maximum):
     try:
@@ -2535,6 +2729,16 @@ def handle_message(data):
     # even open on their phone right now. Deliberately last: never let a
     # slow/failed notification delay the message actually showing up.
     notify_message_subscribers(channel, sender, sender_id, content, msg_type, file_info)
+
+    # Same reasoning as the notification call just above — runs as a
+    # background task specifically so fetching some external site never
+    # delays the message itself showing up; queue_link_preview() emits
+    # its own separate, follow-up event once (if) a preview is actually
+    # found. Only ever attempted for plain text messages — a link
+    # incidentally present in a calendar_event's JSON payload, for
+    # instance, isn't the kind of thing this feature is for.
+    if msg_type == 'text':
+        socketio.start_background_task(queue_link_preview, msg_id, channel, content)
 
 @socketio.on('add_reaction')
 @log_socket_errors
