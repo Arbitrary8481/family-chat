@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.36.2
+
+### Fixed
+- **The composer became nearly unusable on phone-width screens** — a short, ordinary message would wrap into a narrow column just a few characters wide and balloon the whole box's height, covering most of the chat. Root cause confirmed directly: the five action buttons (attach/GIF/calendar/emoji/send) sitting in one row alongside the text field left the field itself only 65px of actual width on a 360px-wide screen. Fixed by splitting the composer into two rows specifically on phone-width screens — the text field full-width on its own line, every button together on the line below — verified this brings a realistic message back to a single line at that same width, confirmed the button row itself doesn't overflow even at the narrowest common phone width (320px), and confirmed desktop's layout is completely unchanged.
+
+## 2.36.1
+
+### Fixed
+- **A custom emoji showed as its plain :name: text instead of the actual image** in two places: the Recent tab (once you'd actually used it once), and as a reaction on a message. The Custom tab and emoji search were already handling this correctly — both explicitly know which emoji they're showing is custom. Recent and reactions didn't; they always assumed every emoji was a plain Unicode character, since a custom emoji's *name* looks like ordinary text right up until you know to check it against the uploaded emoji list. Both now correctly render the actual image, using the same shared logic in both places.
+
 ## 2.36.0
 
 ### Added

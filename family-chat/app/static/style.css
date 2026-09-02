@@ -747,6 +747,13 @@ body {
     min-height: 44px;
 }
 
+.composer-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+}
+
 .attach-btn, .emoji-btn, .gif-btn, .calendar-btn, .send-btn {
     background: transparent;
     border: none;
@@ -2121,6 +2128,33 @@ body {
        the same space at all — it can go back to sitting normally below
        it, and closing the drawer no longer depends on being able to
        see/tap anything in the header while it's open. */
+
+    /* The composer's five action buttons (attach/GIF/calendar/emoji/
+       send) sitting in one row alongside the text field works fine on
+       desktop, but on a phone-width screen those fixed-size buttons
+       leave the text field only a sliver of actual width — confirmed
+       directly: on a 360px-wide screen, the buttons plus their gaps ate
+       up so much space that the field itself measured out to just 65px
+       wide, severely word-wrapping even a short, ordinary message and
+       ballooning the whole composer's height as a result (the actual
+       reported bug this fixes). Splitting into two rows — the text
+       field full-width on its own line, every button together on the
+       line below — is what composer-actions (see index.html) exists
+       to make possible without needing any JS or HTML changes beyond
+       that one grouping.
+       .composer-actions its own justify-content: flex-end (rather than
+       inheriting .input-wrapper's default) is deliberate too, not an
+       oversight — without it, the buttons would sit flush against the
+       *left* edge on their own row, when the natural place to expect
+       Send in particular is the right side, same as the row above it. */
+    .input-wrapper {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+    }
+    .composer-actions {
+        justify-content: flex-end;
+    }
 
     .drawer-close-btn {
         display: flex;

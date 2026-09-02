@@ -902,6 +902,21 @@ function addMessage(data, insertMode = 'append') {
 // back into the DOM without needing to reload the whole channel.
 const messageReactions = {};
 
+// Shared by everywhere an emoji might be either a plain Unicode
+// character or a custom upload's :name: (a reaction pill, the emoji
+// grid's Recent tab) — customEmojis is the authoritative source of
+// truth for which is which, since a custom emoji's name always has
+// colons on both sides (see save_custom_emoji() server-side) and can
+// never collide with an actual Unicode character. sizePx defaults to
+// something reaction-pill-sized; the grid callers below pass their own
+// larger size to match the existing Custom-tab/search-result sizing.
+function renderEmojiHtml(emoji, sizePx = 18) {
+    if (Object.prototype.hasOwnProperty.call(customEmojis, emoji)) {
+        return `<img src="${safeUrl(resolveUrl(customEmojis[emoji]))}" alt="${escapeHtml(emoji)}" style="width: ${sizePx}px; height: ${sizePx}px; vertical-align: middle;">`;
+    }
+    return escapeHtml(emoji);
+}
+
 function buildReactionsHtml(messageId, reactions) {
     if (!reactions || Object.keys(reactions).length === 0) return '';
     let html = '<div class="message-reactions">';
@@ -914,7 +929,7 @@ function buildReactionsHtml(messageId, reactions) {
         // otherwise be able to break out of the attribute.
         html += `
             <div class="reaction ${isActive ? 'active' : ''}" data-message-id="${messageId}" data-emoji="${escapeHtml(emoji)}">
-                ${escapeHtml(emoji)} <span class="reaction-count">${users.length}</span>
+                ${renderEmojiHtml(emoji)} <span class="reaction-count">${users.length}</span>
             </div>
         `;
     }
@@ -1346,8 +1361,19 @@ function loadEmojiCategory(category) {
     emojis.forEach(emoji => {
         const item = document.createElement('div');
         item.className = 'emoji-item';
-        item.textContent = emoji;
-        item.title = emojiNames[emoji] || '';
+        // Only the 'recent' list can ever actually contain a mix of
+        // both kinds (insertEmoji() pushes whatever was clicked,
+        // custom or Unicode, into the same array) — every other
+        // category here is always pure Unicode, so this check is a
+        // harmless no-op for those, not something scoped to 'recent'
+        // specifically.
+        if (Object.prototype.hasOwnProperty.call(customEmojis, emoji)) {
+            item.innerHTML = renderEmojiHtml(emoji, 28);
+            item.title = emoji;
+        } else {
+            item.textContent = emoji;
+            item.title = emojiNames[emoji] || '';
+        }
         item.onclick = () => insertEmoji(emoji);
         grid.appendChild(item);
     });
