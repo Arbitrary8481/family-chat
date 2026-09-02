@@ -1,312 +1,86 @@
 # Family Chat
 
-A private, Discord-like chat application for your family that runs entirely inside [Home Assistant](https://www.home-assistant.io/). No separate accounts to create, no ads, no data mining — just a simple, secure messaging platform where your family can chat, share files, react with emojis, and stay connected.
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Add--on-blue.svg)](https://www.home-assistant.io/)
-
-![Family Chat Screenshot](https://private-user-images.githubusercontent.com/190531648/639602377-d5abe812-c1d3-480c-b479-165295354edd.png)
-
----
-
-## Table of Contents
-
-- [Overview](#overview)
-- [Features](#features)
-- [Architecture](#architecture)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Permissions & Roles](#permissions--roles)
-- [Security](#security)
-- [Requirements](#requirements)
-- [Troubleshooting](#troubleshooting)
-- [Changelog](#changelog)
-- [License](#license)
-- [Support](#support)
-
----
-
-## Overview
-
-Family Chat is a Home Assistant add-on that provides a self-hosted, real-time messaging platform for families. It automatically authenticates users through Home Assistant's ingress system — when a family member opens the chat from the Home Assistant sidebar, they're instantly signed in as themselves with no additional login required.
-
-**Key Principles:**
-- **Privacy First**: All data stays on your Home Assistant instance
-- **No External Dependencies**: No cloud services required (except optional GIPHY)
-- **Simple & Familiar**: Uses an interface that's intuitive for all ages
-- **Self-Hosted**: You own your data, stored locally in SQLite
-
----
-
+A private chat for your family that runs entirely inside Home Assistant. There's no separate account to create — Family Chat signs everyone in automatically using whoever's already logged into Home Assistant, so each person just shows up as themselves. There are no ads, the data is all hosted on your Home Assistant system (make sure you have room for all those gifs and images your family posts) and no monetization being forced down your throat.
+<img width="1494" height="675" alt="screenshot - FC" src="https://github.com/user-attachments/assets/d5abe812-c1d3-480c-b479-165295354edd" />
 ## Features
 
-### Messaging
-| Feature | Description |
-|---------|-------------|
-| **Real-time Chat** | Messages appear instantly via WebSockets — no refresh needed |
-| **Channels** | Organize conversations into topic-based channels (e.g., `#general`, `#memories`, `#plans`) |
-| **Channel Categories** | Group channels under collapsible category headers (Discord-style) |
-| **Message Replies** | Reply to specific messages with quoted context |
-| **@Mentions** | Mention family members with `@` — they'll get notified even if they haven't subscribed to the channel |
-| **Unread Indicators** | Bold channel names show new activity; red badges show @mentions |
-| **Search** | Search across all channels for message history |
-| **Link Previews** | Automatic preview cards for shared URLs (with SSRF protection) There is a slight delay when processing the link previews for security purposes. |
-| **Message History** | Infinite scroll to load older messages (cursor-based pagination) |
+**Channels** — Organize conversations into channels (e.g. `#general`, `#memories`, `#plans`). Anyone can add a new channel from their own Settings; removing one is restricted to an admin or the server owner, since it affects everyone at once.
 
-### Media & Files
-| Feature | Description |
-|---------|-------------|
-| **File Sharing** | Upload images, videos, documents, and more (configurable file types) |
-| **Screenshot Paste** | Paste screenshots directly from clipboard (Ctrl+V / Cmd+V) |
-| **GIF Picker** | Search and post GIFs from GIPHY (requires free API key) |
-| **Custom Emoji** | Upload your own emoji for family inside jokes |
-| **Avatar Upload** | Personalize your profile with a custom photo (with circular crop tool) |
-| **Image Previews** | Inline previews for uploaded images |
+**Real-time messaging** — Messages, reactions, and deletions all show up instantly for everyone in that channel via WebSockets, without needing to refresh.
 
-### Calendar Integration
-| Feature | Description |
-|---------|-------------|
-| **Home Assistant Calendar** | View upcoming events from all your HA calendars. The server admin can choose which calendars can be used for this. |
-| **Add Events** | Create calendar events directly from chat discussions |
-| **Event Details** | Click any event to see full details (date, time, location, description) |
-| **Admin Controls** | Restrict which calendars can receive new events |
+**Reactions** — React to any message with a full emoji picker (search by keyword, browse by category, or use your recently-used emoji), including your own custom uploaded emoji. Clicking a reaction again removes it.
 
-### Notifications
-| Feature | Description |
-|---------|-------------|
-| **Push Notifications** | Get notified on your phone via Home Assistant Companion App |
-| **Per-Channel Subscriptions** | Choose which channels notify you |
-| **@Mention Alerts** | Always notified when mentioned, regardless of subscription |
+**GIFs** — Search GIPHY or browse what's trending and post a GIF straight to the chat, no downloading required. Requires a free GIPHY API key (see Configuration below).
 
-### Customization
-| Feature | Description |
-|---------|-------------|
-| **Display Names** | Set a custom name separate from your Home Assistant username |
-| **Light/Dark Theme** | Choose your preferred color scheme |
-| **Custom Chat Name** | Rebrand the chat to match your family name |
-| **Collapsible Sidebars** | Hide channel list or member list for more space |
+**Custom emoji** — Upload your own emoji from Settings and use them anywhere the regular emoji picker appears.
 
-### Administration
-| Feature | Description |
-|---------|-------------|
-| **Admin Panel** | Password-protected panel for server management |
-| **Channel Management** | Add, delete, and reorder channels and categories |
-| **User Management** | Set display names for family members |
-| **Server Owner** | Designate an owner with elevated privileges |
-| **Calendar Restrictions** | Control which calendars can receive events |
+**Calendar integration** - Integrates directly with your home assistant calendar. However if you have more than one you can control which calendars it displays from the admin panel. Want to add a calendar item from a discussion with the family? Just click the calendar button in the messaging interface to do so!
 
----
+**File & screenshot sharing** — Attach a file with the 📎 button, or just paste a screenshot straight from your clipboard (Ctrl+V / Cmd+V) — no need to save it to disk first.
 
-## Architecture
+**Clickable links** — URLs posted in a message become real, clickable links automatically.
 
-### Tech Stack
+**Search** — Search message history across every channel at once, not just the one you're currently viewing.
 
-| Component | Technology |
-|-----------|------------|
-| **Backend** | Python 3.11 + Flask |
-| **WebSocket** | Flask-SocketIO with Eventlet |
-| **Database** | SQLite (persistent storage in `/data`) |
-| **Frontend** | Vanilla JavaScript + Custom CSS |
-| **Container** | Docker (Alpine Linux 3.19 base) |
-| **Security** | Custom AppArmor profile |
+**Delete messages** — Delete your own messages any time. Admins and the server owner can delete anyone's.
 
-### Project Structure
+**Push notifications** — Each user can opt in (per channel) to get notified on your phone when a new message comes in, using Home Assistant's own notification system — specifically the Home Assistant Companion App. No separate push service, no extra accounts; just pick which of your devices to notify from Settings. To be clear, this means you can use any currently configured notification system you have set up.
 
-```text
-family-chat/
-├── app/
-│   ├── server.py           # Flask/SocketIO application
-│   ├── requirements.txt    # Python dependencies
-│   ├── static/             # CSS, JavaScript, assets
-│   └── templates/          # HTML templates
-├── config.yaml             # Add-on configuration schema
-├── Dockerfile              # Container build instructions
-├── apparmor.txt            # Security profile
-└── run.sh                  # Container entrypoint
-```
+**Personal display names** — Set your own display name (independent of your Home Assistant username) from Settings. An admin can also set or override anyone's from the admin panel.
 
-### Key Dependencies
+**Jump to the latest messages** — Scroll up to read history without getting yanked back down every time someone posts — a small button appears (with an unread count) to jump back to the bottom whenever you want.
 
-- **Flask ≥3.1.3** — Web framework
-- **Flask-SocketIO ≥5.6.1** — Real-time WebSocket communication
-- **Eventlet ≥0.40.3** — WSGI server with WebSocket support
-- **Python-SocketIO ≥5.16.2** — Socket.IO protocol implementation
+**Light or dark theme, configurable chat name** — Rebrand the chat's name/icon (shown in the upper-left) from the admin panel to whatever your family calls it.
 
----
+## Permissions
 
-## Installation
+Everyone who can open this add-on at all is, by necessity, a Home Assistant admin — see Requirements below for why. Within the app itself, though, there's a separate, much narrower set of roles:
 
-### Method 1: Add-on Store (Recommended)
-
-1. In Home Assistant, go to **Settings → Add-ons → Add-on Store**
-2. Click the **⋮** menu → **Repositories**
-3. Add this repository URL: `https://github.com/Arbitrary8481/family-chat`
-4. Find **Family Chat** in the store and click **Install**
-5. Configure the `admin_password` (see [Configuration](#configuration))
-6. Click **Start**
-
-### Method 2: Manual Build
-
-# Clone the repository
-git clone https://github.com/Arbitrary8481/family-chat.git
-
-# Copy to your Home Assistant add-ons directory
-cp -r family-chat/family-chat /addons/
-
-# Install from local add-ons in the Home Assistant UI
-
-> **Important**: After installation or updates, perform a **Rebuild** (not just Restart) if certain features aren't working — some permissions require a full rebuild to take effect.
-
----
-
-## Configuration
-
-Configure via the **Configuration** tab in the add-on settings:
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `theme` | `dark` \| `light` | `dark` | UI color scheme |
-| `max_file_size` | int (1-100) | `25` | Maximum upload size in MB |
-| `admin_password` | password | `changeme` | **Required**: Password for admin panel |
-| `giphy_api_key` | password | `""` | Optional: Enables GIF picker |
-| `allowed_file_types` | list | `[image/*, video/*, audio/*, application/pdf, text/*]` | Permitted MIME types |
-
-> **Note**: Change the default `admin_password` immediately — `changeme` is not secure!
-
-### Getting a GIPHY API Key (Optional)
-
-1. Visit [developers.giphy.com](https://developers.giphy.com/)
-2. Create a free account and app
-3. Copy the API key to the `giphy_api_key` field
-
----
-
-## Permissions & Roles
-
-Family Chat has a three-tier permission system:
-
-### Everyone (All Users)
-
-- Send messages and reactions
-- Create channels
-- Upload custom emoji
-- Set personal display name
-- Manage notification subscriptions
-- Delete own messages
-
-### Admin
-
-- Access admin panel (`/admin`) with password
-- Delete any channel
-- Rename the chat
-- Manage everyone's display names
-- Restrict calendar access
-- Designate server owner
-- Delete any message
-
-### Server Owner
-
-- All admin powers tied to Home Assistant login
-- No admin password required day-to-day
-- Can delete channels from Settings panel
-
-> **Note**: Currently, all users need Home Assistant admin access to use the add-on due to Home Assistant's permission model for ingress-based add-ons. This doesn't give them admin access on the chat server. Once they change the permissions model I will see what I can do to resolve this.
-
----
+- **Everyone** (anyone signed into Home Assistant) can chat, react, add channels, upload custom emoji, set their own display name, and manage their own notification subscriptions.
+- **Admin** — a separate password (set in the add-on configuration) unlocks the admin panel: rename the chat, delete channels, manage everyone's display names, restrict which calendars can be added to, and designate a server owner.
+- **Server Owner** — an admin can designate one Home Assistant account as the owner, from the admin panel. The owner gets the same message- and channel-deletion powers an admin has, but tied to their own Home Assistant login — no admin password needed day-to-day.
 
 ## Security
 
-Family Chat takes security seriously:
-
-- **Custom AppArmor Profile**: Container is restricted to only necessary filesystem and network access
-- **SSRF Protection**: Link previews validate resolved IPs to prevent internal network probing
-- **Input Validation**: All user inputs are sanitized and validated server-side
-- **Session Security**: HttpOnly cookies with SameSite=Lax protection
-- **Brute-force Protection**: Admin panel locks after 10 failed attempts (5 minutes)
-- **No External Exposure**: Only accessible through Home Assistant ingress (no direct port mapping)
-- **File Upload Security**: Filename sanitization, type validation, and size limits
-- **XSS Prevention**: All dynamic content is HTML-escaped
-
-See [SECURITY.md](SECURITY.md) for vulnerability reporting.
-
----
+Ships with a custom [AppArmor](https://developers.home-assistant.io/docs/apps/presentation/) profile (`apparmor.txt`) scoping the container down to only what it actually needs — its own code, `/data` for the database and uploads, and network access, nothing else. Verified against a real instance across every distinct feature this app has (chat, uploads, avatars, the admin panel, calendar events, GIFs) and now runs in full enforcing mode, not just logging — see the comments at the top of the file for the verification history.
 
 ## Requirements
 
-### Required
+- **Every family member needs Home Assistant admin access.** Home Assistant doesn't currently support granting a non-admin user access to just one specific add-on — ingress-based add-ons like this one are only reachable by admin accounts, full stop. This isn't something this add-on chose; it's a limitation of Home Assistant's permission model today. If Home Assistant adds more granular, per-add-on permissions for non-admin users in the future, this requirement should be able to relax to match.
+- Home Assistant with Supervisor (required for ingress and for the add-on's access to Home Assistant's notification services).
+- To post GIFs: a free [GIPHY API key](https://developers.giphy.com/).
+- To receive push notifications: the [Home Assistant Companion App](https://www.home-assistant.io/companion-app/) installed and connected on the devices you want notified.
 
-- Home Assistant with Supervisor (Home Assistant OS or Supervised)
-- Home Assistant admin access for all users
+## Installation
 
-### Optional
+1. Add this repository to your Home Assistant add-on store and install **Family Chat**, or build it locally from this repo.
+2. Open the add-on's **Configuration** tab and set an `admin_password` (see below) — it defaults to `changeme`, which is not a real password.
+3. Start the add-on and open it from the Home Assistant sidebar.
 
-- **GIPHY API Key** — for GIF search functionality
-- **Home Assistant Companion App** — for push notifications on mobile devices
+Some features (channel add/delete permissions, notifications) rely on add-on permissions that are only picked up on a full **Rebuild**, not a simple **Restart** — if something added in a newer version doesn't seem to be there yet, rebuild the add-on once.
 
-### Architecture Support
+## Configuration
 
-- ✅ `amd64` (x86_64)
-- ✅ `aarch64` (ARM64)
-- ❌ `armv7` and other 32-bit architectures (deprecated by Home Assistant)
+| Option               | Description                                                                            |
+| -------------------- | -------------------------------------------------------------------------------------- |
+| `theme`              | `dark` or `light`.                                                                     |
+| `max_file_size`      | Maximum upload size, in MB.                                                            |
+| `admin_password`     | Password for the admin panel (`/admin`). Change this from the default.                 |
+| `giphy_api_key`      | Optional. Enables the GIF picker when set; the picker is hidden until it's configured. |
+| `allowed_file_types` | MIME type patterns permitted for uploads (e.g. `image/*`, `application/pdf`).          |
 
----
-
-## Troubleshooting
-
-| Issue | Solution |
-|-------|----------|
-| **Add-on won't start** | Check the add-on log: Settings → Add-ons → Family Chat → Log |
-| **New features missing** | Perform a **Rebuild** (not just Restart) |
-| **Notifications not working** | Ensure Companion App is installed and `homeassistant_api` permission is granted |
-| **GIF picker missing** | Add a GIPHY API key in configuration |
-| **Avatar not updating** | Hard refresh the page (Ctrl+Shift+R) |
-| **Mobile sidebar issues** | Tap the ✕ button or dimmed backdrop to close |
-
-### Debug Logs
-
-Enable detailed logging by checking the add-on logs after reproducing an issue. The app logs explicitly when:
-
-- Notifications are sent (or skipped)
-- API errors occur
-- Authentication issues happen
-
----
-
-## Changelog
-
-See [CHANGELOG.md](family-chat/CHANGELOG.md) for detailed version history.
-
-**Recent Highlights:**
-
-- **v2.36.0** — Link previews with SSRF protection
-- **v2.35.0** — Infinite scroll message history
-- **v2.34.0** — Message replies with quoted context
-- **v2.31.0** — Channel categories
-- **v2.27.0** — @mention badges and notifications
-- **v2.26.0** — @mentions system
-- **v2.23.0** — Calendar event creation
-- **v2.22.0** — Avatar uploads with cropper
-
----
-
-## License
-
-MIT License — see [LICENSE](LICENSE) for details.
-
----
+Everything else — the chat's display name, channels, the server owner, and individual display names — is configured from within the app itself (the admin panel, or each person's own Settings), not from this options screen.
 
 ## Support
 
-This is a self-hosted, family-run project. There is no formal support channel.
+This is a self-hosted, family-run project — there's no formal support channel. Check the add-on log (Settings → Add-ons → Family Chat → Log) if something isn't working as expected; several of the trickier bugs found so far have left a clear trace there.
 
-- **Bugs/Issues**: Check the add-on logs first, then report any errors via a GitHub issue.
-- **Feature Requests**: Open a GitHub issue or submit a pull request.
-- **Donations**: [Buy me a coffee](https://ko-fi.com/arbitrary8481) ☕
+## Note:
 
----
+AI-assisted tools have been used in this project and will continue to be used where I find them useful. This project is built for my own needs and use cases, and I maintain it according to my own preferences.
 
-## About This Project
+You are welcome to use it if it works for you, but I will not change the project's development approach to accommodate objections to the use of AI tools. I believe these tools can be genuinely useful when used appropriately. If the use of AI-assisted tools is a deal-breaker for you, this project may simply not be the right fit. You are, of course, free to use or build an alternative that better matches your preferences.
 
-Family Chat was built for personal use and is maintained according to the author's preferences. AI-assisted tools have been used in development and will continue to be used where helpful. If this approach doesn't align with your preferences, you're welcome to fork or build an alternative.
+## Kindness
 
-**Data Storage**: All messages, files, and user data are stored locally on your Home Assistant instance. Ensure you have adequate storage space for images and files shared by your family.
+I didn't do this for the money, thus the MIT license. However if you really want to buy me a coffee to thank me for this, you can do so here: [Buy me a coffee](https://ko-fi.com/arbitrary8481)
