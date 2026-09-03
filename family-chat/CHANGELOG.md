@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.37.0
+## 2.35.3
 
 ### Added
 - **Message data now survives an uninstall/reinstall, not just restarts and rebuilds.** Previously everything lived under `/data`, which — confirmed by multiple real, documented cases of other add-ons losing exactly this way — is not guaranteed to survive the app itself being removed and reinstalled (as opposed to just restarted or rebuilt). Messages, uploaded files (avatars, custom emoji, attachments), and the session key now live under `/config` (the `addon_config` mount, added to this release's `map` options), which Home Assistant's own developer documentation specifically describes as designed to survive that. **Existing installs migrate automatically, once, the first time this update actually takes effect** (which requires a Rebuild, not just a Restart, since a newly added `map` option only takes effect on a full Rebuild) — nothing to do manually. The original data at `/data` is left completely untouched during migration, as a safety net, rather than deleted. If `/config` isn't available yet (i.e. only Restarted so far), everything keeps working exactly as before against `/data` until the Rebuild happens.
