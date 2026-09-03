@@ -2069,8 +2069,26 @@ document.addEventListener('click', (e) => {
 // socket handler (patching one onto a message already on-screen) — one
 // function so the actual markup can't drift between those two paths.
 function buildLinkPreviewHtml(preview) {
-    if (!preview || !preview.title) return '';
+    if (!preview) return '';
     const safeHref = safeUrl(preview.url);
+    if (preview.failed) {
+        // A real link was found and an attempt was genuinely made to
+        // preview it — this is deliberately styled as the same card
+        // shape a successful preview would be (rather than, say, small
+        // italic text), so a failed attempt still reads as "this link
+        // was noticed and something was tried," not as if the feature
+        // silently skipped it. Still a real link to the original page —
+        // a failed preview fetch (blocked, timed out, etc.) doesn't
+        // mean the page itself is unreachable for an actual browser.
+        return `
+            <a href="${safeHref}" target="_blank" rel="noopener noreferrer nofollow" class="link-preview-card link-preview-failed" onclick="event.stopPropagation()">
+                <div class="link-preview-body">
+                    <div class="link-preview-title">⏱️ Request timed out</div>
+                </div>
+            </a>
+        `;
+    }
+    if (!preview.title) return '';
     return `
         <a href="${safeHref}" target="_blank" rel="noopener noreferrer nofollow" class="link-preview-card" onclick="event.stopPropagation()">
             ${preview.image ? `<img class="link-preview-image" src="${safeUrl(preview.image)}" alt="" loading="lazy">` : ''}

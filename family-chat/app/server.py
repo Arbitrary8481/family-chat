@@ -2012,15 +2012,30 @@ def queue_link_preview(message_id, channel, content):
     handle_message()) — fetching a preview happens *after* the message
     is already saved and broadcast, never before, so posting a message
     never has to wait on some external site responding. Emits a
-    follow-up event once (if) a preview is actually found, which the
-    client uses to patch it onto the message that's already on-screen."""
+    follow-up event once a preview attempt is resolved (success or
+    failure), which the client uses to patch it onto the message that's
+    already on-screen."""
     url = extract_single_url(content)
-    if not url or not is_safe_external_url(url):
+    if not url:
+        # No single link found — not an attempt that failed, simply
+        # nothing to preview at all, so nothing gets shown.
         return
 
-    preview = fetch_youtube_oembed(url) if is_youtube_url(url) else fetch_open_graph_preview(url)
+    if not is_safe_external_url(url):
+        preview = None
+    else:
+        preview = fetch_youtube_oembed(url) if is_youtube_url(url) else fetch_open_graph_preview(url)
+
     if not preview:
-        return
+        # A real link was found and an attempt was genuinely made —
+        # rather than a failure looking identical to "no link was ever
+        # here," this stores and shows a small, honest fallback card
+        # instead. Deliberately generic rather than saying exactly why
+        # (a site rejecting the request, a timeout, and the SSRF
+        # protection blocking an unsafe address all end up here
+        # identically) — none of those specifics are meaningful or
+        # appropriate to surface to whoever's reading the chat.
+        preview = {'failed': True, 'url': url}
 
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()

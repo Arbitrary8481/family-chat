@@ -1937,6 +1937,16 @@ body {
     -webkit-box-orient: vertical;
 }
 
+/* A failed preview attempt reuses .link-preview-card's shape entirely
+   — this just mutes the title text, since it's a status message
+   rather than real content, a small enough difference to tell the two
+   apart without needing an entirely separate visual treatment. */
+.link-preview-failed .link-preview-title {
+    color: var(--text-muted);
+    font-weight: 500;
+    -webkit-line-clamp: 1;
+}
+
 .calendar-event-icon {
     font-size: 24px;
     flex-shrink: 0;

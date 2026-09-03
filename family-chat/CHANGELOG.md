@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.38.2
+
+### Added
+- **A failed link preview now shows a small "Request timed out" card, styled to match a successful one, instead of silently showing nothing.** Applies whenever a real link was found and an attempt was genuinely made — a site rejecting the request, a timeout, or (rarer) the SSRF protection blocking an unsafe address — all deliberately shown identically, without exposing which one actually happened. Still links through to the real page, since a failed preview fetch doesn't mean the page itself is unreachable for an actual browser. Messages with no link, or more than one, are unaffected — nothing was attempted for those, so nothing changes.
+
 ## 2.38.1
 
 ### Fixed
