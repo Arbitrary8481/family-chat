@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.38.3
+
+### Changed
+- **Documentation and changelog updated to say "app" instead of "add-on," matching Home Assistant's own 2026.2 terminology rename** (confirmed directly against Home Assistant's own release blog and current developer docs) — including navigation instructions, which now correctly say Settings → Apps rather than the old Settings → Add-ons. Purely a terminology pass across the README and this changelog; nothing about how the app itself works changed.
+
 ## 2.38.2
 
 ### Added
@@ -18,7 +23,7 @@
 ## 2.37.1
 
 ### Added
-- **Message data now survives an uninstall/reinstall, not just restarts and rebuilds.** Previously everything lived under `/data`, which — confirmed by multiple real, documented cases of other add-ons losing exactly this way — is not guaranteed to survive the app itself being removed and reinstalled (as opposed to just restarted or rebuilt). Messages, uploaded files (avatars, custom emoji, attachments), and the session key now live under `/config` (the `addon_config` mount, added to this release's `map` options), which Home Assistant's own developer documentation specifically describes as designed to survive that. **Existing installs migrate automatically, once, the first time this update actually takes effect** (which requires a Rebuild, not just a Restart, since a newly added `map` option only takes effect on a full Rebuild) — nothing to do manually. The original data at `/data` is left completely untouched during migration, as a safety net, rather than deleted. If `/config` isn't available yet (i.e. only Restarted so far), everything keeps working exactly as before against `/data` until the Rebuild happens.
+- **Message data now survives an uninstall/reinstall, not just restarts and rebuilds.** Previously everything lived under `/data`, which — confirmed by multiple real, documented cases of other apps losing exactly this way — is not guaranteed to survive the app itself being removed and reinstalled (as opposed to just restarted or rebuilt). Messages, uploaded files (avatars, custom emoji, attachments), and the session key now live under `/config` (the `addon_config` mount, added to this release's `map` options), which Home Assistant's own developer documentation specifically describes as designed to survive that. **Existing installs migrate automatically, once, the first time this update actually takes effect** (which requires a Rebuild, not just a Restart, since a newly added `map` option only takes effect on a full Rebuild) — nothing to do manually. The original data at `/data` is left completely untouched during migration, as a safety net, rather than deleted. If `/config` isn't available yet (i.e. only Restarted so far), everything keeps working exactly as before against `/data` until the Rebuild happens.
 
 ## 2.36.2
 
@@ -73,7 +78,7 @@
 ## 2.32.2
 
 ### Fixed
-- **AppArmor reverted to complain mode — a fresh install couldn't start at all.** `PermissionError: [Errno 13] Permission denied: '/data/uploads'`, reported by someone trying this add-on for the first time on their own server. `/data/uploads/** rwk,` only ever covered files already inside that directory — AppArmor treats creating the directory itself as a separate operation, needing its own rule with a trailing slash. Every server this had run on so far already had `/data/uploads` sitting there from before this rule ever existed, so `Path.mkdir(exist_ok=True)` was always a silent no-op — only a genuinely fresh install, with no pre-existing uploads folder, was ever going to hit this. Added `/data/uploads/ w,`.
+- **AppArmor reverted to complain mode — a fresh install couldn't start at all.** `PermissionError: [Errno 13] Permission denied: '/data/uploads'`, reported by someone trying this app for the first time on their own server. `/data/uploads/** rwk,` only ever covered files already inside that directory — AppArmor treats creating the directory itself as a separate operation, needing its own rule with a trailing slash. Every server this had run on so far already had `/data/uploads` sitting there from before this rule ever existed, so `Path.mkdir(exist_ok=True)` was always a silent no-op — only a genuinely fresh install, with no pre-existing uploads folder, was ever going to hit this. Added `/data/uploads/ w,`.
 
 ## 2.32.1
 
@@ -173,12 +178,12 @@
 ## 2.29.3
 
 ### Changed
-- **Removed `armv7` from the supported architecture list**, resolving the "uses deprecated 'arch' values" warning in the Supervisor log. This isn't specific to this app — Home Assistant officially sunset all 32-bit architectures (`armhf`, `armv7`, `i386`) in May 2025, and Supervisor now warns on any add-on still listing them. `amd64` and `aarch64` (the two current, supported architectures this add-on already listed) are unaffected.
+- **Removed `armv7` from the supported architecture list**, resolving the "uses deprecated 'arch' values" warning in the Supervisor log. This isn't specific to this app — Home Assistant officially sunset all 32-bit architectures (`armhf`, `armv7`, `i386`) in May 2025, and Supervisor now warns on any app still listing them. `amd64` and `aarch64` (the two current, supported architectures this app already listed) are unaffected.
 
 ## 2.29.2
 
 ### Fixed
-- **Add-on completely failed to start** — crash-looping on `Error loading shared library libpython3.11.so.1.0: No such file or directory` / `Error relocating /usr/local/bin/python: Py_BytesMain: symbol not found`. This is not this app's own code failing — it's a well-documented, widely-reported bug in the `python:3.11-alpine` Docker base image itself when that (unpinned) tag resolves to Alpine 3.20 or newer (docker-library/python#927, #930 on GitHub; the identical issue affects the `python:3.12-alpine` tag too). The Dockerfile's build always runs with `--pull`, fetching whatever that tag currently points to on every single rebuild — this add-on had been running fine on it for a long stretch, then broke the moment a rebuild happened to land on a newer, broken Alpine release. Fixed by pinning to `python:3.11-alpine3.19` specifically, the version the community has confirmed does not have this problem, instead of the always-moving `python:3.11-alpine`.
+- **App completely failed to start** — crash-looping on `Error loading shared library libpython3.11.so.1.0: No such file or directory` / `Error relocating /usr/local/bin/python: Py_BytesMain: symbol not found`. This is not this app's own code failing — it's a well-documented, widely-reported bug in the `python:3.11-alpine` Docker base image itself when that (unpinned) tag resolves to Alpine 3.20 or newer (docker-library/python#927, #930 on GitHub; the identical issue affects the `python:3.12-alpine` tag too). The Dockerfile's build always runs with `--pull`, fetching whatever that tag currently points to on every single rebuild — this app had been running fine on it for a long stretch, then broke the moment a rebuild happened to land on a newer, broken Alpine release. Fixed by pinning to `python:3.11-alpine3.19` specifically, the version the community has confirmed does not have this problem, instead of the always-moving `python:3.11-alpine`.
 - **AppArmor reverted from enforcing back to complain mode** (2.29.1 → this) as a precaution while the above gets confirmed fixed on a real instance — not because there's real evidence it was the actual cause. AppArmor denying access produces "Permission denied," not "No such file or directory," which doesn't match this specific failure, and the fix above addresses a well-documented cause unrelated to it. Reverted anyway since there was no way to be fully certain from outside a real running instance, and complain mode costs nothing to fall back to. Once this version is confirmed stable, this should go back through the same real-usage verification as before — not be switched back to enforcing on faith alone.
 
 ## 2.29.1
@@ -189,7 +194,7 @@
 ## 2.29.0
 
 ### Added
-- **Custom AppArmor profile** (`apparmor.txt`), scoping the container down to only what it actually needs to run: its own code (read-only), `/data` for the SQLite database and uploaded files, and network access for the ingress port plus outbound calls to Home Assistant's Supervisor API and GIPHY. Built from this app's actual Dockerfile and known file/network footprint, following Home Assistant's own documented process for a custom add-on profile — but shipped in AppArmor's "complain" mode (logs anything the profile doesn't explicitly allow, rather than blocking it) rather than full enforcement, since it hasn't been run against a real instance yet to confirm the rules are complete. See the comments at the top of `apparmor.txt` for exactly how to verify it and then switch it to enforcing.
+- **Custom AppArmor profile** (`apparmor.txt`), scoping the container down to only what it actually needs to run: its own code (read-only), `/data` for the SQLite database and uploaded files, and network access for the ingress port plus outbound calls to Home Assistant's Supervisor API and GIPHY. Built from this app's actual Dockerfile and known file/network footprint, following Home Assistant's own documented process for a custom app profile — but shipped in AppArmor's "complain" mode (logs anything the profile doesn't explicitly allow, rather than blocking it) rather than full enforcement, since it hasn't been run against a real instance yet to confirm the rules are complete. See the comments at the top of `apparmor.txt` for exactly how to verify it and then switch it to enforcing.
 
 ## 2.28.3
 
@@ -254,7 +259,7 @@
 ## 2.24.0
 
 ### Added
-- **Upcoming events panel**, at the bottom of the member list (below Family Photos). Shows what's actually on Home Assistant's calendars over the next 60 days — aggregated across *every* calendar, sorted by when things actually happen rather than by post date, and including events added directly in Home Assistant, not just ones that came through this app's own calendar form. Anything created through the 📅 button shows who added it; anything already in Home Assistant shows without attribution, since that isn't something HA itself tracks. Refreshes automatically right after you add something through the form, or manually via the ⟳ button. Hidden entirely when this add-on doesn't have Home Assistant API access, same as the calendar button itself.
+- **Upcoming events panel**, at the bottom of the member list (below Family Photos). Shows what's actually on Home Assistant's calendars over the next 60 days — aggregated across *every* calendar, sorted by when things actually happen rather than by post date, and including events added directly in Home Assistant, not just ones that came through this app's own calendar form. Anything created through the 📅 button shows who added it; anything already in Home Assistant shows without attribution, since that isn't something HA itself tracks. Refreshes automatically right after you add something through the form, or manually via the ⟳ button. Hidden entirely when this app doesn't have Home Assistant API access, same as the calendar button itself.
   - Technical note: `calendar.create_event` doesn't hand back the new event's ID, so attribution works by looking the event back up right after creating it (a narrow time-window query matched by title) and recording its real ID — a small new table tracks this mapping. If that lookup ever misses for some reason, the event still shows up correctly, just without a name attached, same as anything added outside this app.
 
 ## 2.23.1
@@ -266,7 +271,7 @@
 ## 2.23.0
 
 ### Added
-- **Calendar events.** A 📅 button in the message composer (always available, not tied to any one channel) opens a form to add a real event to one of Home Assistant's own calendars — title, all-day or a specific time range, location, and notes — using the same `calendar.create_event` action you'd otherwise trigger from an automation or the Calendar dashboard. No separate calendar of its own; it's a form in front of the one(s) already in Home Assistant, picked from a live dropdown of whatever calendar entities exist. On success it posts a small confirmation card into whichever channel you choose (defaults to the one you're currently viewing) — shows up instantly for everyone the same way any other message does, works with search, and triggers push notifications the same way too. Requires this add-on's existing `homeassistant_api` access (same permission the notification feature already uses) — the button is hidden until that's available. Both the target calendar and the target channel are validated server-side against Home Assistant's and this app's own current lists before ever being used, not just trusted from the request.
+- **Calendar events.** A 📅 button in the message composer (always available, not tied to any one channel) opens a form to add a real event to one of Home Assistant's own calendars — title, all-day or a specific time range, location, and notes — using the same `calendar.create_event` action you'd otherwise trigger from an automation or the Calendar dashboard. No separate calendar of its own; it's a form in front of the one(s) already in Home Assistant, picked from a live dropdown of whatever calendar entities exist. On success it posts a small confirmation card into whichever channel you choose (defaults to the one you're currently viewing) — shows up instantly for everyone the same way any other message does, works with search, and triggers push notifications the same way too. Requires this app's existing `homeassistant_api` access (same permission the notification feature already uses) — the button is hidden until that's available. Both the target calendar and the target channel are validated server-side against Home Assistant's and this app's own current lists before ever being used, not just trusted from the request.
 
 ## 2.22.0
 
@@ -307,7 +312,7 @@
 ## 2.21.5
 
 ### Fixed
-- **The channel-list toggle button used the ☰ hamburger icon — the same icon Home Assistant's own frontend uses for its own navigation drawer.** On mobile, where HA shows its own app bar around the add-on's content, this made it easy to tap HA's own menu instead of the chat's button, or just be confused about which one you were looking at. Replaced with a distinct sidebar-toggle icon (a panel with a divider line) that doesn't look like a generic app menu.
+- **The channel-list toggle button used the ☰ hamburger icon — the same icon Home Assistant's own frontend uses for its own navigation drawer.** On mobile, where HA shows its own app bar around the app's content, this made it easy to tap HA's own menu instead of the chat's button, or just be confused about which one you were looking at. Replaced with a distinct sidebar-toggle icon (a panel with a divider line) that doesn't look like a generic app menu.
 
 ## 2.21.4
 
@@ -327,7 +332,7 @@
 ## 2.21.1
 
 ### Fixed
-- **Reverted the eventlet → threading migration from 2.20.0 — it broke real-time messaging.** Flask-SocketIO's `threading` async mode runs on Werkzeug's plain development server, which has no native WebSocket support at all. Every client silently fell back to HTTP long-polling: visible in the add-on log as the same session making a new `/socket.io/` request every ~150ms, eventually followed by `'Session is disconnected'`. Confirmed directly by Flask-SocketIO's own maintainer in their issue tracker: threading mode works "without WebSocket for now." Back on eventlet (still the CVE-2025-58068-patched `>=0.40.3` from 2.19.0, with `monkey_patch()` correctly called first) — verified with a live connection that stays on genuine WebSocket transport with zero polling traffic while connected, not just "the server boots." The deprecation warning in the log is back too; that trade was the right one to reverse. A non-eventlet path may be worth revisiting later (Flask-SocketIO mentions threading mode plus the `simple-websocket` package as a possible fix, though with mixed reliability reports) — but not as a same-day swap without dedicated testing.
+- **Reverted the eventlet → threading migration from 2.20.0 — it broke real-time messaging.** Flask-SocketIO's `threading` async mode runs on Werkzeug's plain development server, which has no native WebSocket support at all. Every client silently fell back to HTTP long-polling: visible in the app log as the same session making a new `/socket.io/` request every ~150ms, eventually followed by `'Session is disconnected'`. Confirmed directly by Flask-SocketIO's own maintainer in their issue tracker: threading mode works "without WebSocket for now." Back on eventlet (still the CVE-2025-58068-patched `>=0.40.3` from 2.19.0, with `monkey_patch()` correctly called first) — verified with a live connection that stays on genuine WebSocket transport with zero polling traffic while connected, not just "the server boots." The deprecation warning in the log is back too; that trade was the right one to reverse. A non-eventlet path may be worth revisiting later (Flask-SocketIO mentions threading mode plus the `simple-websocket` package as a possible fix, though with mixed reliability reports) — but not as a same-day swap without dedicated testing.
 
 ## 2.21.0
 
@@ -342,17 +347,17 @@
 
 ### Changed
 - **Migrated off eventlet entirely**, in favor of Flask-SocketIO's `threading` async mode. Eventlet is maintenance-only upstream (security/bugfixes only, no new features, and its own docs recommend new/ongoing projects avoid it) — this app now uses real OS threads instead of eventlet's green threads to get the same practical property (a slow request doesn't stall every other connected client), with no monkey-patching and no eventlet dependency at all. Verified with a live server boot, a genuine concurrency test (a 2-second slow request run alongside a fast one, confirming the fast one isn't blocked), and a real Socket.IO client connecting, joining a room, and successfully upgrading to a live WebSocket transport — all in a clean environment with eventlet not even installed.
-- One tradeoff that comes with this: threading mode runs on Werkzeug's own server rather than a dedicated production WSGI server, which normally isn't recommended for handling untrusted traffic directly. That's an acceptable trade here specifically because this add-on is never reached directly — Home Assistant's ingress proxy is the only thing that ever talks to it (no direct port mapping — see config.yaml), and that proxy is the actual internet/LAN-facing component. Documented clearly in code in case that assumption ever needs to be revisited.
+- One tradeoff that comes with this: threading mode runs on Werkzeug's own server rather than a dedicated production WSGI server, which normally isn't recommended for handling untrusted traffic directly. That's an acceptable trade here specifically because this app is never reached directly — Home Assistant's ingress proxy is the only thing that ever talks to it (no direct port mapping — see config.yaml), and that proxy is the actual internet/LAN-facing component. Documented clearly in code in case that assumption ever needs to be revisited.
 
 ## 2.19.0
 
 ### Security
-A full security review of the whole add-on. Fixed, in order of severity:
+A full security review of the whole app. Fixed, in order of severity:
 
 - **CVE-2025-58068**: `eventlet` (the actual WSGI server this app runs on) was pinned to 0.35.2, vulnerable to HTTP request smuggling. This app's entire identity model depends on Home Assistant's ingress proxy correctly sanitizing the `X-Remote-User-*` headers before forwarding requests — request smuggling is exactly the class of bug that can defeat that kind of front-end sanitization. Bumped to `>=0.40.3` and verified with a live server boot plus a full regression pass.
-- **Unvalidated input reaching a privileged server-side API call**: the device name for push notifications went straight from client-supplied JSON into the URL path of a request made with this add-on's own Home Assistant API token — a crafted value could have targeted a completely different part of Home Assistant's API than intended. Fixed with strict allowlist validation, both where the value is saved and immediately before it's ever used to build a request.
-- **`max_file_size` wasn't actually enforced.** It was computed from the add-on's configuration but never used — every upload was capped by a hardcoded 100MB regardless of what was configured. Now genuinely enforced via Flask's request-size limit, with a clean error message instead of a raw server error page when exceeded.
-- **File upload routes had no identity check**, unlike every other state-changing route in the app. Not currently reachable by anyone outside Home Assistant (this add-on exposes no direct port), but inconsistent with the rest of the app's defense-in-depth and now fixed to match.
+- **Unvalidated input reaching a privileged server-side API call**: the device name for push notifications went straight from client-supplied JSON into the URL path of a request made with this app's own Home Assistant API token — a crafted value could have targeted a completely different part of Home Assistant's API than intended. Fixed with strict allowlist validation, both where the value is saved and immediately before it's ever used to build a request.
+- **`max_file_size` wasn't actually enforced.** It was computed from the app's configuration but never used — every upload was capped by a hardcoded 100MB regardless of what was configured. Now genuinely enforced via Flask's request-size limit, with a clean error message instead of a raw server error page when exceeded.
+- **File upload routes had no identity check**, unlike every other state-changing route in the app. Not currently reachable by anyone outside Home Assistant (this app exposes no direct port), but inconsistent with the rest of the app's defense-in-depth and now fixed to match.
 - **No brute-force protection on the admin login form.** Password comparison was already constant-time, but attempts were completely unlimited. Now locks out after 10 failed attempts for 5 minutes.
 - **Custom emoji upload built its filename from unsanitized user input**, unlike the main upload route's correct use of `secure_filename()`. Confirmed this wasn't currently exploitable (the OS requires each intermediate directory in a traversal attempt to actually exist, which it never would here) — fixed anyway rather than relying on that.
 - **Message length had no server-side limit.** A malicious or misbehaving client could post an arbitrarily large message, stored and re-sent to everyone on every future page load. Capped at 4000 characters.
@@ -362,7 +367,7 @@ A full security review of the whole add-on. Fixed, in order of severity:
 ## 2.18.1
 
 ### Fixed
-- **The real remaining cause of "images/messages load inconsistently on refresh, but a hard refresh always works."** The main page itself (`index.html`, served from `/`) had *no* cache-control header at all — the previous fix only covered `/static/` and `/api/`. A stale cached copy of the page references a stale cache-busted script.js URL, which can itself be served from an old cached copy — so a normal refresh could load an inconsistent mix of old and new files depending on exactly what the browser (or Home Assistant's ingress iframe) happened to have cached at that moment, while a hard refresh always bypasses all of that and gets the current version, which matches exactly what was reported. Every response from this add-on — the page, the scripts, the API, uploaded files — is now explicitly `no-store`, not just `no-cache`: given this is now the second stale-caching report through the ingress iframe specifically, `no-cache`'s revalidation doesn't seem to be reliably honored there, so this goes with the strictly stronger directive rather than continuing to rely on that.
+- **The real remaining cause of "images/messages load inconsistently on refresh, but a hard refresh always works."** The main page itself (`index.html`, served from `/`) had *no* cache-control header at all — the previous fix only covered `/static/` and `/api/`. A stale cached copy of the page references a stale cache-busted script.js URL, which can itself be served from an old cached copy — so a normal refresh could load an inconsistent mix of old and new files depending on exactly what the browser (or Home Assistant's ingress iframe) happened to have cached at that moment, while a hard refresh always bypasses all of that and gets the current version, which matches exactly what was reported. Every response from this app — the page, the scripts, the API, uploaded files — is now explicitly `no-store`, not just `no-cache`: given this is now the second stale-caching report through the ingress iframe specifically, `no-cache`'s revalidation doesn't seem to be reliably honored there, so this goes with the strictly stronger directive rather than continuing to rely on that.
 
 ## 2.18.0
 
@@ -424,7 +429,7 @@ A full security review of the whole add-on. Fixed, in order of severity:
 ## 2.9.3
 
 ### Fixed
-- **A message being sent and nobody getting notified looked identical in the log to notifications working correctly and just not firing** — both were silent. Now logs an explicit line either way: "No notification subscribers for #channel" if nobody's subscribed, or "Notified X via Y" for each person actually notified, so a missing notification can be diagnosed straight from the add-on log instead of guessing.
+- **A message being sent and nobody getting notified looked identical in the log to notifications working correctly and just not firing** — both were silent. Now logs an explicit line either way: "No notification subscribers for #channel" if nobody's subscribed, or "Notified X via Y" for each person actually notified, so a missing notification can be diagnosed straight from the app log instead of guessing.
 
 ## 2.9.2
 
@@ -442,7 +447,7 @@ A full security review of the whole add-on. Fixed, in order of severity:
 - **Push notifications for new messages, via Home Assistant.** Each person can opt in from Settings (✏️), choosing which of their devices to notify — the list is pulled live from Home Assistant's own `notify.*` services (created automatically by the HA Companion App on each phone), so there's nothing to type by hand. A "Send Test" button lets you confirm you picked the right device before relying on it.
   - You're never notified about your own messages.
   - Notifications are scoped to the channel a message was posted in.
-  - No separate push service or API key is needed — this add-on now requests `homeassistant_api` access and calls Home Assistant's own REST API through the supervisor to trigger the notification. **Existing installs need to rebuild the add-on (not just restart it) for this new permission to take effect** — Settings → Add-ons → Family Chat → Rebuild.
+  - No separate push service or API key is needed — this app now requests `homeassistant_api` access and calls Home Assistant's own REST API through the supervisor to trigger the notification. **Existing installs need to rebuild the app (not just restart it) for this new permission to take effect** — Settings → Apps → Family Chat → Rebuild.
   - Requires the Home Assistant Companion App to be installed and connected on each phone you want to notify; until then that person's device simply won't appear in the list.
 
 ## 2.8.4
@@ -476,7 +481,7 @@ A full security review of the whole add-on. Fixed, in order of severity:
 ## 2.7.0
 
 ### Added
-- **GIF picker.** Click the new GIF button next to the emoji picker to search GIPHY (or browse what's trending) and post a GIF straight to the chat, no file upload needed. Requires a GIPHY API key set in the add-on configuration — the button is hidden until one is configured. The key is only ever used server-side; the browser talks to `/api/giphy/search` and `/api/giphy/trending` on this add-on, which proxies the request to GIPHY.
+- **GIF picker.** Click the new GIF button next to the emoji picker to search GIPHY (or browse what's trending) and post a GIF straight to the chat, no file upload needed. Requires a GIPHY API key set in the app's configuration — the button is hidden until one is configured. The key is only ever used server-side; the browser talks to `/api/giphy/search` and `/api/giphy/trending` on this app, which proxies the request to GIPHY.
 
 ## 2.6.1
 
@@ -508,7 +513,7 @@ A full security review of the whole add-on. Fixed, in order of severity:
 ## 2.5.1
 
 ### Fixed
-- **Errors were invisible.** `run.sh` ran Python without unbuffered output, so anything printed to the log (including error tracebacks) could sit in a buffer and never actually appear in the add-on's log viewer. Fixed by setting `PYTHONUNBUFFERED=1`.
+- **Errors were invisible.** `run.sh` ran Python without unbuffered output, so anything printed to the log (including error tracebacks) could sit in a buffer and never actually appear in the app's log viewer. Fixed by setting `PYTHONUNBUFFERED=1`.
 - Socket.IO event handlers (message sending, reactions, joining a channel) don't go through Flask's normal error handling — an exception in one could fail completely silently, with nothing in the log and nothing shown to the user. All of them now log full tracebacks and tell the person in the chat that something went wrong instead of just doing nothing.
 - Found and fixed a real bug this surfaced immediately: the `connect` handler's function signature didn't accept the `auth` argument the installed Socket.IO version actually passes to it, so it was silently throwing an exception on *every single connection* — harmless in practice (connections still worked), but pure log noise once errors became visible, so worth fixing outright.
 - Any uncaught exception in a regular page/API request is now also guaranteed to be logged with a full traceback.
@@ -517,7 +522,7 @@ A full security review of the whole add-on. Fixed, in order of severity:
 
 ### Added
 - **Display name (alias) support.** Anyone can now set how their name appears in the chat, separate from their real Home Assistant name — via the new ✏️ settings button next to your name in the sidebar. Changing your alias updates every message you've ever sent, not just future ones (messages are attributed by your stable Home Assistant account internally, and the displayed name is resolved live, so a rename applies everywhere retroactively).
-- **Admins can set anyone's display name.** A new "Display Names" section in the admin panel (`/admin`) lists every known Home Assistant account and lets an admin change any of their aliases, or clear one back to that person's real HA name. Note: "admin" here means whoever has the admin panel password, same as the rest of `/admin` — Home Assistant doesn't expose per-user admin status through ingress, so there's no way for the add-on to check HA's own admin role directly.
+- **Admins can set anyone's display name.** A new "Display Names" section in the admin panel (`/admin`) lists every known Home Assistant account and lets an admin change any of their aliases, or clear one back to that person's real HA name. Note: "admin" here means whoever has the admin panel password, same as the rest of `/admin` — Home Assistant doesn't expose per-user admin status through ingress, so there's no way for the app to check HA's own admin role directly.
 
 ## 2.4.1
 
@@ -529,10 +534,10 @@ A full security review of the whole add-on. Fixed, in order of severity:
 ### Changed
 - **Identity is now fully automatic — no admin mapping step at all.** Anyone who opens the chat from the Home Assistant sidebar is signed in as themselves, using their own Home Assistant display name (or login username if no display name is set). The admin panel's "Family Members" roster and "Auto sign-in" mapping section are gone entirely — there's nothing to configure. Sign-in works the moment someone with a Home Assistant account opens the chat for the first time.
 - The member sidebar now shows everyone who's actually opened the chat, most recent first, instead of a manually maintained list.
-- **The add-on is no longer reachable via its port directly** — only through the Home Assistant sidebar/ingress. The direct port mapping (`8099/tcp`) has been removed from the add-on configuration entirely; ingress doesn't need a published port to work, so removing it means the app simply isn't reachable from your LAN at all outside of Home Assistant. (If you're upgrading, the add-on needs to fully restart/recreate for this to take effect — check that the old port is no longer reachable after updating.)
+- **The app is no longer reachable via its port directly** — only through the Home Assistant sidebar/ingress. The direct port mapping (`8099/tcp`) has been removed from the app's configuration entirely; ingress doesn't need a published port to work, so removing it means the app simply isn't reachable from your LAN at all outside of Home Assistant. (If you're upgrading, the app needs to fully restart/recreate for this to take effect — check that the old port is no longer reachable after updating.)
 
 ### Removed
-- The `username1`/`username2` add-on configuration options, the Family Members roster, and the HA-user mapping feature (superseded by fully automatic identity above).
+- The `username1`/`username2` app's configuration options, the Family Members roster, and the HA-user mapping feature (superseded by fully automatic identity above).
 
 ## 2.3.0
 
@@ -564,10 +569,10 @@ A full security review of the whole add-on. Fixed, in order of severity:
 - Custom emoji upload no longer guesses its own file URL client-side (wrong timestamp/extension); the server now returns the real URL.
 
 ### Added
-- **Admin panel** (`/admin`), password-protected, for renaming the two family members without restarting the add-on. Set the password via the new `admin_password` option in the add-on configuration.
-- **Auto sign-in from Home Assistant.** The add-on now reads the Home Assistant ingress identity headers and can automatically sign someone in as a specific family member based on their HA login — configured per-account from the admin panel.
+- **Admin panel** (`/admin`), password-protected, for renaming the two family members without restarting the app. Set the password via the new `admin_password` option in the app's configuration.
+- **Auto sign-in from Home Assistant.** The app now reads the Home Assistant ingress identity headers and can automatically sign someone in as a specific family member based on their HA login — configured per-account from the admin panel.
 - **The manual "who's using the chat" picker has been removed.** Identity is now resolved entirely server-side from the logged-in Home Assistant account. If an HA account hasn't been mapped to a family member yet, the chat shows setup instructions instead of a picker. This also closes a gap where a client could previously claim to be any sender by editing the socket payload — the server no longer trusts client-supplied identity for messages, reactions, or emoji uploads.
-- Add-on options actually apply now: previously `run.sh` hardcoded its own defaults and ignored `config.yaml`/the Configuration tab entirely. The server now reads Home Assistant's `/data/options.json` directly.
+- App options actually apply now: previously `run.sh` hardcoded its own defaults and ignored `config.yaml`/the Configuration tab entirely. The server now reads Home Assistant's `/data/options.json` directly.
 
 ### Security
 - Replaced the hardcoded Flask `SECRET_KEY` with a randomly generated one, persisted across restarts.
