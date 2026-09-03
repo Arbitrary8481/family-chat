@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.38.4
+
+### Changed
+- Added an Attribution section to the README, noting Claude (Anthropic) is used to help build and maintain this project.
+
 ## 2.38.3
 
 ### Changed
