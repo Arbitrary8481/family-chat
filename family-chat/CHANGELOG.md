@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.38.1
+
+### Fixed
+- **Link previews weren't showing up for Amazon links** (and likely other large sites with similar bot-detection). The preview fetcher was identifying itself with an honest but self-labeled bot User-Agent, which a number of sites reject outright before ever serving the page. Open Graph tags exist specifically so link-preview features can read them — the same way Discord's, Slack's, and iMessage's own preview fetchers already do — and they're rendered directly into a page's initial HTML rather than requiring JavaScript, so a realistic browser identification is what was actually needed here, not any deeper scraping logic. Verified the fix doesn't change anything about how the actual Open Graph parsing works — only the request headers changed.
+
 ## 2.38.0
 
 ### Added

@@ -1953,8 +1953,21 @@ def fetch_open_graph_preview(url):
     Slack, and iMessage link previews all read)."""
     try:
         req = urllib.request.Request(url, headers={
-            'User-Agent': 'Mozilla/5.0 (compatible; FamilyChatLinkPreview/1.0)',
-            'Accept': 'text/html',
+            # A self-identifying bot string (this used to say
+            # "FamilyChatLinkPreview/1.0" outright) gets flatly rejected
+            # by a number of large sites — Amazon among them — before
+            # ever reaching the page itself, regardless of what the
+            # request is actually for. This isn't about evading
+            # anything: Open Graph tags exist specifically so previews
+            # like this one can read them, the same way Discord's or
+            # iMessage's own preview fetchers do, and they're rendered
+            # directly into the initial HTML (unlike page content such
+            # as live pricing, which genuinely does need JavaScript) —
+            # so a realistic browser identification is what's actually
+            # needed here, not deeper scraping machinery.
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml',
+            'Accept-Language': 'en-US,en;q=0.9',
         })
         with urllib.request.urlopen(req, timeout=6) as resp:
             content_type = resp.headers.get('Content-Type', '')
