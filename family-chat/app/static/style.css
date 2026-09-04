@@ -389,6 +389,40 @@ body {
     background: var(--bg-modifier-hover);
 }
 
+/* A grouped message is a continuation of the message directly above it
+   from the same sender (see shouldGroupMessages() client-side) — the
+   avatar and name/timestamp header are hidden, tightening the spacing
+   the same way the header's own margin/height normally reserves. The
+   avatar's own 40px width stays reserved rather than collapsing to 0,
+   so the message text still lines up in the same column as every other
+   message — only what's rendered inside that space changes. */
+.message-grouped .message-avatar > *:not(.message-timestamp-compact) {
+    visibility: hidden;
+}
+.message-grouped .message-avatar {
+    background: none;
+}
+.message-grouped .message-header {
+    display: none;
+}
+.message-grouped {
+    padding-top: 0;
+    padding-bottom: 0;
+}
+.message-timestamp-compact {
+    display: none;
+    position: absolute;
+    inset: 0;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    line-height: 1.2;
+    color: var(--text-muted);
+}
+.message-grouped:hover .message-timestamp-compact {
+    display: flex;
+}
+
 .message:hover .message-actions {
     opacity: 1;
 }
@@ -404,6 +438,7 @@ body {
     color: white;
     flex-shrink: 0;
     font-size: 16px;
+    position: relative;
     cursor: pointer;
     overflow: hidden;
     background: linear-gradient(135deg, var(--bg-accent) 0%, #7289da 100%);

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.39.0
+
+### Added
+- **Consecutive messages from the same person are now grouped**, Discord-style — only the first shows the avatar and name/timestamp, the rest just show their content, tightening up a channel where someone posts several times in a row. Grouping breaks the moment anyone else posts, and also breaks after about 7 minutes even from the same sender, so a message posted hours later still gets its own clearly-timestamped header rather than silently attaching to whatever they last said. A reply always keeps its own header regardless, since the reply quote already points at a specific earlier message. Hovering a grouped message reveals a small timestamp in the space the avatar would normally occupy. Also applies correctly while scrolling up to load older history — an already-loaded message can retroactively become grouped once an older message from the same sender loads in above it.
+
 ## 2.38.4
 
 ### Changed

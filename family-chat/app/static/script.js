@@ -759,6 +759,26 @@ function loadOlderMessages() {
         });
 }
 
+// Consecutive messages from the same sender, close enough together in
+// time, are visually grouped — only the first shows the avatar and
+// name/timestamp header, the rest just show their content. 7 minutes
+// matches Discord's own well-known convention for this: long enough
+// that an ordinary back-to-back conversation stays grouped, short
+// enough that someone posting again hours later still gets their own,
+// clearly-timestamped header rather than silently attaching to
+// whatever they last said. Never grouped for a reply, though (elsewhere
+// data.reply_to_id is checked directly for that) — a reply quote
+// already references a specific earlier message, and hiding who's
+// doing the replying just because it happens to match the message
+// directly above would be more confusing than helpful, not less.
+const GROUPING_WINDOW_MS = 7 * 60 * 1000;
+
+function shouldGroupMessages(senderIdA, timestampA, senderIdB, timestampB) {
+    if (!senderIdA || !senderIdB || senderIdA !== senderIdB) return false;
+    const diff = Math.abs(new Date(timestampA) - new Date(timestampB));
+    return diff <= GROUPING_WINDOW_MS;
+}
+
 function addMessage(data, insertMode = 'append') {
     const container = document.getElementById('messagesContainer');
     if (!container) return;
@@ -782,6 +802,9 @@ function addMessage(data, insertMode = 'append') {
     // original data for every message ever rendered, most of which
     // will never actually be replied to.
     messageDiv.dataset.sender = data.sender || '';
+    messageDiv.dataset.senderId = data.sender_id || '';
+    messageDiv.dataset.timestamp = data.timestamp || '';
+    messageDiv.dataset.replyToId = data.reply_to_id || '';
     messageDiv.dataset.replySummary = summarizeMessageForReply(data, msgType);
     
     const time = new Date(data.timestamp).toLocaleTimeString([], {
@@ -865,7 +888,7 @@ function addMessage(data, insertMode = 'append') {
         : '';
 
     messageDiv.innerHTML = `
-        <div class="message-avatar">${avatarInnerHtml(data.avatar_url, data.sender)}</div>
+        <div class="message-avatar">${avatarInnerHtml(data.avatar_url, data.sender)}<span class="message-timestamp-compact">${time}</span></div>
         <div class="message-content">
             <div class="message-header">
                 <span class="message-author">${escapeHtml(data.sender)}</span>
@@ -890,8 +913,33 @@ function addMessage(data, insertMode = 'append') {
     // (live messages, initial channel load, search-result jumps) keeps
     // the default append.
     if (insertMode === 'prepend') {
+        const nextSibling = container.firstElementChild;
+        // This message's own grouping status depends on whatever ends up
+        // immediately *before* it, which doesn't exist yet at this point
+        // in a prepend (an even-older message might still be prepended
+        // ahead of it later in the same batch, by a subsequent call) —
+        // it starts ungrouped, showing its own header, matching what's
+        // actually true right now: given what's currently loaded, it's
+        // the oldest.
         container.insertBefore(messageDiv, container.firstChild);
+        // What *does* need to be settled immediately: whether the
+        // message that used to be the oldest-loaded (nextSibling) should
+        // now become grouped, given this one just became its new,
+        // immediate predecessor.
+        if (nextSibling && !nextSibling.dataset.replyToId && shouldGroupMessages(
+            data.sender_id, data.timestamp,
+            nextSibling.dataset.senderId, nextSibling.dataset.timestamp
+        )) {
+            nextSibling.classList.add('message-grouped');
+        }
     } else {
+        const previousSibling = container.lastElementChild;
+        if (!data.reply_to_id && previousSibling && shouldGroupMessages(
+            previousSibling.dataset.senderId, previousSibling.dataset.timestamp,
+            data.sender_id, data.timestamp
+        )) {
+            messageDiv.classList.add('message-grouped');
+        }
         container.appendChild(messageDiv);
     }
 }
@@ -1119,7 +1167,11 @@ function avatarInnerHtml(avatarUrl, name) {
     if (avatarUrl) {
         return `<img src="${safeUrl(resolveUrl(avatarUrl))}" alt="" class="avatar-img">`;
     }
-    return escapeHtml((name || '?')[0]);
+    // Wrapped in a span (rather than a bare text node) specifically so
+    // .message-grouped's CSS rule — which hides whatever's in here for
+    // a grouped message — has an actual element to target; a raw text
+    // node can't be selected or hidden the same way.
+    return `<span class="avatar-initial">${escapeHtml((name || '?')[0])}</span>`;
 }
 
 function safeUrl(url) {
