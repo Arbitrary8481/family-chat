@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.39.2
+
+### Fixed
+- **A custom emoji's :name: shortcode typed or inserted into an actual message showed as literal text instead of the image** — the Recent tab and reactions were already fixed for this earlier, but the message text itself never had this logic at all. A known emoji's shortcode now renders as the real image; anything else that happens to look like `:word:` but isn't an actual uploaded emoji is correctly left as plain text. Caught and fixed a real bug of my own during testing before shipping this: a `:name:`-shaped segment embedded inside a URL (e.g. a link whose path happens to contain something matching an uploaded emoji's name) was corrupting that link's HTML entirely — fixed by having this explicitly skip over URL segments rather than just hoping the ordering worked out.
+
 ## 2.39.1
 
 ### Fixed

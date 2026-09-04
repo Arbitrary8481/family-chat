@@ -1098,13 +1098,74 @@ function restoreMentionPlaceholders(html, mentions) {
     });
 }
 
+// Mirrors highlightMentions/restoreMentionPlaceholders exactly, and for
+// the same reason: a :shortcode: needs to become real <img> HTML
+// eventually, but linkifyText() below still needs to see (and safely
+// escape) everything else in the message as plain text first. Swapping
+// it for a placeholder — a null-byte-delimited token that's not an
+// HTML-special character, so escaping/linkifying can't mangle it —
+// keeps the two steps from interfering with each other, exactly like
+// mentions already do.
+//
+// URL segments are explicitly identified and skipped entirely (using
+// the same pattern linkifyText() itself uses for this) rather than
+// just relying on running before/after it — confirmed directly that
+// skipping this step breaks in a genuinely bad way: a URL whose path
+// happens to contain a :name:-shaped segment matching a real uploaded
+// emoji (e.g. https://example.com/:smug:/page) would otherwise get a
+// full <img> tag spliced into the middle of the eventual href
+// attribute, corrupting the whole tag's HTML structure, not just
+// looking a little odd.
+function highlightCustomEmoji(text) {
+    if (!text || !customEmojis || Object.keys(customEmojis).length === 0) {
+        return { text: text || '', emojiShortcodes: [] };
+    }
+    const emojiShortcodes = [];
+    const replaceInSegment = (segment) => segment.replace(/:[a-zA-Z0-9_+-]+:/g, (match) => {
+        // Only a *known* uploaded emoji's exact name gets swapped out —
+        // anything else matching the :word: shape (someone typing
+        // ":shrug:" when no such emoji has ever been uploaded) is left
+        // as perfectly ordinary text.
+        if (!Object.prototype.hasOwnProperty.call(customEmojis, match)) return match;
+        const idx = emojiShortcodes.length;
+        emojiShortcodes.push(match);
+        return `\x00EMOJI${idx}\x00`;
+    });
+
+    const urlPattern = /https?:\/\/[^\s<>"']+/g;
+    let result = '';
+    let lastIndex = 0;
+    let match;
+    while ((match = urlPattern.exec(text)) !== null) {
+        result += replaceInSegment(text.slice(lastIndex, match.index));
+        result += match[0]; // the URL itself, left completely untouched
+        lastIndex = match.index + match[0].length;
+    }
+    result += replaceInSegment(text.slice(lastIndex));
+    return { text: result, emojiShortcodes };
+}
+
+function restoreCustomEmojiPlaceholders(html, emojiShortcodes) {
+    if (!emojiShortcodes || emojiShortcodes.length === 0) return html;
+    return html.replace(/\x00EMOJI(\d+)\x00/g, (match, idxStr) => {
+        const shortcode = emojiShortcodes[Number(idxStr)];
+        // sizePx=22: noticeably larger than surrounding text (matching
+        // how Discord/Slack render an inline custom emoji within a
+        // message), but smaller than the picker grid's own 28px.
+        return shortcode !== undefined ? renderEmojiHtml(shortcode, 22) : match;
+    });
+}
+
 // The one place both of the above should actually be used — wraps
 // linkifyText so every call site (the message feed, search results)
 // gets mention highlighting applied consistently, in the right order,
 // without each one having to know about the placeholder mechanism.
 function renderMessageText(text) {
-    const { text: preprocessed, mentions } = highlightMentions(text || '');
-    return restoreMentionPlaceholders(linkifyText(preprocessed), mentions);
+    const { text: afterMentions, mentions } = highlightMentions(text || '');
+    const { text: afterEmoji, emojiShortcodes } = highlightCustomEmoji(afterMentions);
+    const linkified = linkifyText(afterEmoji);
+    const withMentions = restoreMentionPlaceholders(linkified, mentions);
+    return restoreCustomEmojiPlaceholders(withMentions, emojiShortcodes);
 }
 
 function linkifyText(text) {
