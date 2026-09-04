@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.39.1
+
+### Fixed
+- **GIF search and trending were completely broken** — `GIPHY_API_BASE` was referenced but never actually defined, a genuine regression introduced back around v2.36.0 (when the link preview feature's code was inserted directly above it, and the original constant was accidentally dropped in the process rather than kept). This is on me — it went unnoticed because none of my own testing since then happened to exercise the GIF picker specifically. Fixed and this time verified end-to-end against the real Flask routes, not just the function in isolation, plus a broader pass checking several other features for the same class of mistake.
+
 ## 2.39.0
 
 ### Added

@@ -2052,13 +2052,15 @@ def _clamp_int(value, default, minimum, maximum):
         return default
     return max(minimum, min(maximum, n))
 
+GIPHY_API_BASE = 'https://api.giphy.com/v1/gifs'
+
 def giphy_get(path, params):
     """Proxy a request to the GIPHY API and shape the result down to what
     the picker needs. The API key is attached here, server-side, so it's
     never exposed to the browser — the client only ever calls our own
     /api/giphy/* routes."""
     if not GIPHY_API_KEY:
-        return None, 'GIPHY is not configured. Add a GIPHY API key in the add-on configuration.'
+        return None, 'GIPHY is not configured. Add a GIPHY API key in the app configuration.'
 
     query = dict(params)
     query['api_key'] = GIPHY_API_KEY
