@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.39.3
+
+### Fixed
+- **The GIF picker's results were genuinely overlapping, not just tightly packed** — confirmed directly by measuring actual rendered tile positions: a row could start rendering before the row above it had even finished, a CSS Grid + `aspect-ratio` interaction quirk, not just insufficient spacing. Switched to an explicit tile height, which resolved it completely — verified afterward with the same direct position measurements, confirming zero overlaps and a clean, even gap on every side. Kept the existing two-column layout, just meaningfully more breathing room between tiles (6px → 14px) and around the grid's own edges.
+
 ## 2.39.2
 
 ### Fixed
