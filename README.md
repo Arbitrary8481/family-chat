@@ -2,33 +2,41 @@
 
 A private chat for your family that runs entirely inside Home Assistant. There's no separate account to create — Family Chat signs everyone in automatically using whoever's already logged into Home Assistant, so each person just shows up as themselves. There are no ads, the data is all hosted on your Home Assistant system (make sure you have room for all those gifs and images your family posts) and no monetization being forced down your throat.
 
+![Family Chat screenshot](screenshot.png)
+
 ## Features
 
-**Channels** — Organize conversations into channels (e.g. `#general`, `#memories`, `#plans`). Anyone can add a new channel from their own Settings; removing one is restricted to an admin or the server owner, since it affects everyone at once.
+**Channels** — Organize conversations into channels (e.g. `#general`, `#memories`, `#plans`), optionally grouped into categories. Anyone can add a new channel from their own Settings; removing one is restricted to an admin or the server owner, since it affects everyone at once.
 
-**Real-time messaging** — Messages, reactions, and deletions all show up instantly for everyone in that channel via WebSockets, without needing to refresh.
+**Real-time messaging** — Messages, reactions, edits, and deletions all show up instantly for everyone in that channel via WebSockets, without needing to refresh.
+
+**Reply to a specific message** — Quote and reply to any message. The reply keeps a snapshot of what it's replying to even if the original is later edited or deleted, and clicking it jumps back to (and highlights) the original if it's still on screen.
+
+**Edit your own messages** — Fix a typo or reword something after sending. An "(edited)" label makes it clear to everyone when a message has changed.
 
 **Reactions** — React to any message with a full emoji picker (search by keyword, browse by category, or use your recently-used emoji), including your own custom uploaded emoji. Clicking a reaction again removes it.
 
 **GIFs** — Search GIPHY or browse what's trending and post a GIF straight to the chat, no downloading required. Requires a free GIPHY API key (see Configuration below).
 
-**Custom emoji** — Upload your own emoji from Settings and use them anywhere the regular emoji picker appears.
+**Custom emoji** — Upload your own emoji from Settings and use them anywhere the regular emoji picker appears, or type its `:shortcode:` straight into a message.
 
 **Calendar integration** - Integrates directly with your home assistant calendar. However if you have more than one you can control which calendars it displays from the admin panel. Want to add a calendar item from a discussion with the family? Just click the calendar button in the messaging interface to do so!
 
 **File & screenshot sharing** — Attach a file with the 📎 button, or just paste a screenshot straight from your clipboard (Ctrl+V / Cmd+V) — no need to save it to disk first.
 
-**Clickable links** — URLs posted in a message become real, clickable links automatically.
+**Link previews** — Paste a link and it unfurls into a real preview — a thumbnail and description for most sites, an embedded player for YouTube — the same way Discord or Slack handle a shared link.
 
 **Search** — Search message history across every channel at once, not just the one you're currently viewing.
 
 **Delete messages** — Delete your own messages any time. Admins and the server owner can delete anyone's.
 
+**Backup & restore** — Download a single file containing every message and every uploaded file from the admin panel, and restore from it later on. Independent of Home Assistant's own backup system — a safety net worth having before doing anything risky to the underlying Home Assistant instance.
+
 **Push notifications** — Each user can opt in (per channel) to get notified on your phone when a new message comes in, using Home Assistant's own notification system — specifically the Home Assistant Companion App. No separate push service, no extra accounts; just pick which of your devices to notify from Settings. To be clear, this means you can use any currently configured notification system you have set up.
 
 **Personal display names** — Set your own display name (independent of your Home Assistant username) from Settings. An admin can also set or override anyone's from the admin panel.
 
-**Jump to the latest messages** — Scroll up to read history without getting yanked back down every time someone posts — a small button appears (with an unread count) to jump back to the bottom whenever you want.
+**Scroll through history at your own pace** — Older messages load automatically as you scroll up, with a small button (and unread count) to jump back to the latest message whenever you want — without ever getting yanked back down while you're mid-scroll.
 
 **Light or dark theme, configurable chat name** — Rebrand the chat's name/icon (shown in the upper-left) from the admin panel to whatever your family calls it.
 

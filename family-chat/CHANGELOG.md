@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.41.1
+
+### Changed
+- **README overhaul** — added a real screenshot of the app right at the top, and brought the Features list up to date with everything that's actually shipped since it was last touched: replies, editing, link previews, backup & restore, and categories were all genuinely missing from it despite being real, working features for a while now.
+
 ## 2.41.0
 
 ### Added
