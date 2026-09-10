@@ -1,6 +1,8 @@
 # Family Chat
 
 A private chat for your family that runs entirely inside Home Assistant. There's no separate account to create — Family Chat signs everyone in automatically using whoever's already logged into Home Assistant, so each person just shows up as themselves. There are no ads, the data is all hosted on your Home Assistant system (make sure you have room for all those gifs and images your family posts) and no monetization being forced down your throat.
+<img width="837" height="382" alt="image" src="https://github.com/user-attachments/assets/4ba914d3-039e-4d40-a224-640c4df372f3" />
+
 
 ![Family Chat screenshot](screenshot.png)
 
