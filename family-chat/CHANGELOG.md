@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.41.4
+
+### Changed
+- **README rewritten** to match a more thorough, structured version drafted earlier — a table of contents, feature tables organized by category, an Architecture section, and dedicated Permissions/Security/Troubleshooting sections. Brought fully current in the process rather than copied as-is: every "add-on" reference updated to "app", every security and permissions claim (session cookie settings, the exact brute-force lockout numbers, dependency versions) verified directly against the actual code rather than assumed, and the feature list and changelog highlights caught up with everything shipped since this draft was first written — editing, backup & restore, message grouping, date dividers, and more.
+
 ## 2.41.3
 
 ### Fixed
