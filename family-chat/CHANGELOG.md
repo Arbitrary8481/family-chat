@@ -7,6 +7,7 @@
 - **A message from Home Assistant goes through exactly the same path as one a person types** — the new shared `publish_message()` — so unread counts, @mentions and each person's own per-channel push-notification preferences all apply as usual. There's no separate notification logic to keep in sync.
 - **A `BOT` tag on messages posted by Home Assistant**, so one is never mistaken for a person even when an automation gives it a person-like sender name. Admins and the server owner can delete these messages; nobody can edit them (edit stays strictly sender-only).
 - **Every post reports back.** After handling an event Family Chat fires `family_chat_post_result` (`ok`, `channel`, `message_id` or `error`), so a refused post — unknown channel, missing message — shows up in the automation's trace and logbook instead of only in this app's log.
+- **A ready-made Home Assistant script in the README**, with a free-text channel field so it works on any install however its channels are named, plus a note on turning the field into a dropdown of your own channels.
 - **A first automated test suite** for the new code (`tests/test_ha_bridge.py`, standard library only): channel matching, validation, rate limiting, and the connection's authentication, reconnect and keep-alive handling.
 
 ### Changed

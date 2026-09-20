@@ -222,6 +222,74 @@ In an automation's actions, add **Fire event** (the "Other actions" list in the 
 
 You can `@mention` a family member in the message (`"@Jon the freezer is open"`); like any @mention, it notifies them regardless of their channel subscriptions.
 
+### A ready-made script (optional)
+
+Firing the event directly works anywhere, but a small script gives your automations a friendly form (and one place to change things later). In Home Assistant go to **Settings → Automations & scenes → Scripts → Add script → ⋮ → Edit in YAML**, paste this, and save it as `family_chat_post`:
+
+```yaml
+alias: Family Chat - Post message
+description: Post a message into a Family Chat channel.
+icon: mdi:message-text
+mode: queued
+max: 10
+fields:
+  channel:
+    name: Channel
+    description: The slug or display name of an existing Family Chat channel.
+    required: true
+    example: home-alerts
+    selector:
+      text:
+  message:
+    name: Message
+    description: The text to post. Use @Name to mention someone.
+    required: true
+    selector:
+      text:
+        multiline: true
+  title:
+    name: Title
+    description: Optional heading, shown on its own line above the message.
+    required: false
+    selector:
+      text:
+  sender:
+    name: Sender name
+    description: Optional name shown on the message. Defaults to Home Assistant.
+    required: false
+    selector:
+      text:
+sequence:
+  - event: family_chat_post
+    event_data:
+      channel: "{{ channel }}"
+      message: "{{ message }}"
+      title: "{{ title | default('', true) }}"
+      sender: "{{ sender | default('', true) }}"
+```
+
+Any automation can then use it with a plain action:
+
+```yaml
+- action: script.family_chat_post
+  data:
+    channel: home-alerts
+    message: The chest freezer door has been open for 10 minutes
+```
+
+The script above takes the channel as free text, so it works on any install whatever its channels are called. If you'd rather pick from a dropdown, replace the `channel` field's `selector` with a list of your own channels — `custom_value: true` keeps typing a channel name possible, which matters because a list like this is a snapshot and won't include a channel you add later:
+
+```yaml
+    selector:
+      select:
+        custom_value: true
+        options:
+          - label: Home alerts
+            value: home-alerts
+          - label: Family plans
+            value: plans
+```
+
 ### What people see
 
 - The message appears in the channel like any other, with a **BOT** tag next to the sender name so it's never mistaken for a person.
