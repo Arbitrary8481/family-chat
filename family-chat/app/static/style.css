@@ -494,6 +494,22 @@ body {
     font-weight: 400;
 }
 
+.message-bot-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 5px;
+    border-radius: 3px;
+    background: var(--bg-accent);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    line-height: 15px;
+    vertical-align: 1px;
+    cursor: default;
+    user-select: none;
+}
+
 .message-edited-label {
     font-size: 11px;
     color: var(--text-muted);

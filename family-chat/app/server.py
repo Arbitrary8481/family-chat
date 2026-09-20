@@ -29,6 +29,8 @@ from flask_socketio import SocketIO, emit, join_room, leave_room, rooms
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
+import ha_bridge
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
@@ -134,6 +136,14 @@ def _migrate_to_addon_config():
 
 def _resolve_data_dir():
     logger = logging.getLogger(__name__)
+    # For running the server outside Home Assistant (local development and
+    # tests), where neither /config nor /data exists: point this at any
+    # writable directory. Inside Home Assistant this is never set.
+    override = os.environ.get('FAMILY_CHAT_DATA_DIR')
+    if override:
+        override_dir = Path(override)
+        override_dir.mkdir(parents=True, exist_ok=True)
+        return override_dir
     try:
         _NEW_DATA_DIR.mkdir(parents=True, exist_ok=True)
         probe = _NEW_DATA_DIR / '.write_test'
@@ -2181,7 +2191,10 @@ def giphy_search():
 # in. Requests go through the supervisor's Home Assistant API proxy
 # rather than a direct connection, authenticated with the token the
 # supervisor injects automatically once `homeassistant_api: true` is set.
-HA_API_BASE = 'http://supervisor/core/api'
+# Overridable only so the server can be run outside Home Assistant against a
+# real instance during development; in an app it is always the Supervisor proxy.
+HA_API_BASE = os.environ.get('HA_API_BASE', 'http://supervisor/core/api')
+HA_WS_URL = os.environ.get('HA_WS_URL', 'ws://supervisor/core/websocket')
 
 def ha_api_request(method, path, json_body=None, timeout=5):
     """Proxy a request to Home Assistant's core REST API. Returns
@@ -3017,6 +3030,70 @@ def on_join(data):
     join_room(room)
     emit('joined', {'room': room})
 
+def publish_message(sender, sender_id, content, channel, msg_type='text',
+                    file_info=None, reply_to_id=None):
+    """Save a message, broadcast it to everyone viewing the channel, and
+    notify subscribers -- the whole path a message takes once it has been
+    accepted. Shared by people typing in the chat (send_message, below) and
+    by Home Assistant automations (see ha_bridge.py), so both get identical
+    behavior: unread counts, @mentions, push notifications, link previews.
+    Uses socketio.emit rather than the request-scoped emit(), because the
+    Home Assistant path runs in a background task with no socket request.
+    Returns the new message's id."""
+    file_url = file_info.get('url') if file_info else None
+    file_name = file_info.get('filename') if file_info else None
+    file_size = file_info.get('size') if file_info else None
+    mime_type = file_info.get('mime_type') if file_info else None
+    
+    msg_id = save_message(sender, content, channel, msg_type,
+                         file_url, file_name, file_size, mime_type,
+                         sender_id=sender_id, reply_to_id=reply_to_id)
+    record_unread_mentions(channel, msg_id, content, msg_type, sender_id)
+
+    # Read back the reply snapshot save_message() just built (if any)
+    # rather than duplicating that lookup/summarization logic here —
+    # this is the one message the sender's own client hasn't already
+    # seen rendered locally, so the broadcast has to carry it.
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT reply_to_id, reply_to_sender, reply_to_summary FROM messages WHERE id = ?', (msg_id,))
+    saved_reply_to_id, saved_reply_to_sender, saved_reply_to_summary = c.fetchone()
+    conn.close()
+    
+    socketio.emit('new_message', {
+        'id': msg_id,
+        'sender': sender,
+        'sender_id': sender_id,
+        'avatar_url': get_avatar(sender_id) if sender_id else None,
+        'content': content,
+        'timestamp': datetime.now().isoformat(),
+        'channel': channel,
+        'type': msg_type,
+        'file': file_info,
+        'reactions': {},
+        'reply_to_id': saved_reply_to_id,
+        'reply_to_sender': saved_reply_to_sender,
+        'reply_to_summary': saved_reply_to_summary,
+    }, room=channel)
+
+    # In-app delivery above has already happened — this reaches people
+    # who subscribed to push notifications, whether or not the chat is
+    # even open on their phone right now. Deliberately last: never let a
+    # slow/failed notification delay the message actually showing up.
+    notify_message_subscribers(channel, sender, sender_id, content, msg_type, file_info)
+
+    # Same reasoning as the notification call just above — runs as a
+    # background task specifically so fetching some external site never
+    # delays the message itself showing up; queue_link_preview() emits
+    # its own separate, follow-up event once (if) a preview is actually
+    # found. Only ever attempted for plain text messages — a link
+    # incidentally present in a calendar_event's JSON payload, for
+    # instance, isn't the kind of thing this feature is for.
+    if msg_type == 'text':
+        socketio.start_background_task(queue_link_preview, msg_id, channel, content)
+    return msg_id
+
+
 @socketio.on('send_message')
 @log_socket_errors
 def handle_message(data):
@@ -3055,57 +3132,7 @@ def handle_message(data):
     if not content and not file_info:
         return
 
-    file_url = file_info.get('url') if file_info else None
-    file_name = file_info.get('filename') if file_info else None
-    file_size = file_info.get('size') if file_info else None
-    mime_type = file_info.get('mime_type') if file_info else None
-    
-    msg_id = save_message(sender, content, channel, msg_type,
-                         file_url, file_name, file_size, mime_type,
-                         sender_id=sender_id, reply_to_id=reply_to_id)
-    record_unread_mentions(channel, msg_id, content, msg_type, sender_id)
-
-    # Read back the reply snapshot save_message() just built (if any)
-    # rather than duplicating that lookup/summarization logic here —
-    # this is the one message the sender's own client hasn't already
-    # seen rendered locally, so the broadcast has to carry it.
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('SELECT reply_to_id, reply_to_sender, reply_to_summary FROM messages WHERE id = ?', (msg_id,))
-    saved_reply_to_id, saved_reply_to_sender, saved_reply_to_summary = c.fetchone()
-    conn.close()
-    
-    emit('new_message', {
-        'id': msg_id,
-        'sender': sender,
-        'sender_id': sender_id,
-        'avatar_url': get_avatar(sender_id) if sender_id else None,
-        'content': content,
-        'timestamp': datetime.now().isoformat(),
-        'channel': channel,
-        'type': msg_type,
-        'file': file_info,
-        'reactions': {},
-        'reply_to_id': saved_reply_to_id,
-        'reply_to_sender': saved_reply_to_sender,
-        'reply_to_summary': saved_reply_to_summary,
-    }, room=channel)
-
-    # In-app delivery above has already happened — this reaches people
-    # who subscribed to push notifications, whether or not the chat is
-    # even open on their phone right now. Deliberately last: never let a
-    # slow/failed notification delay the message actually showing up.
-    notify_message_subscribers(channel, sender, sender_id, content, msg_type, file_info)
-
-    # Same reasoning as the notification call just above — runs as a
-    # background task specifically so fetching some external site never
-    # delays the message itself showing up; queue_link_preview() emits
-    # its own separate, follow-up event once (if) a preview is actually
-    # found. Only ever attempted for plain text messages — a link
-    # incidentally present in a calendar_event's JSON payload, for
-    # instance, isn't the kind of thing this feature is for.
-    if msg_type == 'text':
-        socketio.start_background_task(queue_link_preview, msg_id, channel, content)
+    publish_message(sender, sender_id, content, channel, msg_type, file_info, reply_to_id)
 
 @socketio.on('add_reaction')
 @log_socket_errors
@@ -3223,6 +3250,37 @@ def handle_edit_message(data):
     # by edit_message() itself.
     socketio.start_background_task(queue_link_preview, message_id, channel, new_content)
 
+# --- Home Assistant -> Family Chat (see ha_bridge.py for the full picture) ---
+
+def post_from_home_assistant(sender, content, channel):
+    """One message from an automation, posted through the same path as a
+    person's message, under the fixed bot sender id."""
+    return publish_message(sender, ha_bridge.BOT_SENDER_ID, content, channel)
+
+def report_bridge_result(result):
+    """Tell Home Assistant how a post went, as an event, so a failure shows
+    up in the automation's trace rather than only in this app's log."""
+    _, error = ha_api_request('POST', f'/events/{ha_bridge.RESULT_EVENT}', result)
+    if error:
+        logger.warning('Could not report a Home Assistant post result: %s', error)
+
+def start_ha_event_bridge():
+    if not SUPERVISOR_TOKEN:
+        logger.info('Home Assistant event bridge not started: no SUPERVISOR_TOKEN '
+                    '(needs "homeassistant_api: true" and a Rebuild).')
+        return
+    bridge = ha_bridge.EventBridge(
+        token=SUPERVISOR_TOKEN,
+        ws_url=HA_WS_URL,
+        get_channels=get_channels,
+        post_message=post_from_home_assistant,
+        report_result=report_bridge_result,
+        spawn=socketio.start_background_task,
+        sleep=eventlet.sleep,
+    )
+    socketio.start_background_task(bridge.run_forever)
+
 if __name__ == '__main__':
     init_db()
+    start_ha_event_bridge()
     socketio.run(app, host='0.0.0.0', port=8099, debug=False)
