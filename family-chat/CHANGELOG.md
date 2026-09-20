@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.43.0
+
+### Added
+- **Home Assistant automations can now post into any channel.** An automation fires a Home Assistant event, `family_chat_post`, with a `channel` and a `message` (and optionally a `title` and `sender`) — and Family Chat posts it. Because it uses Home Assistant's own event bus and this app's existing Supervisor connection, there's nothing to configure: no extra port, no URL, no token, and no YAML to edit. The channel can be given as its slug or its display name (`plans` or `family-plans`, `#` and capitalization ignored) and is required — there is deliberately no default channel, so an alert never lands somewhere the automation's author didn't choose. A channel that doesn't exist is refused rather than created (and the error lists the real ones), so a typo can't quietly spawn a new one. See "Home Assistant Automations" in the README.
+- **A message from Home Assistant goes through exactly the same path as one a person types** — the new shared `publish_message()` — so unread counts, @mentions and each person's own per-channel push-notification preferences all apply as usual. There's no separate notification logic to keep in sync.
+- **A `BOT` tag on messages posted by Home Assistant**, so one is never mistaken for a person even when an automation gives it a person-like sender name. Admins and the server owner can delete these messages; nobody can edit them (edit stays strictly sender-only).
+- **Every post reports back.** After handling an event Family Chat fires `family_chat_post_result` (`ok`, `channel`, `message_id` or `error`), so a refused post — unknown channel, missing message — shows up in the automation's trace and logbook instead of only in this app's log.
+- **A first automated test suite** for the new code (`tests/test_ha_bridge.py`, standard library only): channel matching, validation, rate limiting, and the connection's authentication, reconnect and keep-alive handling.
+
+### Changed
+- **`send_message` now delegates its save/broadcast/notify steps to `publish_message()`.** Behavior for people typing in the chat is unchanged (verified by sending a message as a signed-in person and checking it was broadcast, stored, and attributed to them); the extraction is what lets Home Assistant posts share it. The broadcast uses `socketio.emit(..., room=channel)` instead of the request-scoped `emit()`, since Home Assistant posts run as a background task with no socket request behind them.
+- **New dependency: `websocket-client`**, for the connection to Home Assistant's event stream. Installed when the app image rebuilds on update.
+
+### Notes
+- **Delivery is best-effort**, like Home Assistant's event bus itself: an event fired while Family Chat or Home Assistant is restarting isn't replayed (the bridge reconnects on its own, with a growing pause up to a minute). Alerts that must never be missed should keep a second channel, such as a phone push.
+- **A misbehaving automation can't bury a channel:** more than 30 posts in 60 seconds are dropped, and each drop is reported with an error.
+- **A failure in the bridge never affects the chat.** It runs as its own background task, and if it can't connect or is blocked, it logs and retries while everything else keeps working.
+- **Running the server outside Home Assistant** (development/tests) is now possible: set `FAMILY_CHAT_DATA_DIR` to a writable folder, and optionally `SUPERVISOR_TOKEN`, `HA_API_BASE` and `HA_WS_URL` to point at a real Home Assistant. None of these are ever set inside Home Assistant.
+
 ## 2.42.2
 
 ### Fixed

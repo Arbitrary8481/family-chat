@@ -1199,11 +1199,17 @@ function addMessage(data, insertMode = 'append') {
 
     const editedLabelHtml = data.edited_at ? '<span class="message-edited-label">(edited)</span>' : '';
 
+    // Messages posted by Home Assistant automations (see ha_bridge.py) carry
+    // this fixed sender id; label them so a bot message is never mistaken for
+    // a person, even when an automation gives it a person-like display name.
+    const botBadgeHtml = data.sender_id === 'ha-bot' ? '<span class="message-bot-badge">BOT</span>' : '';
+
     messageDiv.innerHTML = `
         <div class="message-avatar">${avatarInnerHtml(data.avatar_url, data.sender)}<span class="message-timestamp-compact">${time}</span></div>
         <div class="message-content">
             <div class="message-header">
                 <span class="message-author">${escapeHtml(data.sender)}</span>
+                ${botBadgeHtml}
                 <span class="message-timestamp">${dateTime}</span>
                 ${editedLabelHtml}
             </div>

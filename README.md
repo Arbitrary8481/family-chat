@@ -16,6 +16,7 @@ A private, Discord-like chat application for your family that runs entirely insi
 - [Architecture](#architecture)
 - [Installation](#installation)
 - [Configuration](#configuration)
+- [Home Assistant Automations](#home-assistant-automations)
 - [Permissions & Roles](#permissions--roles)
 - [Security](#security)
 - [Requirements](#requirements)
@@ -80,6 +81,7 @@ Family Chat is a Home Assistant app that provides a self-hosted, real-time messa
 | **Push Notifications** | Get notified on your phone via Home Assistant Companion App |
 | **Per-Channel Subscriptions** | Choose which channels notify you |
 | **@Mention Alerts** | Always notified when mentioned, regardless of subscription |
+| **Post from Home Assistant** | Any automation can post a message into any channel (see [Home Assistant Automations](#home-assistant-automations)); it's labelled `BOT` and notifies people by their own preferences |
 
 ### Customization
 | Feature | Description |
@@ -120,9 +122,11 @@ Family Chat is a Home Assistant app that provides a self-hosted, real-time messa
 family-chat/
 ├── app/
 │   ├── server.py           # Flask/SocketIO application
+│   ├── ha_bridge.py        # Listens for Home Assistant automation events and posts them
 │   ├── requirements.txt    # Python dependencies
 │   ├── static/             # CSS, JavaScript, assets
 │   └── templates/          # HTML templates
+├── tests/                  # Standard-library unit tests (see below)
 ├── config.yaml             # App configuration schema
 ├── Dockerfile              # Container build instructions
 ├── apparmor.txt            # Security profile
@@ -136,6 +140,7 @@ family-chat/
 - **Flask-SocketIO ≥5.6.1** — Real-time WebSocket communication
 - **Eventlet ≥0.40.3** — WSGI server with WebSocket support
 - **Python-SocketIO ≥5.16.2** — Socket.IO protocol implementation
+- **websocket-client ≥1.7.0** — Connection to Home Assistant's event stream
 
 ---
 
@@ -187,6 +192,82 @@ Everything else — the chat's display name, channels, the server owner, and ind
 1. Visit [developers.giphy.com](https://developers.giphy.com/)
 2. Create a free account and app
 3. Copy the API key to the `giphy_api_key` field
+
+---
+
+## Home Assistant Automations
+
+Any Home Assistant automation can post a message into any Family Chat channel. There is nothing to configure: no port, no URL, no token, and no YAML to edit. An automation fires a Home Assistant event, and Family Chat — which is already connected to Home Assistant — posts it.
+
+### Posting a message
+
+In an automation's actions, add **Fire event** (the "Other actions" list in the automation editor), or in YAML:
+
+```yaml
+- event: family_chat_post
+  event_data:
+    channel: home-alerts            # slug or display name of an existing channel
+    title: Chest freezer            # optional, shown on its own line above the message
+    message: Door has been open for 10 minutes
+    sender: Freezer                 # optional display name, default "Home Assistant"
+```
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `channel` | yes | A channel's slug or display name; capitalization, spaces and a leading `#` are ignored (`plans`, `family-plans` and `#Family Plans` all match). There is deliberately **no default channel**, so an alert never lands somewhere you didn't choose; a channel that doesn't exist is **refused, not created**, and the error lists the ones that do. |
+| `message` | yes | Text, up to 4,000 characters. Templates are fine (`"{{ states('sensor.x') }}%"`). |
+| `title` | no | Up to 100 characters; posted on its own line above the message. |
+| `sender` | no | The name shown on the message, up to 40 characters. Default `Home Assistant`. |
+| `request_id` | no | Any value; echoed back in the result event so an automation can match a result to its post. |
+
+You can `@mention` a family member in the message (`"@Jon the freezer is open"`); like any @mention, it notifies them regardless of their channel subscriptions.
+
+### What people see
+
+- The message appears in the channel like any other, with a **BOT** tag next to the sender name so it's never mistaken for a person.
+- **Notifications follow each person's own preferences:** a Home Assistant message reaches people who subscribed to that channel, and anyone @mentioned, exactly as a person's message would. There is no separate notification setting.
+- Admins and the server owner can delete a bot message. Nobody can edit one.
+
+### Knowing whether it worked
+
+After every event, Family Chat fires `family_chat_post_result` back into Home Assistant:
+
+```yaml
+ok: true
+channel: home-alerts
+message_id: 412
+request_id: ...        # if you sent one
+# or, on a refusal:
+ok: false
+error: 'There is no channel "alerts". Existing channels: general, plans, ...'
+```
+
+Use it as an automation trigger, or find it in **Developer Tools → Events** (listen to `family_chat_post_result`) while testing.
+
+### Things to know
+
+- **Delivery is best-effort**, like Home Assistant's event bus itself. An event fired while Family Chat or Home Assistant is restarting is not replayed. The connection re-establishes on its own (retrying with a growing pause, up to a minute). For alerts that must never be missed, keep a second channel too, such as a phone push notification.
+- **Rate limit:** more than 30 posts in 60 seconds are dropped (each drop is reported as an error), so a misbehaving automation can't bury a channel.
+- **Any Home Assistant admin can post**, since anyone who can fire an event can. That matches Family Chat's existing model, where everyone who can open the app is a Home Assistant admin.
+- The bridge is isolated from the chat: if it can't connect, it logs the reason and keeps retrying, and messaging is unaffected. Look for `Listening for "family_chat_post" events` in the app log.
+
+### Development and tests
+
+Unit tests use only the standard library (no Home Assistant needed):
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+To run the server outside Home Assistant, point it at a scratch folder and, optionally, a real Home Assistant:
+
+```bash
+FAMILY_CHAT_DATA_DIR=/tmp/fc-data \
+SUPERVISOR_TOKEN=<a long-lived access token> \
+HA_API_BASE=http://homeassistant.local:8123/api \
+HA_WS_URL=ws://homeassistant.local:8123/api/websocket \
+python family-chat/app/server.py
+```
 
 ---
 
