@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.43.1
+
+### Fixed
+- **Link previews failed with the generic "Request timed out" card for any site that doesn't publish Open Graph meta tags**, even when the page loaded fine and had a perfectly normal `<title>` and `<meta name="description">` — it just never had `og:title`/`og:description` specifically, which is all the preview fetcher ever looked for. Now falls back to the plain `<title>` tag and `<meta name="description">` when a page has no Open Graph tags at all, so those sites get a real (if plainer, no image) preview card instead of the same generic failure a real timeout or a blocked address gets. Open Graph tags still win whenever a site has them. Verified directly against a real page that only has plain title/description tags, one with reversed attribute order, one with only a `<title>` and no description, and one with genuinely nothing to show (which correctly still falls back to the failed card) — plus confirmed a page's `og:` tags still take priority over its plain ones when both are present.
+
 ## 2.43.0
 
 ### Added

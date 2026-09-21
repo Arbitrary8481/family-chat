@@ -14,6 +14,7 @@ import shutil
 import tempfile
 import zipfile
 import functools
+import html
 import os
 import re
 import secrets
@@ -2009,6 +2010,20 @@ _OG_TAG_PATTERN_REVERSED = re.compile(
     r'<meta[^>]+content=["\']([^"\']*)["\'][^>]+property=["\']og:(title|description|image|site_name)["\']',
     re.IGNORECASE
 )
+# Fallback for pages with no Open Graph tags at all — the plain <title>
+# and <meta name="description"> every page has anyway. Plainer than a
+# real og:title/og:description (no image, no site name beyond the
+# hostname), but still a real preview instead of the generic failed
+# card for sites that never added OG markup.
+_TITLE_TAG_PATTERN = re.compile(r'<title[^>]*>(.*?)</title>', re.IGNORECASE | re.DOTALL)
+_META_DESCRIPTION_PATTERN = re.compile(
+    r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']*)["\']',
+    re.IGNORECASE
+)
+_META_DESCRIPTION_PATTERN_REVERSED = re.compile(
+    r'<meta[^>]+content=["\']([^"\']*)["\'][^>]+name=["\']description["\']',
+    re.IGNORECASE
+)
 
 def fetch_open_graph_preview(url):
     """General fallback for any link that isn't specifically YouTube —
@@ -2042,19 +2057,39 @@ def fetch_open_graph_preview(url):
             # an entire (possibly huge) page just to find a few meta
             # tags, and bounds how long a slow/oversized response can
             # tie up this background task for.
-            html = resp.read(65536).decode('utf-8', errors='replace')
+            html_source = resp.read(65536).decode('utf-8', errors='replace')
     except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError) as e:
         logger.warning('Open Graph fetch failed for %s: %s', url, e)
         return None
 
     tags = {}
     for pattern, groups_order in ((_OG_TAG_PATTERN, ('key', 'value')), (_OG_TAG_PATTERN_REVERSED, ('value', 'key'))):
-        for match in pattern.finditer(html):
+        for match in pattern.finditer(html_source):
             groups = dict(zip(groups_order, match.groups()))
             if groups['key'] not in tags:
                 tags[groups['key']] = groups['value']
 
-    if not tags.get('title'):
+    title = tags.get('title')
+    description = tags.get('description')
+
+    if not title:
+        # No og:title — fall back to the plain <title> tag every page
+        # has. Title tags are plain text (not pre-escaped attribute
+        # content like the meta tags above), so entities such as
+        # &amp; need unescaping here.
+        title_match = _TITLE_TAG_PATTERN.search(html_source)
+        if title_match:
+            title = html.unescape(title_match.group(1)).strip()
+            title = re.sub(r'\s+', ' ', title)
+
+    if not description:
+        for pattern in (_META_DESCRIPTION_PATTERN, _META_DESCRIPTION_PATTERN_REVERSED):
+            match = pattern.search(html_source)
+            if match:
+                description = match.group(1)
+                break
+
+    if not title:
         return None
 
     image = tags.get('image')
@@ -2065,8 +2100,8 @@ def fetch_open_graph_preview(url):
 
     return {
         'url': url,
-        'title': tags.get('title', '')[:200],
-        'description': tags.get('description', '')[:300],
+        'title': title[:200],
+        'description': (description or '')[:300],
         'image': image,
         'site_name': tags.get('site_name') or (urllib.parse.urlparse(url).hostname or ''),
     }
