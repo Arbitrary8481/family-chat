@@ -2025,43 +2025,44 @@ _META_DESCRIPTION_PATTERN_REVERSED = re.compile(
     re.IGNORECASE
 )
 
-def fetch_open_graph_preview(url):
-    """General fallback for any link that isn't specifically YouTube —
-    reads the handful of standard Open Graph meta tags most sites
-    already publish for exactly this purpose (the same tags Discord,
-    Slack, and iMessage link previews all read)."""
+# Identities the preview fetcher tries, in order. The first is a realistic
+# browser: a self-identifying bot string used to be flatly rejected by a number
+# of large sites (Amazon among them), so that stays the default and nothing
+# changes for any site it already works on. The second is only tried when the
+# first didn't come back with real Open Graph tags -- and it deliberately
+# identifies itself honestly as a link previewer rather than borrowing another
+# company's crawler name. Some sites (Facebook answers a browser-looking
+# request from a server with HTTP 400; Instagram serves a login wall with no
+# preview data) only hand their preview tags to a client that says it is a link
+# previewer, which is exactly what this is.
+_PREVIEW_USER_AGENTS = (
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (compatible; FamilyChatLinkPreview/1.0)',
+)
+
+def _fetch_page_head(url, user_agent):
+    """The first chunk of the page as text, or None if it couldn't be fetched
+    or isn't HTML. A page's <head> is always near the very start of the
+    document, so reading only the first 64 KB avoids downloading an entire
+    (possibly huge) page just to find a few meta tags, and bounds how long a
+    slow or oversized response can tie up this background task."""
     try:
         req = urllib.request.Request(url, headers={
-            # A self-identifying bot string (this used to say
-            # "FamilyChatLinkPreview/1.0" outright) gets flatly rejected
-            # by a number of large sites — Amazon among them — before
-            # ever reaching the page itself, regardless of what the
-            # request is actually for. This isn't about evading
-            # anything: Open Graph tags exist specifically so previews
-            # like this one can read them, the same way Discord's or
-            # iMessage's own preview fetchers do, and they're rendered
-            # directly into the initial HTML (unlike page content such
-            # as live pricing, which genuinely does need JavaScript) —
-            # so a realistic browser identification is what's actually
-            # needed here, not deeper scraping machinery.
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'User-Agent': user_agent,
             'Accept': 'text/html,application/xhtml+xml',
             'Accept-Language': 'en-US,en;q=0.9',
         })
         with urllib.request.urlopen(req, timeout=6) as resp:
-            content_type = resp.headers.get('Content-Type', '')
-            if 'text/html' not in content_type:
+            if 'text/html' not in resp.headers.get('Content-Type', ''):
                 return None
-            # A page's <head> is always near the very start of the
-            # document — reading only the first chunk avoids downloading
-            # an entire (possibly huge) page just to find a few meta
-            # tags, and bounds how long a slow/oversized response can
-            # tie up this background task for.
-            html_source = resp.read(65536).decode('utf-8', errors='replace')
+            return resp.read(65536).decode('utf-8', errors='replace')
     except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError) as e:
         logger.warning('Open Graph fetch failed for %s: %s', url, e)
         return None
 
+def _extract_preview(url, html_source):
+    """(preview or None, has_open_graph_title). Open Graph tags win; a page
+    with none falls back to its plain <title> and <meta name="description">."""
     tags = {}
     for pattern, groups_order in ((_OG_TAG_PATTERN, ('key', 'value')), (_OG_TAG_PATTERN_REVERSED, ('value', 'key'))):
         for match in pattern.finditer(html_source):
@@ -2069,8 +2070,18 @@ def fetch_open_graph_preview(url):
             if groups['key'] not in tags:
                 tags[groups['key']] = groups['value']
 
+    # Values inside a tag's attributes arrive HTML-escaped ("&amp;", "&#064;",
+    # "&#x2022;"). Decode them: left as-is, a description would show those
+    # entities literally, and an og:image URL would keep "&amp;" in its query
+    # string, which breaks signed image links like Facebook's and Instagram's.
+    # Safe because the client escapes every value again before displaying it.
+    for key in ('title', 'description', 'image', 'site_name'):
+        if key in tags:
+            tags[key] = re.sub(r'\s+', ' ', html.unescape(tags[key])).strip()
+
     title = tags.get('title')
     description = tags.get('description')
+    has_open_graph = bool(title)
 
     if not title:
         # No og:title — fall back to the plain <title> tag every page
@@ -2086,11 +2097,11 @@ def fetch_open_graph_preview(url):
         for pattern in (_META_DESCRIPTION_PATTERN, _META_DESCRIPTION_PATTERN_REVERSED):
             match = pattern.search(html_source)
             if match:
-                description = match.group(1)
+                description = re.sub(r'\s+', ' ', html.unescape(match.group(1))).strip()
                 break
 
     if not title:
-        return None
+        return None, False
 
     image = tags.get('image')
     if image:
@@ -2104,7 +2115,29 @@ def fetch_open_graph_preview(url):
         'description': (description or '')[:300],
         'image': image,
         'site_name': tags.get('site_name') or (urllib.parse.urlparse(url).hostname or ''),
-    }
+    }, has_open_graph
+
+def fetch_open_graph_preview(url):
+    """General fallback for any link that isn't specifically YouTube —
+    reads the handful of standard Open Graph meta tags most sites
+    already publish for exactly this purpose (the same tags Discord,
+    Slack, and iMessage link previews all read).
+
+    Tries each identity in _PREVIEW_USER_AGENTS in turn and stops at the first
+    page that has real Open Graph tags (so an ordinary site costs exactly one
+    request, as before). If none does, the best plainer result -- a page's
+    ordinary <title> -- is used; if nothing at all, None."""
+    best = None
+    for user_agent in _PREVIEW_USER_AGENTS:
+        html_source = _fetch_page_head(url, user_agent)
+        if html_source is None:
+            continue
+        preview, has_open_graph = _extract_preview(url, html_source)
+        if preview and has_open_graph:
+            return preview
+        if preview and best is None:
+            best = preview
+    return best
 
 def queue_link_preview(message_id, channel, content):
     """Runs in a background task (see socketio.start_background_task in

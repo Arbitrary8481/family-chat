@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.43.2
+
+### Fixed
+- **Link previews now work for Facebook and Instagram** (and other sites that hand their preview data only to a client that says it is a link previewer). Facebook answers a browser-looking request from a server with an outright HTTP 400, and Instagram answers with a login page that has no preview data, so both ended in the generic failed card. The fetcher now tries its browser identity first, exactly as before, so no site that already worked is affected and an ordinary site still costs one request. Only if that doesn't come back with real Open Graph tags does it try once more, identifying itself honestly as `Mozilla/5.0 (compatible; FamilyChatLinkPreview/1.0)`. It does not borrow another company's crawler name (`facebookexternalhit`, `Discordbot` and the like). If both attempts find only a plain `<title>`, that is still used, as in 2.43.1. Amazon, which used to give a bare "Amazon.com", now shows the real product title and description.
+- **Preview text and images no longer show raw HTML entities.** Titles, descriptions and site names inside meta tags arrive HTML-escaped (`&#064;`, `&#x2022;`, `&amp;`) and were being shown literally, so a description read "…NASA (&#064;nasa)…". They are decoded now (the client still escapes every value before displaying it). This also fixes preview **images**: an `og:image` link carried a literal `&amp;` in its query string, which corrupts the signature on Facebook's and Instagram's image links — checked against the live sites: the decoded link loads (HTTP 200) and the old one is refused (HTTP 403).
+
+### Added
+- **Tests for link previews** (`tests/test_link_preview.py`): a fake site in its own process behaves like Facebook (400 to a browser, real tags to a previewer) and like Instagram (a login wall to a browser), and the tests check that a normal site still costs one request, that an honest name is used and no other company's is borrowed, that Open Graph tags beat a login page's plain title, and that entities are decoded in every value including image URLs. They need the app's own dependencies and are skipped if those aren't installed.
+
+### Notes
+- Some sites still won't preview: the New York Times and similar refuse everything except a few big companies' own crawler names, and Reddit gives an honest previewer only its plain title. Working around those would mean pretending to be someone else's crawler, which this deliberately doesn't do.
+
 ## 2.43.1
 
 ### Fixed
