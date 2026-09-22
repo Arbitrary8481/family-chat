@@ -238,6 +238,14 @@
                     <div class="gif-attribution">Powered by GIPHY</div>
                 </div>
                 {% endif %}
+
+                <!-- "Move to another channel" picker — a small list of
+                     channels, populated and positioned entirely from
+                     script.js (openMoveChannelPicker()) the same way the
+                     reaction picker is, since which channels exist and
+                     which message is being moved are both only known at
+                     click time. -->
+                <div class="move-channel-picker hidden" id="moveChannelPicker"></div>
             </div>
         </div>
 

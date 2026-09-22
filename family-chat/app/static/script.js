@@ -53,6 +53,11 @@ let currentEmojiCategory = 'recent';
 // composer" mode. Set by openReactionPicker(), cleared whenever the
 // picker closes.
 let emojiPickerContext = null;
+// Which message (if any) the "move to another channel" picker is
+// currently open for. Same null-means-closed convention as
+// emojiPickerContext above. Set by openMoveChannelPicker(), cleared
+// whenever the picker closes.
+let moveChannelPickerContext = null;
 
 // Standard emoji categories
 const emojiCategories = {
@@ -322,6 +327,38 @@ function initializeChat() {
 
     socket.on('message_deleted', function(data) {
         removeMessageFromDom(data.message_id);
+    });
+
+    // A message moved out of the channel someone's currently viewing —
+    // same removal as an outright delete, just for a different reason.
+    // Only ever arrives for people actually in the source channel's
+    // room (see on_join() server-side), so no currentChannel check is
+    // needed here any more than message_deleted needs one.
+    socket.on('message_removed', function(data) {
+        removeMessageFromDom(data.message_id);
+    });
+
+    // A message moved into the channel someone's currently viewing.
+    // Inserted at its correct chronological spot (see addMessage()'s
+    // 'sorted' mode) rather than assumed to be the newest thing in the
+    // channel, since a moved message can be older than what's already
+    // on screen.
+    socket.on('message_moved_in', function(data) {
+        const container = document.getElementById('messagesContainer');
+        const wasNearBottom = isNearBottom(container);
+
+        addMessage(data, 'sorted');
+
+        if (data.channel === currentChannel) {
+            markChannelRead(data.channel);
+        }
+        if (wasNearBottom) {
+            scrollToBottomRobust();
+        } else {
+            unseenMessageCount++;
+            updateScrollToBottomBadge();
+            updateScrollToBottomButton();
+        }
     });
 
     // Arrives for everyone in the channel, including the editor's own
@@ -1064,6 +1101,28 @@ function refreshDateDividers(container) {
     });
 }
 
+// Companion to refreshDateDividers() for the same reason: a message
+// inserted somewhere other than the very end (see addMessage()'s
+// 'sorted' mode, used when a moved message lands among already-loaded
+// history) can disrupt the grouped/ungrouped status of both its new
+// neighbors at once. Recomputing the whole channel from scratch is
+// simpler and safer than reasoning about exactly which one or two
+// messages need patching, and this only ever runs on a move, not on
+// every message.
+function refreshGrouping(container) {
+    const messageEls = container.querySelectorAll('.message');
+    let previous = null;
+    messageEls.forEach(msgEl => {
+        const isReply = !!msgEl.dataset.replyToId;
+        const grouped = !isReply && previous && shouldGroupMessages(
+            previous.dataset.senderId, previous.dataset.timestamp,
+            msgEl.dataset.senderId, msgEl.dataset.timestamp
+        );
+        msgEl.classList.toggle('message-grouped', !!grouped);
+        previous = msgEl;
+    });
+}
+
 function addMessage(data, insertMode = 'append') {
     const container = document.getElementById('messagesContainer');
     if (!container) return;
@@ -1188,6 +1247,16 @@ function addMessage(data, insertMode = 'append') {
         ? `<button class="action-btn action-btn-danger" onclick="deleteMessage(${data.id})" title="Delete message">🗑️</button>`
         : '';
 
+    // Same eligibility as delete — moving doesn't change what a message
+    // says or who it's attributed to the way editing would, so it gets
+    // delete's permission model (own message, admin, or owner) rather
+    // than edit's stricter sender-only one. See move_message()
+    // server-side for the matching check.
+    const canMove = canDelete;
+    const moveBtnHtml = canMove
+        ? `<button class="action-btn" onclick="openMoveChannelPicker(${data.id}, this)" title="Move to another channel">📤</button>`
+        : '';
+
     // Editing is sender-only, deliberately with no admin or owner
     // override the way delete has — see edit_message() server-side for
     // the reasoning. Only offered for a plain text message; there's no
@@ -1222,6 +1291,7 @@ function addMessage(data, insertMode = 'append') {
             <button class="action-btn" onclick="startReply(${data.id})" title="Reply">↩️</button>
             <button class="action-btn" onclick="openReactionPicker(${data.id}, this)" title="Add reaction">😊</button>
             ${editBtnHtml}
+            ${moveBtnHtml}
             ${deleteBtnHtml}
         </div>
     `;
@@ -1252,6 +1322,41 @@ function addMessage(data, insertMode = 'append') {
         )) {
             nextSibling.classList.add('message-grouped');
         }
+    } else if (insertMode === 'sorted') {
+        // Used when a message arrives that isn't necessarily the newest
+        // thing in the channel — specifically, a message that just got
+        // moved here (see the 'message_moved_in' handler), which could
+        // be older than everything currently on screen. Finds the first
+        // already-loaded message that comes *after* this one in time
+        // and inserts immediately before it; if nothing does (this is
+        // the newest message loaded, or the channel is still empty),
+        // falls through to the same end-of-container spot a plain
+        // append would use.
+        //
+        // Unlike the plain prepend/append branches above, a sorted
+        // insert can land in the *middle* of what's loaded and disturb
+        // grouping and date dividers on both sides at once, not just
+        // one — refreshDateDividers()/refreshGrouping() below handle
+        // that the same way loadOlderMessages() already does for
+        // dividers: a full, simple recompute rather than trying to
+        // reason about exactly what shifted.
+        const existing = Array.from(container.querySelectorAll('.message'));
+        const dataTime = new Date(data.timestamp).getTime();
+        const nextEl = existing.find(el => {
+            const elTime = new Date(el.dataset.timestamp).getTime();
+            if (elTime !== dataTime) return elTime > dataTime;
+            // Tie-broken by id, mirroring get_messages()'s own
+            // ORDER BY timestamp, id — two messages saved in the same
+            // instant still need a stable relative order.
+            return Number(el.dataset.id) > Number(data.id);
+        });
+        if (nextEl) {
+            container.insertBefore(messageDiv, nextEl);
+        } else {
+            container.appendChild(messageDiv);
+        }
+        refreshDateDividers(container);
+        refreshGrouping(container);
     } else {
         const previousSibling = container.lastElementChild;
         if (!data.reply_to_id && previousSibling && shouldGroupMessages(
@@ -3456,6 +3561,83 @@ function deleteMessage(messageId) {
     socket.emit('delete_message', { message_id: messageId });
 }
 
+function openMoveChannelPicker(messageId, btnEl) {
+    const picker = document.getElementById('moveChannelPicker');
+    if (!picker) return;
+
+    // Clicking the same message's move button again closes it, same
+    // toggle behavior as the reaction picker.
+    const alreadyOpenForThis = !picker.classList.contains('hidden') &&
+        moveChannelPickerContext && moveChannelPickerContext.messageId === messageId;
+    if (alreadyOpenForThis) {
+        hideMoveChannelPicker();
+        return;
+    }
+
+    // Built fresh from the sidebar every time this opens, rather than
+    // kept as a second, separately-maintained list — the sidebar is
+    // already the authoritative, currently-rendered set of real
+    // channels, so reading it directly can't drift out of sync with it.
+    const channelEls = Array.from(document.querySelectorAll('.channel-sidebar .channel'));
+    const options = channelEls
+        .map(el => ({
+            slug: el.dataset.channel,
+            name: el.querySelector('.channel-name')?.textContent || el.dataset.channel,
+        }))
+        // Every message currently on screen belongs to whatever channel
+        // is open right now — there's no separate per-message channel
+        // to read — so excluding currentChannel here is exactly
+        // excluding the message's own channel.
+        .filter(ch => ch.slug && ch.slug !== currentChannel);
+
+    if (options.length === 0) return;
+
+    // A channel slug is server-validated down to [a-z0-9-] (see
+    // slugify() server-side) — unlike a custom emoji name or username
+    // elsewhere in this file, it can never contain a quote that would
+    // break out of this onclick string, so interpolating it directly
+    // here is safe.
+    picker.innerHTML = options.map(ch => `
+        <div class="move-channel-option" onclick="moveMessageTo(${messageId}, '${ch.slug}')">
+            ${escapeHtml(ch.name)}
+        </div>
+    `).join('');
+
+    moveChannelPickerContext = { messageId };
+    picker.classList.remove('hidden');
+
+    // Anchored near the button that was clicked, clamped to the
+    // viewport — identical positioning logic to openReactionPicker().
+    picker.style.position = 'fixed';
+    const rect = btnEl.getBoundingClientRect();
+    const margin = 8;
+    const width = picker.offsetWidth || 220;
+    const height = picker.offsetHeight || 240;
+
+    let left = rect.right - width;
+    if (left < margin) left = margin;
+    if (left + width > window.innerWidth - margin) left = window.innerWidth - width - margin;
+
+    let top = rect.bottom + margin;
+    if (top + height > window.innerHeight - margin) top = rect.top - height - margin;
+    if (top < margin) top = margin;
+
+    picker.style.left = `${left}px`;
+    picker.style.top = `${top}px`;
+}
+
+function hideMoveChannelPicker() {
+    const picker = document.getElementById('moveChannelPicker');
+    if (!picker) return;
+    picker.classList.add('hidden');
+    moveChannelPickerContext = null;
+}
+
+function moveMessageTo(messageId, channel) {
+    socket.emit('move_message', { message_id: messageId, channel: channel });
+    hideMoveChannelPicker();
+}
+
 function removeMessageFromDom(messageId) {
     const el = document.querySelector(`.message[data-id="${messageId}"]`);
     if (el) el.remove();
@@ -3514,15 +3696,29 @@ document.addEventListener('click', (e) => {
     }
 });
 
+// Same closing behavior for the "move to channel" picker, and for the
+// same reason — a click on its own trigger button (any message's move
+// button) opens/repositions it itself, so that's excluded here too.
+document.addEventListener('click', (e) => {
+    const picker = document.getElementById('moveChannelPicker');
+    if (!picker || picker.classList.contains('hidden')) return;
+    const isTrigger = e.target.closest('.action-btn');
+    if (!picker.contains(e.target) && !isTrigger) {
+        hideMoveChannelPicker();
+    }
+});
+
 // A reaction picker is anchored to the message it was opened from at a
 // single point in time — it doesn't track scroll position. Scrolling the
 // message list would leave it floating next to the wrong message, so
-// just close it instead.
+// just close it instead. The move-channel picker is anchored the same
+// way, for the same reason.
 document.addEventListener('DOMContentLoaded', () => {
     const messagesContainer = document.getElementById('messagesContainer');
     if (!messagesContainer) return;
     messagesContainer.addEventListener('scroll', () => {
         if (emojiPickerContext) hideEmojiPicker();
+        if (moveChannelPickerContext) hideMoveChannelPicker();
         updateScrollToBottomButton();
         // 150px rather than exactly 0 — triggering the fetch a little
         // before the person actually hits the very top means the next

@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.44.0
+
+### Added
+- **Messages can now be moved to a different channel.** A "Move to another channel" button (📤) sits alongside reply/react/edit/delete on any message you can already delete — your own, or any message if you're an admin or the server owner — and opens a small picker listing the channel's real channels. Reactions, the message's id, and its content all stay exactly as they were; only which channel it lives in changes. Editing stays untouched — moving a message doesn't say anything different than it did before, so it doesn't need edit's stricter sender-only rule.
+- **A pending @mention badge follows a moved message to its new channel**, so the unread count stays accurate instead of continuing to count toward a channel the message no longer lives in.
+- **Everyone currently viewing either channel sees it live**: it disappears from the source channel and appears in the destination channel immediately, inserted at its correct chronological position (not just appended to the bottom) — a moved message can be older than everything already loaded there. Nobody gets a new notification for it; it's the same message, just relocated, the same principle an edit already follows.
+- An unknown or mistyped destination channel is refused, with no channel silently created — the same principle the Home Assistant bridge already applies to its own channel field.
+
+### Notes
+- Replies pointing at a moved message are left where they are. A reply's quoted sender/text is a snapshot taken at send time, not a live reference, so it keeps rendering correctly regardless of which channel its original later moves to — the same reasoning that already lets a reply survive its original being deleted.
+- No visible trail is left on a moved message (no "moved from #channel" label) — it reads exactly like it was always posted where it ended up.
+
 ## 2.43.2
 
 ### Fixed

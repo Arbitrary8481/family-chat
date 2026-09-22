@@ -1136,6 +1136,40 @@ body {
     letter-spacing: 0.3px;
 }
 
+/* "Move to another channel" picker — sized to its (usually short)
+   channel list rather than the fixed 380x420 the emoji/GIF pickers use,
+   since a wall of near-empty space under two or three channel names
+   would look broken rather than just compact. */
+.move-channel-picker {
+    position: absolute;
+    min-width: 180px;
+    max-width: 260px;
+    max-height: 280px;
+    overflow-y: auto;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    z-index: 100;
+    border: 1px solid var(--bg-tertiary);
+    padding: 4px;
+}
+
+.move-channel-option {
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--text-normal);
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.move-channel-option:hover {
+    background: var(--bg-modifier-hover);
+    color: var(--interactive-active);
+}
+
 /* Members Sidebar */
 .members-sidebar {
     width: 240px;

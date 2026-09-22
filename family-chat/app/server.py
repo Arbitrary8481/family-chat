@@ -1026,7 +1026,47 @@ def get_messages(limit=100, channel='general', before_id=None):
     conn.close()
     return list(reversed(result))
 
-def save_message(sender, content, channel='general', msg_type='text', 
+def get_message_by_id(message_id):
+    """Fetches one message in the same shape get_messages() hands back --
+    used to broadcast a moved message to whoever's viewing its new
+    channel, the same way publish_message() broadcasts a brand new one.
+    Returns None if the message no longer exists (e.g. deleted out from
+    under a move already in flight)."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''SELECT m.*, ua.alias as current_alias, av.avatar_url
+                 FROM messages m
+                 LEFT JOIN user_aliases ua ON ua.user_id = m.sender_id
+                 LEFT JOIN user_avatars av ON av.user_id = m.sender_id
+                 WHERE m.id = ?''', (message_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return None
+
+    columns = [description[0] for description in c.description]
+    msg = dict(zip(columns, row))
+    if msg.get('current_alias'):
+        msg['sender'] = msg['current_alias']
+    del msg['current_alias']
+    if msg.get('link_preview'):
+        try:
+            msg['link_preview'] = json.loads(msg['link_preview'])
+        except (json.JSONDecodeError, TypeError):
+            msg['link_preview'] = None
+    else:
+        msg['link_preview'] = None
+
+    c.execute('SELECT emoji, user FROM reactions WHERE message_id = ?', (message_id,))
+    reactions = {}
+    for emoji, user in c.fetchall():
+        reactions.setdefault(emoji, []).append(user)
+    msg['reactions'] = reactions
+
+    conn.close()
+    return msg
+
+def save_message(sender, content, channel='general', msg_type='text',
                  file_url=None, file_name=None, file_size=None, mime_type=None,
                  sender_id=None, reply_to_id=None):
     conn = sqlite3.connect(DB_PATH)
@@ -1140,6 +1180,56 @@ def edit_message(message_id, requester_id, new_content):
     conn.commit()
     conn.close()
     return channel, None
+
+def move_message(message_id, requester_id, can_manage, new_channel):
+    """Relocates a message to a different channel -- the message itself
+    (content, sender, id, reactions, timestamp) never changes, only
+    which channel it lives in. Permission mirrors delete_message()
+    rather than edit_message()'s stricter sender-only rule: moving
+    doesn't change what a message says or who it's attributed to, so an
+    admin or the owner can move anyone's, not just their own. Returns
+    (old_channel, new_channel, error); old_channel/new_channel tell the
+    caller which socket rooms to notify, same convention as
+    delete_message() and edit_message() (and identical to each other,
+    not an error, if the message was already in the requested
+    channel -- the caller treats that as a no-op rather than
+    broadcasting anything)."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT sender_id, channel FROM messages WHERE id = ?', (message_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return None, None, 'Message not found — it may have already been deleted.'
+
+    sender_id, old_channel = row
+    if not can_manage and sender_id != requester_id:
+        conn.close()
+        return None, None, 'You can only move your own messages.'
+
+    # Validated against the real channels table -- an unknown/mistyped
+    # channel is refused rather than silently doing nothing or (worse)
+    # creating one, the same principle the Home Assistant bridge already
+    # applies to its own channel field (see ha_bridge.resolve_channel).
+    c.execute('SELECT 1 FROM channels WHERE slug = ?', (new_channel,))
+    if not c.fetchone():
+        conn.close()
+        return None, None, f'There is no channel "{new_channel}".'
+
+    if new_channel == old_channel:
+        conn.close()
+        return old_channel, new_channel, None
+
+    c.execute('UPDATE messages SET channel = ? WHERE id = ?', (new_channel, message_id))
+    # A pending @mention badge for this message follows it to the new
+    # channel -- otherwise it would keep counting toward a channel the
+    # message no longer lives in, and never toward the one it's actually
+    # in now.
+    c.execute('UPDATE unread_mentions SET channel = ? WHERE message_id = ? AND channel = ?',
+              (new_channel, message_id, old_channel))
+    conn.commit()
+    conn.close()
+    return old_channel, new_channel, None
 
 def get_custom_emojis():
     conn = sqlite3.connect(DB_PATH)
@@ -3317,6 +3407,42 @@ def handle_edit_message(data):
     # now. The stale preview from before the edit was already cleared
     # by edit_message() itself.
     socketio.start_background_task(queue_link_preview, message_id, channel, new_content)
+
+@socketio.on('move_message')
+@log_socket_errors
+def handle_move_message(data):
+    message_id = data.get('message_id')
+    new_channel = (data.get('channel') or '').strip()
+    requester_id, requester_name = resolve_ha_identity()
+    can_manage = bool(session.get('is_admin')) or is_owner(requester_id)
+
+    if not message_id or not new_channel:
+        return
+    if not requester_id and not can_manage:
+        emit('server_error', {'message': "Couldn't identify you as a Home Assistant user — try reloading the page."})
+        return
+
+    old_channel, moved_channel, error = move_message(message_id, requester_id, can_manage, new_channel)
+    if error:
+        emit('server_error', {'message': error})
+        return
+    if old_channel == moved_channel:
+        # Already there -- nothing changed, nothing to broadcast.
+        return
+
+    # Two separate broadcasts, not one -- old_channel and moved_channel
+    # are two different socket rooms with (generally) different people
+    # actually looking at them. Whoever's viewing old_channel needs the
+    # message to disappear from their view; whoever's viewing
+    # moved_channel needs it to appear in theirs. Someone viewing
+    # neither doesn't hear about it live at all -- they'll simply see it
+    # in its new channel next time they open that channel, same as any
+    # message sent while they weren't looking.
+    emit('message_removed', {'message_id': message_id}, room=old_channel)
+
+    message = get_message_by_id(message_id)
+    if message:
+        emit('message_moved_in', message, room=moved_channel)
 
 # --- Home Assistant -> Family Chat (see ha_bridge.py for the full picture) ---
 
