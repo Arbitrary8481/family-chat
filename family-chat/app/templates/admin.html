@@ -320,6 +320,42 @@
             padding: 10px 16px;
             white-space: nowrap;
         }
+        .mod-log-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 480px;
+            overflow-y: auto;
+        }
+        .mod-log-entry {
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            padding: 10px 12px;
+        }
+        .mod-log-entry-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+        .mod-log-action {
+            font-weight: 600;
+            font-size: 13px;
+        }
+        .mod-log-action-delete { color: var(--danger); }
+        .mod-log-time {
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+        .mod-log-summary {
+            font-size: 14px;
+            margin-bottom: 4px;
+            word-break: break-word;
+        }
+        .mod-log-meta {
+            color: var(--text-muted);
+            font-size: 12px;
+        }
     </style>
 </head>
 <body>
@@ -364,6 +400,9 @@
                 </button>
                 <button class="admin-tab{% if active_tab == 'backup' %} active{% endif %}" data-tab="backup" onclick="switchAdminTab('backup')">
                     <span>💾</span> Backup
+                </button>
+                <button class="admin-tab{% if active_tab == 'activity' %} active{% endif %}" data-tab="activity" onclick="switchAdminTab('activity')">
+                    <span>📋</span> Activity
                 </button>
             </div>
 
@@ -560,6 +599,39 @@
                         </label>
                         <button type="submit" class="button-danger">Restore Backup</button>
                     </form>
+                </div>
+
+                <!-- Activity -->
+                <div class="admin-tab-panel{% if active_tab == 'activity' %} active{% endif %}" id="adminTab-activity">
+                    <h2 class="section-title">Activity</h2>
+                    <p class="subtitle">
+                        Every message deletion and move, most recent first — including ones people did to their
+                        own messages, not just moderation overrides. A deleted message's content stays here even
+                        though it's gone from the chat itself, specifically so there's a record of what was removed.
+                    </p>
+                    {% if moderation_log %}
+                    <div class="mod-log-list">
+                        {% for entry in moderation_log %}
+                        <div class="mod-log-entry">
+                            <div class="mod-log-entry-top">
+                                <span class="mod-log-action mod-log-action-{{ entry.action }}">
+                                    {% if entry.action == 'delete' %}🗑️ Deleted{% else %}📤 Moved{% endif %}
+                                </span>
+                                <span class="mod-log-time">{{ entry.created_at[:16].replace('T', ' ') }}</span>
+                            </div>
+                            <div class="mod-log-summary">&ldquo;{{ entry.message_summary }}&rdquo; — {{ entry.message_sender }}</div>
+                            <div class="mod-log-meta">
+                                {% if entry.action == 'move' %}{{ entry.channel_display }} → {{ entry.target_channel_display }}{% else %}{{ entry.channel_display }}{% endif %}
+                                · by {{ entry.actor_name }}
+                                {% if entry.actor_role == 'self' %}(their own message){% elif entry.actor_role == 'admin' %}(admin){% else %}(server owner){% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="hint">No deletions or moves yet.</p>
+                    {% endif %}
+                    <p class="hint">Only actions taken after this tab shipped are recorded here — nothing from before is backfilled.</p>
                 </div>
             </div>
         </div>

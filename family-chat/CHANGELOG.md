@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.45.0
+
+### Added
+- **An Activity tab in the admin panel, showing every message deletion and move**, most recent first: what the message said (or a short description for a photo/video/file/GIF/calendar event), who sent it, which channel, and who took the action — including whether it was someone cleaning up their own message versus an admin or the server owner acting on someone else's. Covers both self-service actions and moderation overrides in one place, rather than only the latter, so it's a real record of what happened to messages, not just a watch-list for abuse.
+- **A deleted message's content is preserved in the log even though it's gone from the chat itself** — a snapshot taken at the moment of deletion, specifically so there's still a record of what was removed and by whom. A moved message keeps working exactly as it did before (this only adds a record of the move); its content is untouched.
+- An entry's channel(s) still display sensibly even if that channel has since been deleted — falls back to showing the bare slug rather than misattributing the entry to a different, newer channel that happens to reuse the same name.
+
+### Notes
+- Only actions taken from this version onward are recorded — nothing is backfilled for deletions or moves that already happened before this shipped, since the message rows a delete would need to summarize are already gone.
+
 ## 2.44.0
 
 ### Added

@@ -581,6 +581,33 @@ def init_db():
                     [(user_id, slug) for slug in all_slugs]
                 )
 
+    # Moderation log — one row per message deletion or move, for the
+    # admin panel's Activity tab. Deliberately a frozen snapshot (the
+    # sender's name, a short content summary) rather than a live
+    # reference: a delete removes the actual message row outright, so
+    # there'd be nothing left to join against, and a move's whole point
+    # is that the message's channel changes later — logging what it
+    # *was* at the moment of the action is what makes the log a record
+    # of what happened rather than a query that reflects today's state.
+    # Includes every deletion/move, not just admin/owner ones — actor_role
+    # ('self'/'admin'/'owner') is what lets the Activity tab distinguish
+    # "someone cleaned up their own message" from an actual moderation
+    # override at a glance.
+    c.execute('''CREATE TABLE IF NOT EXISTS moderation_log
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  action TEXT NOT NULL,
+                  created_at TEXT NOT NULL,
+                  message_id INTEGER NOT NULL,
+                  message_sender TEXT NOT NULL,
+                  message_sender_id TEXT,
+                  message_summary TEXT NOT NULL,
+                  channel TEXT NOT NULL,
+                  target_channel TEXT,
+                  actor_id TEXT,
+                  actor_name TEXT NOT NULL,
+                  actor_role TEXT NOT NULL)''')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_moderation_log_created ON moderation_log(created_at)')
+
     conn.commit()
     conn.close()
 
@@ -1113,7 +1140,48 @@ def save_message(sender, content, channel='general', msg_type='text',
     conn.close()
     return msg_id
 
-def delete_message(message_id, requester_id, can_manage):
+def record_moderation_action(action, message_id, sender, sender_id, channel, summary,
+                              actor_id, actor_name, actor_role, target_channel=None):
+    """Logs one deletion or move for the admin panel's Activity tab. A
+    frozen snapshot, not a live reference — see the moderation_log table
+    comment in init_db() for why."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''INSERT INTO moderation_log
+                 (action, created_at, message_id, message_sender, message_sender_id,
+                  message_summary, channel, target_channel, actor_id, actor_name, actor_role)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+              (action, datetime.now().isoformat(), message_id, sender, sender_id,
+               summary, channel, target_channel, actor_id, actor_name, actor_role))
+    conn.commit()
+    conn.close()
+
+def get_moderation_log(limit=200):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''SELECT action, created_at, message_id, message_sender, message_summary,
+                        channel, target_channel, actor_name, actor_role
+                 FROM moderation_log ORDER BY id DESC LIMIT ?''', (limit,))
+    columns = ['action', 'created_at', 'message_id', 'message_sender', 'message_summary',
+               'channel', 'target_channel', 'actor_name', 'actor_role']
+    result = [dict(zip(columns, row)) for row in c.fetchall()]
+    conn.close()
+    return result
+
+def _moderation_role(sender_id, requester_id, privileged_role):
+    """'self' whenever the actor and the message's original sender are
+    the same person, even if that person also happens to be an admin or
+    the owner — that's a more useful, more honest label in the log than
+    'admin' for someone simply cleaning up their own message. Only
+    someone acting on *another* person's message is ever logged as
+    'admin'/'owner', which is what privileged_role (computed by the
+    socket handler, which already knows the session/identity state this
+    function doesn't) actually represents."""
+    if sender_id == requester_id:
+        return 'self'
+    return privileged_role or 'self'
+
+def delete_message(message_id, requester_id, can_manage, actor_name, privileged_role):
     """Regular users can only delete their own messages (matched by the
     stable sender_id, not the display name — a renamed or reused alias
     shouldn't matter here). An admin (password session) or the
@@ -1123,13 +1191,14 @@ def delete_message(message_id, requester_id, can_manage):
     notify."""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('SELECT sender_id, channel, file_url FROM messages WHERE id = ?', (message_id,))
+    c.execute('''SELECT sender, sender_id, channel, message_type, content, file_url, file_name
+                 FROM messages WHERE id = ?''', (message_id,))
     row = c.fetchone()
     if not row:
         conn.close()
         return None, 'Message not found — it may have already been deleted.'
 
-    sender_id, channel, file_url = row
+    sender, sender_id, channel, message_type, content, file_url, file_name = row
     if not can_manage and sender_id != requester_id:
         conn.close()
         return None, 'You can only delete your own messages.'
@@ -1140,6 +1209,11 @@ def delete_message(message_id, requester_id, can_manage):
     conn.close()
 
     remove_upload(file_url)
+
+    summary = summarize_message_for_notification(
+        content, message_type, {'filename': file_name} if file_name else None)
+    record_moderation_action('delete', message_id, sender, sender_id, channel, summary,
+                              requester_id, actor_name, _moderation_role(sender_id, requester_id, privileged_role))
     return channel, None
 
 def edit_message(message_id, requester_id, new_content):
@@ -1181,7 +1255,7 @@ def edit_message(message_id, requester_id, new_content):
     conn.close()
     return channel, None
 
-def move_message(message_id, requester_id, can_manage, new_channel):
+def move_message(message_id, requester_id, can_manage, new_channel, actor_name, privileged_role):
     """Relocates a message to a different channel -- the message itself
     (content, sender, id, reactions, timestamp) never changes, only
     which channel it lives in. Permission mirrors delete_message()
@@ -1196,13 +1270,14 @@ def move_message(message_id, requester_id, can_manage, new_channel):
     broadcasting anything)."""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('SELECT sender_id, channel FROM messages WHERE id = ?', (message_id,))
+    c.execute('''SELECT sender, sender_id, channel, message_type, content, file_name
+                 FROM messages WHERE id = ?''', (message_id,))
     row = c.fetchone()
     if not row:
         conn.close()
         return None, None, 'Message not found — it may have already been deleted.'
 
-    sender_id, old_channel = row
+    sender, sender_id, old_channel, message_type, content, file_name = row
     if not can_manage and sender_id != requester_id:
         conn.close()
         return None, None, 'You can only move your own messages.'
@@ -1229,6 +1304,12 @@ def move_message(message_id, requester_id, can_manage, new_channel):
               (new_channel, message_id, old_channel))
     conn.commit()
     conn.close()
+
+    summary = summarize_message_for_notification(
+        content, message_type, {'filename': file_name} if file_name else None)
+    record_moderation_action('move', message_id, sender, sender_id, old_channel, summary,
+                              requester_id, actor_name, _moderation_role(sender_id, requester_id, privileged_role),
+                              target_channel=new_channel)
     return old_channel, new_channel, None
 
 def get_custom_emojis():
@@ -1639,10 +1720,28 @@ def admin_panel():
             checked = allowed_ids is None or cal['entity_id'] in allowed_ids
             calendars_with_state.append({**cal, 'checked': checked})
 
+    channels = get_channels()
+    # A logged move/delete's channel(s) may no longer exist by the time
+    # this renders — deleting a channel just hides it, but a brand new
+    # one reusing that slug later would otherwise make an old log entry
+    # look like it happened in today's channel of the same name. Falling
+    # back to the bare slug (rather than silently reusing whatever
+    # channel currently has it) keeps a log entry honest about a channel
+    # that's since been removed.
+    channels_by_slug = {ch['slug']: ch for ch in channels}
+    def _channel_display(slug):
+        ch = channels_by_slug.get(slug)
+        return f"{ch['icon']} {ch['name']}" if ch else f"#{slug}"
+    moderation_log = get_moderation_log()
+    for entry in moderation_log:
+        entry['channel_display'] = _channel_display(entry['channel'])
+        entry['target_channel_display'] = (
+            _channel_display(entry['target_channel']) if entry['target_channel'] else None)
+
     return render_template('admin.html', logged_in=True,
                           saved=request.args.get('saved'),
                           active_tab=request.args.get('tab', 'chatname'),
-                          channels=get_channels(),
+                          channels=channels,
                           categories=get_categories(),
                           channel_error=request.args.get('channel_error'),
                           import_error=request.args.get('import_error'),
@@ -1651,7 +1750,8 @@ def admin_panel():
                           current_owner_id=get_owner_user_id(),
                           server_identity=get_server_identity(),
                           all_calendars=calendars_with_state,
-                          calendar_error=calendar_error)
+                          calendar_error=calendar_error,
+                          moderation_log=moderation_log)
 
 @app.route('/admin/calendars/set', methods=['POST'])
 @require_admin
@@ -3342,7 +3442,10 @@ def handle_reaction(data):
 def handle_delete_message(data):
     message_id = data.get('message_id')
     requester_id, requester_name = resolve_ha_identity()
-    can_manage = bool(session.get('is_admin')) or is_owner(requester_id)
+    is_admin_session = bool(session.get('is_admin'))
+    owner_flag = is_owner(requester_id)
+    can_manage = is_admin_session or owner_flag
+    privileged_role = 'admin' if is_admin_session else ('owner' if owner_flag else None)
 
     if not message_id:
         return
@@ -3350,7 +3453,8 @@ def handle_delete_message(data):
         emit('server_error', {'message': "Couldn't identify you as a Home Assistant user — try reloading the page."})
         return
 
-    channel, error = delete_message(message_id, requester_id, can_manage)
+    channel, error = delete_message(message_id, requester_id, can_manage,
+                                     requester_name or 'Admin', privileged_role)
     if error:
         emit('server_error', {'message': error})
         return
@@ -3414,7 +3518,10 @@ def handle_move_message(data):
     message_id = data.get('message_id')
     new_channel = (data.get('channel') or '').strip()
     requester_id, requester_name = resolve_ha_identity()
-    can_manage = bool(session.get('is_admin')) or is_owner(requester_id)
+    is_admin_session = bool(session.get('is_admin'))
+    owner_flag = is_owner(requester_id)
+    can_manage = is_admin_session or owner_flag
+    privileged_role = 'admin' if is_admin_session else ('owner' if owner_flag else None)
 
     if not message_id or not new_channel:
         return
@@ -3422,7 +3529,8 @@ def handle_move_message(data):
         emit('server_error', {'message': "Couldn't identify you as a Home Assistant user — try reloading the page."})
         return
 
-    old_channel, moved_channel, error = move_message(message_id, requester_id, can_manage, new_channel)
+    old_channel, moved_channel, error = move_message(message_id, requester_id, can_manage, new_channel,
+                                                       requester_name or 'Admin', privileged_role)
     if error:
         emit('server_error', {'message': error})
         return
