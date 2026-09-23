@@ -46,7 +46,19 @@
         .admin-body {
             display: flex;
             margin-top: 24px;
-            min-height: 420px;
+            /* One standard size for the whole panel regardless of which
+               tab is active — a short tab (Chat Name) used to leave the
+               dialog noticeably shorter than a long one (Channels,
+               Activity), visibly resizing on every tab switch. Flexbox's
+               default align-items:stretch makes both the sidebar and
+               the content area fill this fixed height automatically;
+               a tab whose content is taller scrolls within
+               .admin-tab-panels (overflow-y: auto, below) instead of
+               growing the dialog. clamp() keeps it reactive to the
+               viewport rather than truly fixed — it shrinks on a short
+               window before it would ever overflow off-screen, and
+               still won't grow past 600px on a tall one. */
+            height: clamp(420px, 70vh, 600px);
         }
         .admin-tabs {
             width: 180px;
@@ -89,8 +101,10 @@
             flex: 1;
             padding: 24px 32px 32px;
             min-width: 0;
+            /* Fills .admin-body's fixed height (flex stretch, default) —
+               a tab with more content than that scrolls internally
+               here instead of growing the dialog. */
             overflow-y: auto;
-            max-height: 70vh;
         }
         .admin-tab-panel {
             display: none;

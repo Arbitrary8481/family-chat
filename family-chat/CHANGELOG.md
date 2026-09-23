@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.46.0
+
+### Changed
+- **The admin panel is now one standard size regardless of which tab is open.** Switching between a short tab (Chat Name) and a long one (Channels, Activity) used to visibly resize the whole dialog, since its height simply followed whatever the active tab's content needed. It now has a fixed height that scales with the viewport — `clamp(420px, 70vh, 600px)` — so it stays consistent across tabs on any given screen, shrinks gracefully on a short window before it would overflow, and caps out at 600px on a tall one. A tab with more content than fits scrolls within its own panel instead of growing the dialog, same as before; a short tab just leaves blank space below rather than the dialog shrinking to match it. Applies on mobile too, where the tab row stacks above the content within that same fixed height.
+
 ## 2.45.1
 
 ### Security
