@@ -1026,6 +1026,18 @@ body {
     display: grid;
     grid-template-columns: repeat(8, 1fr);
     gap: 4px;
+    /* Grid's default align-content (normal -> stretch) divides ALL of
+       .emoji-grid's height — stretched to fill the picker's fixed
+       height, not just however tall the content actually is — evenly
+       across however many rows happen to exist. A category with only
+       one or two rows (Recent, right after clearing it; a narrow
+       search match) ends up with each row inflated to a big fraction
+       of the picker's height, so the emoji noticeably drift apart
+       instead of sitting in a normal, tightly-packed grid. .gif-grid
+       already avoids the identical trap below — same fix here: pack
+       rows at the top and let any leftover space fall below the last
+       row instead of being divided into it. */
+    align-content: start;
 }
 
 .emoji-item {

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.46.1
+
+### Fixed
+- **The emoji picker's Recent (and any other short) tab showed its emoji spread across huge gaps instead of a normal, tightly-packed grid.** CSS Grid's default row alignment stretches implicit rows to fill all of the container's available height, split evenly across however many rows exist — fine when there are enough emoji to fill the picker, but with only one or two rows (Recent right after being cleared, or a narrow search match) each row got stretched to a large fraction of the picker's height, so the actual emoji — centered within their own oversized row — ended up looking randomly scattered rather than sitting together. `.gif-grid` already avoided this exact trap; `.emoji-grid` just hadn't gotten the same fix. Verified in a real browser: reproduced the reported gap with the same recent-emoji list from the report, confirmed the fix packs every row tightly at the top with no visual change to a fully-populated category like People.
+
 ## 2.46.0
 
 ### Changed
