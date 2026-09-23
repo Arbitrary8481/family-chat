@@ -727,6 +727,16 @@ document.addEventListener('click', (e) => {
     setTimeout(() => targetEl.classList.remove('highlight-flash'), 2000);
 });
 
+// Opens the full-size viewer for a message's inline image, or a shared-
+// media grid thumbnail — both stash the (already safeUrl()-checked) URL
+// in a data-* attribute rather than an inline onclick, see the comment
+// where message-image is built in addMessage() for why.
+document.addEventListener('click', (e) => {
+    const img = e.target.closest('.message-image, .media-item');
+    if (!img || !img.dataset.imageUrl) return;
+    openImageViewer(img.dataset.imageUrl);
+});
+
 // Reply/react/edit/delete were only ever reachable via :hover — on a
 // touch device, with no hover state at all, they used to just be shown
 // permanently instead, which meant they sat on top of every message's
@@ -1203,8 +1213,15 @@ function addMessage(data, insertMode = 'append') {
         const mimeType = escapeHtml(data.file?.mime_type || data.mime_type || '');
         
         if (looksLikeImageFile(mimeType, rawFileName)) {
+            // The URL goes in a data-* attribute, read by the delegated
+            // click handler below, rather than interpolated into an
+            // inline onclick="..." string — a URL containing a quote
+            // and parentheses could otherwise break out of that inline
+            // JS string (HTML-entity-decoding happens before an
+            // event-handler attribute is parsed as JS, so escapeHtml()'s
+            // quote-encoding alone doesn't fully neutralize it there).
             contentHtml += `
-                <div class="message-image" onclick="openImageViewer('${fileUrl}')">
+                <div class="message-image" data-image-url="${fileUrl}">
                     <img src="${fileUrl}" alt="${fileName}" loading="lazy">
                 </div>
             `;
@@ -3680,7 +3697,8 @@ function addToSharedMedia(url) {
     const safe = safeUrl(url);
     const item = document.createElement('div');
     item.className = 'media-item';
-    item.innerHTML = `<img src="${safe}" onclick="openImageViewer('${safe}')" loading="lazy">`;
+    item.dataset.imageUrl = safe;
+    item.innerHTML = `<img src="${safe}" loading="lazy">`;
     grid.insertBefore(item, grid.firstChild);
 }
 

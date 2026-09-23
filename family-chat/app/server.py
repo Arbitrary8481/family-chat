@@ -445,6 +445,19 @@ def init_db():
                   emoji TEXT,
                   user TEXT,
                   FOREIGN KEY (message_id) REFERENCES messages(id))''')
+    # user_id didn't exist in older versions — a reaction used to be
+    # matched/toggled purely by the mutable display-name string in
+    # `user`, the same trap messages.sender_id (above) already fixed for
+    # deletes/edits/moves: a self-service alias with no uniqueness
+    # constraint could collide with someone else's current name, letting
+    # one person silently toggle another's reaction. `user` is kept
+    # as-is (still written on every new reaction, and it's what a
+    # pre-migration row — user_id NULL — falls back to for display), but
+    # matching now happens on this stable id instead — see
+    # handle_reaction() and get_messages()'s reaction-fetch.
+    c.execute("PRAGMA table_info(reactions)")
+    if 'user_id' not in [col[1] for col in c.fetchall()]:
+        c.execute('ALTER TABLE reactions ADD COLUMN user_id TEXT')
 
     # Settings table (currently: display names for the two family members).
     # Seeded once from app options/env vars, then editable from /admin
@@ -727,15 +740,24 @@ def get_avatar(user_id):
     conn.close()
     return row[0] if row else None
 
+def _resolve_upload_path(file_url):
+    """Resolves a public /uploads/... URL to the on-disk path it names,
+    or None if it isn't a genuine /uploads/ URL or would resolve outside
+    UPLOAD_FOLDER (e.g. via a crafted '/uploads/../../etc/passwd')."""
+    if not file_url or not file_url.startswith('/uploads/'):
+        return None
+    candidate = (UPLOAD_FOLDER / file_url[len('/uploads/'):]).resolve()
+    if candidate.is_relative_to(UPLOAD_FOLDER.resolve()):
+        return candidate
+    return None
+
 def remove_upload(file_url):
     """Deletes a file this app previously saved under UPLOAD_FOLDER, given
     its public /uploads/... URL. No-ops for anything else (e.g. an
     external GIPHY URL) — and resolves the path to confirm it can't have
     climbed outside the upload folder before deleting anything from disk."""
-    if not file_url or not file_url.startswith('/uploads/'):
-        return
-    candidate = (UPLOAD_FOLDER / file_url[len('/uploads/'):]).resolve()
-    if candidate.is_relative_to(UPLOAD_FOLDER.resolve()) and candidate.exists():
+    candidate = _resolve_upload_path(file_url)
+    if candidate and candidate.exists():
         try:
             candidate.unlink()
         except OSError as e:
@@ -1042,8 +1064,17 @@ def get_messages(limit=100, channel='general', before_id=None):
     # regardless of what characters end up in an emoji name or username.
     if message_ids:
         placeholders = ','.join('?' * len(message_ids))
-        c.execute(f'SELECT message_id, emoji, user FROM reactions WHERE message_id IN ({placeholders})',
-                  message_ids)
+        # Display name is resolved here at read time via a join on the
+        # stable user_id (falling back to the name frozen on the row
+        # itself for a reaction placed before user_id existed) — the
+        # same "renaming applies retroactively" pattern messages already
+        # get from their own alias join above, and what lets a reaction
+        # be matched/toggled by the reactor's real identity rather than
+        # a mutable name string (see handle_reaction()).
+        c.execute(f'''SELECT r.message_id, r.emoji, COALESCE(ua.alias, r.user) as display_name
+                     FROM reactions r
+                     LEFT JOIN user_aliases ua ON ua.user_id = r.user_id
+                     WHERE r.message_id IN ({placeholders})''', message_ids)
         reactions_by_message = {}
         for message_id, emoji, user in c.fetchall():
             reactions_by_message.setdefault(message_id, {}).setdefault(emoji, []).append(user)
@@ -1084,7 +1115,10 @@ def get_message_by_id(message_id):
     else:
         msg['link_preview'] = None
 
-    c.execute('SELECT emoji, user FROM reactions WHERE message_id = ?', (message_id,))
+    c.execute('''SELECT r.emoji, COALESCE(ua.alias, r.user) as display_name
+                 FROM reactions r
+                 LEFT JOIN user_aliases ua ON ua.user_id = r.user_id
+                 WHERE r.message_id = ?''', (message_id,))
     reactions = {}
     for emoji, user in c.fetchall():
         reactions.setdefault(emoji, []).append(user)
@@ -2160,6 +2194,30 @@ def is_safe_external_url(url):
             return False
     return True
 
+class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """urllib's default redirect handling follows a 3xx Location header
+    unconditionally -- is_safe_external_url() was only ever being
+    checked once, against the URL a chat message actually contained,
+    before the fetch. That let an attacker-controlled external site
+    pass the initial check and then redirect the fetch to an internal
+    address (Home Assistant's own API, a cloud metadata endpoint,
+    another add-on's internal port) that is otherwise unreachable from
+    outside this app's own network -- and have that response's
+    title/description reflected into the chat as the link's preview.
+    Re-checking every redirect target here, before it's followed,
+    closes that off; max_redirections (inherited default: 10) is also
+    lowered, since a link preview has no legitimate reason to need many
+    hops."""
+    max_redirections = 5
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not is_safe_external_url(newurl):
+            raise urllib.error.HTTPError(
+                newurl, code, 'Refused to follow a redirect to a disallowed address', headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+_SAFE_URL_OPENER = urllib.request.build_opener(_SafeRedirectHandler)
+
 YOUTUBE_HOSTS = {'youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be', 'music.youtube.com'}
 
 def is_youtube_url(url):
@@ -2242,7 +2300,10 @@ def _fetch_page_head(url, user_agent):
             'Accept': 'text/html,application/xhtml+xml',
             'Accept-Language': 'en-US,en;q=0.9',
         })
-        with urllib.request.urlopen(req, timeout=6) as resp:
+        # _SAFE_URL_OPENER, not the default opener/urlopen() -- see
+        # _SafeRedirectHandler above for why a redirect can't be
+        # followed blindly here.
+        with _SAFE_URL_OPENER.open(req, timeout=6) as resp:
             if 'text/html' not in resp.headers.get('Content-Type', ''):
                 return None
             return resp.read(65536).decode('utf-8', errors='replace')
@@ -3351,6 +3412,44 @@ def publish_message(sender, sender_id, content, channel, msg_type='text',
         socketio.start_background_task(queue_link_preview, msg_id, channel, content)
     return msg_id
 
+# The only message types the send_message socket event may legitimately
+# produce -- calendar_event messages are created solely by
+# api_create_calendar_event(), a separate, already-validated REST route,
+# never through this event.
+ALLOWED_MESSAGE_TYPES = {'text', 'image', 'video', 'gif', 'file'}
+
+def validate_outgoing_file(msg_type, file_info):
+    """A send_message socket payload is otherwise-untrusted client
+    input. Before this existed, msg_type/file_info were stored and
+    broadcast verbatim -- nothing stopped a hand-crafted socket event
+    (bypassing /api/upload entirely, e.g. sent straight from a browser
+    console) from claiming an arbitrary external URL was a file this
+    server hosts. That's not just a data-integrity concern: a forged
+    'file' message renders as a clickable, filename-and-size-labelled
+    "shared file" card pointing at file.url, letting it disguise a
+    phishing link as a legitimate attachment from a trusted family
+    member; and the image/video render path interpolates file.url into
+    an inline onclick handler, where a URL containing a quote and
+    parentheses can break out of the JS string entity-encoding alone
+    doesn't fully neutralize there. Requiring file.url to be a real,
+    already-uploaded file closes both off at the source. gif is the one
+    deliberate exception -- a GIF is always expected to point at GIPHY's
+    own CDN, never anything this server hosts, matching how the picker
+    already sends one. Returns an error string, or None if file_info is
+    fine to store/broadcast as-is."""
+    if msg_type not in ALLOWED_MESSAGE_TYPES:
+        return 'Not a valid message type.'
+    if not file_info:
+        return None
+    url = file_info.get('url') if isinstance(file_info, dict) else None
+    if msg_type == 'gif':
+        if not isinstance(url, str) or not url.startswith(('http://', 'https://')):
+            return 'Invalid GIF.'
+        return None
+    resolved = _resolve_upload_path(url) if isinstance(url, str) else None
+    if not resolved or not resolved.is_file():
+        return "That file wasn't found — try uploading it again."
+    return None
 
 @socketio.on('send_message')
 @log_socket_errors
@@ -3365,10 +3464,15 @@ def handle_message(data):
     msg_type = data.get('type', 'text')
     file_info = data.get('file', None)
     reply_to_id = data.get('reply_to_id')
-    
+
     if not sender:
         logger.warning('send_message from a request with no resolvable HA identity (sender_id=%s)', sender_id)
         emit('server_error', {'message': "Couldn't identify you as a Home Assistant user — try reloading the page."})
+        return
+
+    file_error = validate_outgoing_file(msg_type, file_info)
+    if file_error:
+        emit('server_error', {'message': file_error})
         return
 
     # Nothing previously capped message length — an unbounded socket
@@ -3397,9 +3501,9 @@ def handle_message(data):
 def handle_reaction(data):
     message_id = data.get('message_id')
     emoji = data.get('emoji')
-    _, user = resolve_ha_identity()
+    requester_id, requester_name = resolve_ha_identity()
 
-    if not (message_id and emoji and user):
+    if not (message_id and emoji and requester_id):
         return
 
     conn = sqlite3.connect(DB_PATH)
@@ -3417,15 +3521,25 @@ def handle_reaction(data):
     # "active"/highlighted pill styling in the UI has always implied, but
     # the server previously just inserted a new row every time, so a
     # second click silently added a duplicate instead of un-reacting.
-    c.execute('SELECT id FROM reactions WHERE message_id = ? AND emoji = ? AND user = ?',
-              (message_id, emoji, user))
+    #
+    # Matched on the stable requester_id, not the display name — a
+    # reaction used to be keyed purely by `user` (the resolved name),
+    # and since a self-service alias has no uniqueness constraint,
+    # anyone could set their alias to another family member's current
+    # display name and then toggle/spoof *that person's* reactions
+    # (removing one they genuinely placed, or adding one that renders as
+    # theirs). Every other action here (delete/edit/move a message)
+    # already avoided this exact trap by matching on sender_id instead
+    # of the sender's name — this brings reactions in line with that.
+    c.execute('SELECT id FROM reactions WHERE message_id = ? AND emoji = ? AND user_id = ?',
+              (message_id, emoji, requester_id))
     existing = c.fetchone()
     if existing:
         c.execute('DELETE FROM reactions WHERE id = ?', (existing[0],))
         added = False
     else:
-        c.execute('INSERT INTO reactions (message_id, emoji, user) VALUES (?, ?, ?)',
-                  (message_id, emoji, user))
+        c.execute('INSERT INTO reactions (message_id, emoji, user, user_id) VALUES (?, ?, ?, ?)',
+                  (message_id, emoji, requester_name, requester_id))
         added = True
     conn.commit()
     conn.close()
@@ -3433,7 +3547,7 @@ def handle_reaction(data):
     emit('reaction_updated', {
         'message_id': message_id,
         'emoji': emoji,
-        'user': user,
+        'user': requester_name,
         'added': added
     }, room=channel)
 
