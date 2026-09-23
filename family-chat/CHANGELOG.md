@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.47.0
+
+### Added
+- **A phone number typed into a message is now a tap-to-call link**, same as a URL already is. Recognizes plain US/Canada numbers with or without formatting — `555-123-4567`, `(415) 555-2671`, `4155552671`, `1-800-555-0199` — an optional extension (`555-123-4567 ext. 234`), and international numbers with a `+` country code, formatted or not (`+44 20 7946 0958`, `+442079460958`). The link dials only the actual digits (plus the `+` for an international number); separators, parentheses, and any extension are stripped from the dial target, not the visible text. A small 📞 marks it as a call rather than a page link, which matters most on exactly the device (a phone) where that distinction changes what tapping it does.
+- Deliberately conservative about what counts as a phone number, to avoid linking things that just happen to look numeric: an unformatted (no dashes/spaces/parens) run of digits is only ever treated as a phone number when it's exactly 10 or 11 digits *and* shaped like a real NANP number (area code and exchange code both starting 2-9) — so an order number, ID, or IP address doesn't get a dialer link. A number embedded inside a URL (a path segment, a query string) is left alone; it's already part of that URL's own link.
+
 ## 2.46.1
 
 ### Fixed

@@ -1650,53 +1650,116 @@ function renderMessageText(text) {
     return restoreCustomEmojiPlaceholders(withMentions, emojiShortcodes);
 }
 
+// Four shapes, tried in this order:
+// 1. FORMATTED NANP — has a separator/parens/a leading '+' somewhere in
+//    a 3-3-4 grouping (that formatting is itself the signal, so digit
+//    groups aren't otherwise restricted): "(415) 555-2671",
+//    "+1 555-123-4567".
+// 2. BARE NANP — an unbroken run of digits with no separators at all,
+//    accepted only as exactly 10 or 11 NANP-shaped digits (area code
+//    and exchange code both starting 2-9, optional leading '1') —
+//    without that restriction, a plain 10-digit string like an order
+//    number would constantly false-positive as a phone number.
+//    (?<!\d) keeps it from matching a 10-digit slice out of the middle
+//    of a longer, unrelated run of digits. NANP is deliberately the
+//    only bare (unformatted) shape accepted — an international number
+//    with no separators at all is indistinguishable from an arbitrary
+//    long numeric ID without a leading '+', which #4 already requires.
+// 3. INTERNATIONAL, grouped — a '+', a 1-3 digit country code, then at
+//    least one *separator-led* digit group: "+44 20 7946 0958". The
+//    separator before each group is mandatory here specifically so a
+//    short, unformatted "+123" can't satisfy this by splitting itself
+//    into fake single-digit "groups".
+// 4. INTERNATIONAL, ungrouped — a '+' followed by 7-15 plain digits
+//    with no separators at all: "+442079460958". The digit-count
+//    bounds are what keeps something like "+1" or "+123" from matching.
+// An optional "x123"/"ext. 123"/"extension 123" suffix is captured into
+// its own group (see phoneMatchToTelHref()) rather than swallowed into
+// the phone number itself.
+const PHONE_PATTERN_SOURCE =
+    '(?:(?:\\+\\d{1,3}|1)[-.\\s])?\\(?\\d{3}\\)?[-.\\s]\\d{3}[-.\\s]?\\d{4}' +
+    '|(?<!\\d)(?:1[-.\\s]?)?[2-9]\\d{2}[2-9]\\d{6}' +
+    '|\\+\\d{1,3}(?:[-.\\s]\\d{1,8}){1,5}' +
+    '|\\+\\d{7,15}';
+
+// Only digits (plus a leading '+' for an international number) are
+// meaningful to a dialer — strips whatever separators/parens/spaces the
+// person actually typed, and folds a captured extension in per RFC
+// 3966 (;ext=...) rather than dropping it on the floor.
+function phoneMatchToTelHref(phoneGroup, extGroup) {
+    const href = 'tel:' + (phoneGroup.trim().startsWith('+') ? '+' : '') + phoneGroup.replace(/\D/g, '');
+    return extGroup ? `${href};ext=${extGroup}` : href;
+}
+
 function linkifyText(text) {
     if (!text) return '';
-    const urlPattern = /https?:\/\/[^\s<>"']+/g;
+    // URL and phone-number detection share a single scan (URL
+    // alternative tried first at every position) rather than two
+    // separate passes over the same text — that's what keeps a
+    // phone-shaped substring inside a URL (https://example.com/
+    // 555-123-4567/page) from being linked a second time on its own:
+    // once the URL alternative matches, scanning resumes right after
+    // the whole thing, the same reason highlightCustomEmoji() above
+    // has to explicitly skip over URLs too.
+    const pattern = new RegExp(
+        `(https?:\\/\\/[^\\s<>"']+)|(?<phone>${PHONE_PATTERN_SOURCE})(?:\\s?(?:x|ext\\.?|extension)\\s?(?<ext>\\d{1,6}))?\\b`,
+        'gi'
+    );
     let result = '';
     let lastIndex = 0;
     let match;
 
-    while ((match = urlPattern.exec(text)) !== null) {
-        let url = match[0];
-        let end = match.index + url.length;
+    while ((match = pattern.exec(text)) !== null) {
+        if (match[1]) {
+            let url = match[1];
+            let end = match.index + url.length;
 
-        // Trailing punctuation almost always belongs to the sentence,
-        // not the link — "check this out: https://example.com." should
-        // not swallow the period. Strips one character at a time so
-        // something like "(see https://example.com)." unwraps correctly
-        // in either order. A closing paren/bracket is only stripped if
-        // it doesn't have a matching opener earlier in the URL, since
-        // some real URLs (e.g. Wikipedia article titles) legitimately
-        // end in one.
-        let trimmed = true;
-        while (trimmed && url.length > 0) {
-            trimmed = false;
-            if (/[.,!?:;]$/.test(url)) {
-                url = url.slice(0, -1);
-                end -= 1;
-                trimmed = true;
-            } else if (url.endsWith(')') && (url.match(/\(/g) || []).length < (url.match(/\)/g) || []).length) {
-                url = url.slice(0, -1);
-                end -= 1;
-                trimmed = true;
-            } else if (url.endsWith(']') && (url.match(/\[/g) || []).length < (url.match(/\]/g) || []).length) {
-                url = url.slice(0, -1);
-                end -= 1;
-                trimmed = true;
+            // Trailing punctuation almost always belongs to the sentence,
+            // not the link — "check this out: https://example.com." should
+            // not swallow the period. Strips one character at a time so
+            // something like "(see https://example.com)." unwraps correctly
+            // in either order. A closing paren/bracket is only stripped if
+            // it doesn't have a matching opener earlier in the URL, since
+            // some real URLs (e.g. Wikipedia article titles) legitimately
+            // end in one.
+            let trimmed = true;
+            while (trimmed && url.length > 0) {
+                trimmed = false;
+                if (/[.,!?:;]$/.test(url)) {
+                    url = url.slice(0, -1);
+                    end -= 1;
+                    trimmed = true;
+                } else if (url.endsWith(')') && (url.match(/\(/g) || []).length < (url.match(/\)/g) || []).length) {
+                    url = url.slice(0, -1);
+                    end -= 1;
+                    trimmed = true;
+                } else if (url.endsWith(']') && (url.match(/\[/g) || []).length < (url.match(/\]/g) || []).length) {
+                    url = url.slice(0, -1);
+                    end -= 1;
+                    trimmed = true;
+                }
             }
-        }
-        if (!url) continue;
+            if (!url) continue;
 
-        result += escapeHtml(text.slice(lastIndex, match.index));
-        const safeHref = escapeHtml(url); // url is guaranteed http(s):// by the regex, and can't contain a quote character (excluded from the match), so this is just attribute-encoding, not a scheme check
-        // stopPropagation matters here: linkifyText() output sometimes
-        // ends up inside an element that itself has its own onclick (a
-        // search result row navigates to the message it's from) — without
-        // this, clicking the link would both open it AND trigger that.
-        result += `<a href="${safeHref}" target="_blank" rel="noopener noreferrer nofollow" onclick="event.stopPropagation()">${escapeHtml(url)}</a>`;
-        lastIndex = end;
-        urlPattern.lastIndex = end; // resume scanning right after whatever we actually linked, since trimming may have moved it earlier than the raw regex match
+            result += escapeHtml(text.slice(lastIndex, match.index));
+            const safeHref = escapeHtml(url); // url is guaranteed http(s):// by the regex, and can't contain a quote character (excluded from the match), so this is just attribute-encoding, not a scheme check
+            // stopPropagation matters here: linkifyText() output sometimes
+            // ends up inside an element that itself has its own onclick (a
+            // search result row navigates to the message it's from) — without
+            // this, clicking the link would both open it AND trigger that.
+            result += `<a href="${safeHref}" target="_blank" rel="noopener noreferrer nofollow" onclick="event.stopPropagation()">${escapeHtml(url)}</a>`;
+            lastIndex = end;
+            pattern.lastIndex = end; // resume scanning right after whatever we actually linked, since trimming may have moved it earlier than the raw regex match
+        } else if (match.groups && match.groups.phone) {
+            result += escapeHtml(text.slice(lastIndex, match.index));
+            const telHref = phoneMatchToTelHref(match.groups.phone, match.groups.ext);
+            // No target/rel here, unlike the URL link above — tel: isn't a
+            // page navigation, it hands off to the device's own dialer (or
+            // a "call this number?" prompt), so neither applies. Same
+            // stopPropagation reasoning as the URL branch.
+            result += `<a href="${escapeHtml(telHref)}" class="phone-link" onclick="event.stopPropagation()">${escapeHtml(match[0])}</a>`;
+            lastIndex = match.index + match[0].length;
+        }
     }
     result += escapeHtml(text.slice(lastIndex));
     return result;

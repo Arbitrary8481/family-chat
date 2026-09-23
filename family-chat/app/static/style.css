@@ -567,6 +567,16 @@ body {
     text-decoration: underline;
 }
 
+/* A tel: link does something a URL link doesn't — hands off to the
+   device's own dialer instead of opening a page — worth a small,
+   distinct visual cue so it reads as "this calls someone" at a glance,
+   especially since that's most relevant on exactly the device (a
+   phone) where the difference actually matters. */
+.phone-link::before {
+    content: "📞";
+    margin-right: 3px;
+}
+
 .mention {
     background: rgba(88, 101, 242, 0.15);
     color: var(--bg-accent-hover);
