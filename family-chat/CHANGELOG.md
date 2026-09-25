@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.48.0
+
+### Added
+- **Pin messages to a channel.** A new 📌 button sits alongside reply/react/edit/move/delete on every message — open to anyone signed in, on any message, since pinning doesn't change what a message says or who it's attributed to (the same reasoning a reaction is already open to everyone). A pinned message gets a small marker in the channel itself and shows up in a new 📌 Pinned Messages panel (next to Search in the channel header), which lists everything pinned in the current channel, most recently pinned first, with who pinned it and when. Clicking an entry jumps to and briefly highlights the message if it's currently loaded; a ✕ on each row unpins it directly from the panel.
+- Pinning/unpinning updates live for everyone currently in the channel — not just the person who did it — the same way a reaction or a move already does.
+- A pin follows a message if it's later moved to another channel, and is cleaned up automatically if the message is deleted — it never gets left pointing at a channel or a message that no longer has it.
+- Capped at 50 pinned messages per channel, so a channel's pinned list can't grow without bound; unpin one before adding another once you hit it.
+
 ## 2.47.0
 
 ### Added

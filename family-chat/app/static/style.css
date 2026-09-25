@@ -516,6 +516,20 @@ body {
     font-style: italic;
 }
 
+/* inset rather than a real border/padding change — a pinned message
+   sitting in the middle of an otherwise-identical column of messages
+   shouldn't shift anything else's alignment, just get a visible marker
+   of its own. */
+.message-pinned {
+    box-shadow: inset 3px 0 0 var(--warning);
+}
+
+.message-pinned-label {
+    font-size: 11px;
+    color: var(--warning);
+    font-weight: 600;
+}
+
 .message-edit-container {
     margin: 2px 0;
 }
@@ -737,6 +751,14 @@ body {
 .action-btn-danger:hover {
     background: rgba(237, 66, 69, 0.15);
     color: var(--danger);
+}
+
+/* Currently-toggled-on state for an action button that's a toggle
+   rather than a one-shot action — the pin button once a message is
+   already pinned (unlike reply/react/delete, which never have an
+   "active" state of their own). */
+.action-btn-active {
+    color: var(--warning);
 }
 
 /* Typing Indicator */
@@ -2201,6 +2223,21 @@ body {
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
+}
+
+.pinned-unpin-btn {
+    float: right;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 13px;
+    padding: 0 4px;
+    line-height: 1;
+}
+
+.pinned-unpin-btn:hover {
+    color: var(--danger);
 }
 
 .file-browser-item {

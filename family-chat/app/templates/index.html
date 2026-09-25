@@ -106,6 +106,7 @@
                 </div>
                 <div class="header-actions">
                     <button class="header-btn" onclick="toggleSearch()" title="Search">🔍</button>
+                    <button class="header-btn" onclick="openPinnedMessages()" title="Pinned messages">📌</button>
                     <button class="header-btn" onclick="openFileBrowser()" title="Files">📎</button>
                     <button class="header-btn sidebar-toggle-btn" onclick="toggleMembersSidebar()" title="Toggle member list" id="membersSidebarToggle">
                         👥
@@ -560,6 +561,20 @@
                 <button class="close-btn" onclick="closeFileBrowser()">×</button>
             </div>
             <div id="filesList" class="search-results"></div>
+        </div>
+    </div>
+
+    <!-- Pinned Messages: everything pinned in the current channel —
+         populated and kept live entirely from script.js
+         (loadPinnedMessages()/setMessagePinnedState()), the same as
+         the Files modal just above. -->
+    <div class="modal hidden" id="pinnedModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>📌 Pinned Messages</h3>
+                <button class="close-btn" onclick="closePinnedMessages()">×</button>
+            </div>
+            <div id="pinnedList" class="search-results"></div>
         </div>
     </div>
 

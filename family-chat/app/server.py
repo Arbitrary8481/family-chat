@@ -621,6 +621,21 @@ def init_db():
                   actor_role TEXT NOT NULL)''')
     c.execute('CREATE INDEX IF NOT EXISTS idx_moderation_log_created ON moderation_log(created_at)')
 
+    # Pinned messages — message_id is the primary key rather than a
+    # separate autoincrement id, since a message is either pinned or it
+    # isn't; there's nothing else to key a row on. channel is
+    # denormalized from messages.channel (not just joined at read time)
+    # so a pin survives correctly if the message is later moved — see
+    # move_message(), which keeps this in sync the same way it already
+    # does for unread_mentions.
+    c.execute('''CREATE TABLE IF NOT EXISTS pinned_messages
+                 (message_id INTEGER PRIMARY KEY,
+                  channel TEXT NOT NULL,
+                  pinned_by TEXT NOT NULL,
+                  pinned_by_id TEXT,
+                  pinned_at TEXT NOT NULL)''')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_pinned_messages_channel ON pinned_messages(channel)')
+
     conn.commit()
     conn.close()
 
@@ -1037,6 +1052,7 @@ def get_messages(limit=100, channel='general', before_id=None):
             msg['sender'] = msg['current_alias']
         del msg['current_alias']
         msg['reactions'] = {}
+        msg['pinned'] = False
         # Stored as a JSON string (see queue_link_preview()) but handed
         # back to the client as a proper nested object rather than a
         # string it would have to parse itself a second time — None
@@ -1081,6 +1097,11 @@ def get_messages(limit=100, channel='general', before_id=None):
         for msg in result:
             msg['reactions'] = reactions_by_message.get(msg['id'], {})
 
+        c.execute(f'SELECT message_id FROM pinned_messages WHERE message_id IN ({placeholders})', message_ids)
+        pinned_ids = {row[0] for row in c.fetchall()}
+        for msg in result:
+            msg['pinned'] = msg['id'] in pinned_ids
+
     conn.close()
     return list(reversed(result))
 
@@ -1123,6 +1144,9 @@ def get_message_by_id(message_id):
     for emoji, user in c.fetchall():
         reactions.setdefault(emoji, []).append(user)
     msg['reactions'] = reactions
+
+    c.execute('SELECT 1 FROM pinned_messages WHERE message_id = ?', (message_id,))
+    msg['pinned'] = c.fetchone() is not None
 
     conn.close()
     return msg
@@ -1238,6 +1262,7 @@ def delete_message(message_id, requester_id, can_manage, actor_name, privileged_
         return None, 'You can only delete your own messages.'
 
     c.execute('DELETE FROM reactions WHERE message_id = ?', (message_id,))
+    c.execute('DELETE FROM pinned_messages WHERE message_id = ?', (message_id,))
     c.execute('DELETE FROM messages WHERE id = ?', (message_id,))
     conn.commit()
     conn.close()
@@ -1336,6 +1361,11 @@ def move_message(message_id, requester_id, can_manage, new_channel, actor_name, 
     # in now.
     c.execute('UPDATE unread_mentions SET channel = ? WHERE message_id = ? AND channel = ?',
               (new_channel, message_id, old_channel))
+    # Same reasoning for a pin -- it's denormalized onto the pinned
+    # message's own row (not just looked up via the message's current
+    # channel) specifically so it stays correct if the message moves.
+    c.execute('UPDATE pinned_messages SET channel = ? WHERE message_id = ? AND channel = ?',
+              (new_channel, message_id, old_channel))
     conn.commit()
     conn.close()
 
@@ -1345,6 +1375,94 @@ def move_message(message_id, requester_id, can_manage, new_channel, actor_name, 
                               requester_id, actor_name, _moderation_role(sender_id, requester_id, privileged_role),
                               target_channel=new_channel)
     return old_channel, new_channel, None
+
+MAX_PINNED_PER_CHANNEL = 50
+
+def pin_message(message_id, requester_id, requester_name):
+    """Returns (channel, error). Open to anyone signed in, on any
+    message -- unlike delete/edit/move there's no ownership question to
+    gate this on, since pinning changes neither what a message says nor
+    who it's attributed to; the same reasoning a reaction is already
+    open to everyone. Pinning an already-pinned message is a silent
+    no-op, not an error -- callers (a client that double-clicks, or two
+    people pinning the same message near-simultaneously) shouldn't have
+    to treat that as a failure."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT channel FROM messages WHERE id = ?', (message_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return None, 'Message not found — it may have been deleted.'
+    channel = row[0]
+
+    c.execute('SELECT 1 FROM pinned_messages WHERE message_id = ?', (message_id,))
+    if c.fetchone():
+        conn.close()
+        return channel, None
+
+    c.execute('SELECT COUNT(*) FROM pinned_messages WHERE channel = ?', (channel,))
+    if c.fetchone()[0] >= MAX_PINNED_PER_CHANNEL:
+        conn.close()
+        return None, f'This channel already has {MAX_PINNED_PER_CHANNEL} pinned messages — unpin one before adding another.'
+
+    c.execute('''INSERT INTO pinned_messages (message_id, channel, pinned_by, pinned_by_id, pinned_at)
+                 VALUES (?, ?, ?, ?, ?)''',
+              (message_id, channel, requester_name, requester_id, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+    return channel, None
+
+def unpin_message(message_id):
+    """Returns (channel, error) -- channel is None if the message wasn't
+    pinned in the first place (a silent no-op, same reasoning as
+    pin_message() above), which also tells the caller there's nothing
+    to broadcast."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT channel FROM pinned_messages WHERE message_id = ?', (message_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return None, None
+    channel = row[0]
+    c.execute('DELETE FROM pinned_messages WHERE message_id = ?', (message_id,))
+    conn.commit()
+    conn.close()
+    return channel, None
+
+def get_pinned_messages(channel):
+    """Every pinned message in a channel, most recently pinned first --
+    joined against the live messages/alias tables (not a frozen
+    snapshot) so a rename shows up here the same way it retroactively
+    updates everywhere else. summary uses the same short,
+    type-aware description (a plain-text truncation, or "Sent a photo"/
+    "Shared a file"/etc. for anything without freeform text) the
+    moderation log and notifications already use, rather than the raw
+    content -- meant for a quick-glance list, not a full re-render."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''SELECT m.id, COALESCE(ua.alias, m.sender) as sender, m.content, m.message_type,
+                        m.file_name, m.timestamp, p.pinned_by, p.pinned_at
+                 FROM pinned_messages p
+                 JOIN messages m ON m.id = p.message_id
+                 LEFT JOIN user_aliases ua ON ua.user_id = m.sender_id
+                 WHERE p.channel = ?
+                 ORDER BY p.pinned_at DESC''', (channel,))
+    rows = c.fetchall()
+    conn.close()
+    results = []
+    for msg_id, sender, content, message_type, file_name, timestamp, pinned_by, pinned_at in rows:
+        results.append({
+            'id': msg_id,
+            'sender': sender,
+            'summary': summarize_message_for_notification(
+                content, message_type, {'filename': file_name} if file_name else None),
+            'timestamp': timestamp,
+            'pinned_by': pinned_by,
+            'pinned_at': pinned_at,
+        })
+    return results
 
 def get_custom_emojis():
     conn = sqlite3.connect(DB_PATH)
@@ -1659,6 +1777,11 @@ def api_files():
             'timestamp': timestamp,
         })
     return jsonify(results)
+
+@app.route('/api/pinned')
+def api_pinned_messages():
+    channel = request.args.get('channel', 'general')
+    return jsonify(get_pinned_messages(channel))
 
 @app.route('/api/me')
 def api_me():
@@ -3665,6 +3788,48 @@ def handle_move_message(data):
     message = get_message_by_id(message_id)
     if message:
         emit('message_moved_in', message, room=moved_channel)
+
+@socketio.on('pin_message')
+@log_socket_errors
+def handle_pin_message(data):
+    message_id = data.get('message_id')
+    requester_id, requester_name = resolve_ha_identity()
+
+    if not message_id:
+        return
+    if not requester_id:
+        emit('server_error', {'message': "Couldn't identify you as a Home Assistant user — try reloading the page."})
+        return
+
+    channel, error = pin_message(message_id, requester_id, requester_name)
+    if error:
+        emit('server_error', {'message': error})
+        return
+
+    emit('message_pinned', {'message_id': message_id, 'pinned_by': requester_name}, room=channel)
+
+@socketio.on('unpin_message')
+@log_socket_errors
+def handle_unpin_message(data):
+    message_id = data.get('message_id')
+    requester_id, _ = resolve_ha_identity()
+
+    if not message_id:
+        return
+    if not requester_id:
+        emit('server_error', {'message': "Couldn't identify you as a Home Assistant user — try reloading the page."})
+        return
+
+    channel, error = unpin_message(message_id)
+    if error:
+        emit('server_error', {'message': error})
+        return
+    if not channel:
+        # Wasn't pinned in the first place -- nothing changed, nothing
+        # to broadcast (same "already in this state" no-op as move_message()).
+        return
+
+    emit('message_unpinned', {'message_id': message_id}, room=channel)
 
 # --- Home Assistant -> Family Chat (see ha_bridge.py for the full picture) ---
 

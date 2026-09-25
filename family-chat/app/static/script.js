@@ -361,6 +361,20 @@ function initializeChat() {
         }
     });
 
+    // Pinning/unpinning is a global, shared state (not per-person the
+    // way a reaction is) — arrives for everyone in the channel,
+    // including whoever just did the pinning themselves, so there's a
+    // single code path that keeps every client's view (and the Pinned
+    // Messages panel, if open) in sync rather than the pinner's own
+    // client updating itself optimistically and everyone else waiting
+    // for this event.
+    socket.on('message_pinned', function(data) {
+        setMessagePinnedState(data.message_id, true);
+    });
+    socket.on('message_unpinned', function(data) {
+        setMessagePinnedState(data.message_id, false);
+    });
+
     // Arrives for everyone in the channel, including the editor's own
     // other tabs/devices — nothing here assumes it was *this* client
     // that made the edit, so the same handling rebuilds the display
@@ -1148,7 +1162,7 @@ function addMessage(data, insertMode = 'append') {
     const msgType = data.type || data.message_type || 'text';
     
     const messageDiv = document.createElement('div');
-    messageDiv.className = 'message';
+    messageDiv.className = 'message' + (data.pinned ? ' message-pinned' : '');
     messageDiv.dataset.id = data.id;
     // Stashed here (rather than recomputed later) so startReply() can
     // read them straight off the DOM when this message gets replied to
@@ -1290,6 +1304,17 @@ function addMessage(data, insertMode = 'append') {
     // a person, even when an automation gives it a person-like display name.
     const botBadgeHtml = data.sender_id === 'ha-bot' ? '<span class="message-bot-badge">BOT</span>' : '';
 
+    const pinnedLabelHtml = data.pinned ? '<span class="message-pinned-label">📌 Pinned</span>' : '';
+
+    // Open to everyone on any message (see pin_message() server-side for
+    // why this doesn't need the same ownership check delete/move/edit
+    // do) — the button itself just toggles between the two actions
+    // based on current state, same as a reaction pill's active/inactive
+    // look. action-pin-btn is a stable hook setMessagePinnedState() uses
+    // to update this in place when a 'message_pinned'/'message_unpinned'
+    // event arrives, without re-rendering the whole message.
+    const pinBtnHtml = `<button class="action-btn action-pin-btn${data.pinned ? ' action-btn-active' : ''}" onclick="${data.pinned ? 'unpinMessage' : 'pinMessage'}(${data.id})" title="${data.pinned ? 'Unpin message' : 'Pin message'}">📌</button>`;
+
     messageDiv.innerHTML = `
         <div class="message-avatar">${avatarInnerHtml(data.avatar_url, data.sender)}<span class="message-timestamp-compact">${time}</span></div>
         <div class="message-content">
@@ -1298,6 +1323,7 @@ function addMessage(data, insertMode = 'append') {
                 ${botBadgeHtml}
                 <span class="message-timestamp">${dateTime}</span>
                 ${editedLabelHtml}
+                ${pinnedLabelHtml}
             </div>
             ${replyQuoteHtml}
             ${contentHtml}
@@ -1307,6 +1333,7 @@ function addMessage(data, insertMode = 'append') {
         <div class="message-actions">
             <button class="action-btn" onclick="startReply(${data.id})" title="Reply">↩️</button>
             <button class="action-btn" onclick="openReactionPicker(${data.id}, this)" title="Add reaction">😊</button>
+            ${pinBtnHtml}
             ${editBtnHtml}
             ${moveBtnHtml}
             ${deleteBtnHtml}
@@ -2340,6 +2367,75 @@ function openFileBrowser() {
 function closeFileBrowser() {
     const modal = document.getElementById('filesModal');
     if (modal) modal.classList.add('hidden');
+}
+
+function openPinnedMessages() {
+    const modal = document.getElementById('pinnedModal');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    loadPinnedMessages();
+}
+
+function closePinnedMessages() {
+    const modal = document.getElementById('pinnedModal');
+    if (modal) modal.classList.add('hidden');
+}
+
+// Re-fetched fresh every time it's needed (opening the panel, or a
+// live 'message_pinned'/'message_unpinned' event arriving while it's
+// already open — see setMessagePinnedState()) rather than maintained
+// as a second, separately-updated list, the same reasoning
+// openMoveChannelPicker() already documents for reading the channel
+// sidebar fresh instead of caching it.
+function loadPinnedMessages() {
+    const list = document.getElementById('pinnedList');
+    if (!list) return;
+    list.innerHTML = '<p class="hint">Loading…</p>';
+    fetch(apiUrl(`/api/pinned?channel=${currentChannel}`))
+        .then(r => r.json())
+        .then(pins => {
+            if (!pins.length) {
+                list.innerHTML = '<p class="hint">No pinned messages in this channel yet — use 📌 on a message to pin it.</p>';
+                return;
+            }
+            list.innerHTML = '';
+            pins.forEach(p => {
+                const item = document.createElement('div');
+                item.className = 'search-result pinned-result';
+                const time = new Date(p.timestamp).toLocaleString();
+                item.innerHTML = `
+                    <div class="search-result-meta">
+                        <strong>${escapeHtml(p.sender)}</strong> · ${escapeHtml(time)}
+                        <button class="pinned-unpin-btn" title="Unpin">✕</button>
+                    </div>
+                    <div class="search-result-content">${escapeHtml(p.summary)}</div>
+                `;
+                // The unpin button's own click is handled separately
+                // (and stopped from bubbling) so it doesn't also trigger
+                // the row's jump-to-message click just below.
+                item.querySelector('.pinned-unpin-btn').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    unpinMessage(p.id);
+                });
+                item.addEventListener('click', () => jumpToPinnedMessage(p.id));
+                list.appendChild(item);
+            });
+        })
+        .catch(() => {
+            list.innerHTML = '<p class="hint">Failed to load pinned messages — check the app log.</p>';
+        });
+}
+
+function jumpToPinnedMessage(messageId) {
+    closePinnedMessages();
+    const el = document.querySelector(`.message[data-id="${messageId}"]`);
+    if (el) {
+        el.scrollIntoView({behavior: 'smooth', block: 'center'});
+        el.classList.add('highlight-flash');
+        setTimeout(() => el.classList.remove('highlight-flash'), 2000);
+    }
+    // Older than what's currently loaded in this channel simply won't
+    // be found — same limitation jumpToSearchResult() already has.
 }
 
 // --- Calendar ---
@@ -3716,6 +3812,47 @@ function hideMoveChannelPicker() {
 function moveMessageTo(messageId, channel) {
     socket.emit('move_message', { message_id: messageId, channel: channel });
     hideMoveChannelPicker();
+}
+
+function pinMessage(messageId) {
+    socket.emit('pin_message', { message_id: messageId });
+}
+
+function unpinMessage(messageId) {
+    socket.emit('unpin_message', { message_id: messageId });
+}
+
+// Applied on both the 'message_pinned'/'message_unpinned' socket events
+// (below) and locally in loadPinnedMessages() — everywhere the pinned
+// state of a message already rendered in the channel needs to reflect a
+// change without re-rendering the whole message from scratch.
+function setMessagePinnedState(messageId, pinned) {
+    const el = document.querySelector(`.message[data-id="${messageId}"]`);
+    if (el) {
+        el.classList.toggle('message-pinned', pinned);
+        const label = el.querySelector('.message-pinned-label');
+        if (pinned && !label) {
+            const header = el.querySelector('.message-header');
+            if (header) header.insertAdjacentHTML('beforeend', '<span class="message-pinned-label">📌 Pinned</span>');
+        } else if (!pinned && label) {
+            label.remove();
+        }
+        const btn = el.querySelector('.action-pin-btn');
+        if (btn) {
+            btn.classList.toggle('action-btn-active', pinned);
+            btn.title = pinned ? 'Unpin message' : 'Pin message';
+            btn.setAttribute('onclick', `${pinned ? 'unpinMessage' : 'pinMessage'}(${messageId})`);
+        }
+    }
+
+    // Keeps the Pinned Messages panel live if it's currently open —
+    // otherwise a pin/unpin from elsewhere (another device, another
+    // family member) wouldn't show up in it until the next time
+    // someone closes and reopens the panel.
+    const modal = document.getElementById('pinnedModal');
+    if (modal && !modal.classList.contains('hidden')) {
+        loadPinnedMessages();
+    }
 }
 
 function removeMessageFromDom(messageId) {
