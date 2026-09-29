@@ -3619,6 +3619,29 @@ def handle_message(data):
 
     publish_message(sender, sender_id, content, channel, msg_type, file_info, reply_to_id)
 
+@socketio.on('typing')
+@log_socket_errors
+def handle_typing(data):
+    channel = data.get('channel')
+    sender_id, sender = resolve_ha_identity()
+    if not channel or not sender_id:
+        return
+    # include_self=False -- the person typing already sees their own
+    # composer; this is purely for everyone else's view of the channel.
+    # No DB write at all (unlike every other event in this file) --
+    # who's currently typing is inherently transient, ephemeral state
+    # with nothing worth persisting past the next stop_typing/timeout.
+    emit('typing', {'sender_id': sender_id, 'sender': sender}, room=channel, include_self=False)
+
+@socketio.on('stop_typing')
+@log_socket_errors
+def handle_stop_typing(data):
+    channel = data.get('channel')
+    sender_id, _ = resolve_ha_identity()
+    if not channel or not sender_id:
+        return
+    emit('stop_typing', {'sender_id': sender_id}, room=channel, include_self=False)
+
 @socketio.on('add_reaction')
 @log_socket_errors
 def handle_reaction(data):

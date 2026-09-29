@@ -132,9 +132,13 @@
                 <span class="scroll-to-bottom-badge hidden" id="scrollToBottomBadge">0</span>
             </button>
 
-            <!-- Typing indicator -->
+            <!-- Typing indicator — populated and shown/hidden entirely
+                 from script.js (renderTypingIndicator()); the name and
+                 is/are here are just placeholder text for anyone
+                 viewing the page source before any typing event has
+                 ever arrived. -->
             <div class="typing-indicator hidden" id="typingIndicator">
-                <span id="typingUser">Someone</span> is typing<span class="dots">...</span>
+                <span id="typingUser">Someone</span> <span id="typingVerb">is</span> typing<span class="dots">...</span>
             </div>
 
             <div class="input-container">
