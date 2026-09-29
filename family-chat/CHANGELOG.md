@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.49.1
+
+### Fixed
+- **The "Send File" caption dialog didn't fit phone-width screens.** The caption field and its Send/Cancel buttons shared one row exactly like on desktop, which left too little width for a phone: confirmed on a 375px-wide screen that the row overflowed its container and the Cancel button got clipped off the right edge of the dialog entirely, past reach of a tap. The caption field and buttons now stack into their own full-width rows below 768px, the same treatment the composer's own send/attach row already gets at that width.
+
 ## 2.49.0
 
 ### Added
