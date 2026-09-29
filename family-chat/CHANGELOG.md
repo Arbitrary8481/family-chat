@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.49.0
+
+### Added
+- **A "now typing…" indicator.** When someone starts typing in a channel, everyone else currently viewing it sees a small indicator at the bottom of the message list — `Name is typing...` for one person, or `Multiple people are typing...` once a second person joins in, rather than trying to list every name at once. It appears within a keystroke of someone starting to type and clears itself automatically: a few seconds after they stop typing, immediately once they send the message, or right away if they switch to a different channel (or another channel entirely, so their old one doesn't keep showing them as typing there).
+- No typing state is persisted anywhere — it's purely a live broadcast between whoever's currently in a channel together, the same way this app already treats presence. A dropped connection or a closed tab can't leave a stale "is typing" stuck on-screen either, since each person's indicator carries its own short server-side timeout as a backstop alongside the normal stop signal.
+
 ## 2.48.0
 
 ### Added

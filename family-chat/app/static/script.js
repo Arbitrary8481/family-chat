@@ -42,6 +42,27 @@ function getChannelFromUrl() {
 
 let currentChannel = getChannelFromUrl() || getStoredChannel() || window.DEFAULT_CHANNEL || 'general';
 let selectedFile = null;
+
+// --- Typing indicator state ---
+// Who's currently shown as typing in whichever channel is presently
+// open, keyed by sender_id: { name, timeout }. Only ever holds entries
+// for the current channel — a socket only ever receives 'typing'/
+// 'stop_typing' events for whatever room it's actually joined (see
+// on_join() server-side, which leaves every other room first), so
+// there's nothing to filter by channel here; switchChannel() clears
+// this outright when it leaves the old room.
+let typingUsers = {};
+// Whether *this* client has told the server it's currently typing —
+// tracked locally so notifyTypingStarted() only emits 'typing' once
+// per burst of keystrokes rather than on every single one.
+let amTyping = false;
+let typingStopTimer = null;
+// How long to wait after the last keystroke before deciding someone's
+// stopped typing — both when deciding to emit our own stop_typing, and
+// (with a little extra slack, see handleTypingEvent()) as the timeout
+// that auto-clears someone else's indicator if their own stop_typing
+// is ever lost (a dropped connection, a closed tab).
+const TYPING_STOP_DELAY_MS = 3000;
 let customEmojis = {};
 let recentEmojis = JSON.parse(localStorage.getItem('recentEmojis') || '[]');
 // Which emoji tab is currently selected — restored when a search is
@@ -375,6 +396,18 @@ function initializeChat() {
         setMessagePinnedState(data.message_id, false);
     });
 
+    // The server only ever broadcasts these to whichever channel room
+    // was named (include_self=False, so never back to the person who's
+    // actually typing) — this client only ever receives one for the
+    // channel it's currently joined to, which is exactly why
+    // handleTypingEvent() doesn't need to check data.channel itself.
+    socket.on('typing', function(data) {
+        handleTypingEvent(data, true);
+    });
+    socket.on('stop_typing', function(data) {
+        handleTypingEvent(data, false);
+    });
+
     // Arrives for everyone in the channel, including the editor's own
     // other tabs/devices — nothing here assumes it was *this* client
     // that made the edit, so the same handling rebuilds the display
@@ -581,6 +614,16 @@ function initializeChat() {
         input.addEventListener('input', () => {
             autoResizeMessageInput(input);
             checkMentionTrigger(input);
+            // Whitespace-only input (someone hit space/enter then
+            // erased it, or the composer just got cleared) doesn't
+            // count as "typing" — matches the same trim() send_message
+            // already applies before deciding there's content worth
+            // sending.
+            if (input.value.trim()) {
+                notifyTypingStarted();
+            } else {
+                notifyTypingStopped();
+            }
         });
         // Clicking away from the input (without picking a match) should
         // close the picker rather than leave it stuck open pointing at
@@ -939,10 +982,10 @@ function sendMessage(content) {
         channel: currentChannel,
         type: 'text'
     };
-    
+
     if (selectedFile) {
         msgData.file = selectedFile;
-        msgData.type = selectedFile.mime_type.startsWith('image/') ? 'image' : 
+        msgData.type = selectedFile.mime_type.startsWith('image/') ? 'image' :
                        selectedFile.mime_type.startsWith('video/') ? 'video' : 'file';
         selectedFile = null;
         closeFileModal();
@@ -954,8 +997,103 @@ function sendMessage(content) {
         msgData.reply_to_id = replyContext.id;
         cancelReply();
     }
-    
+
+    // Otherwise everyone else would keep seeing "so-and-so is typing"
+    // for up to TYPING_STOP_DELAY_MS after the message they were typing
+    // has already arrived and been read.
+    notifyTypingStopped();
+
     socket.emit('send_message', msgData);
+}
+
+// Called on every composer keystroke (see the 'input' listener in
+// initializeChat()). Only actually emits 'typing' on the first
+// keystroke of a burst — amTyping is what keeps a long sentence from
+// re-emitting on every character — and otherwise just keeps pushing the
+// "consider this stopped" timeout further out.
+function notifyTypingStarted() {
+    if (!socket || !currentChannel) return;
+    if (!amTyping) {
+        amTyping = true;
+        socket.emit('typing', { channel: currentChannel });
+    }
+    clearTimeout(typingStopTimer);
+    typingStopTimer = setTimeout(notifyTypingStopped, TYPING_STOP_DELAY_MS);
+}
+
+// Fires either on its own (TYPING_STOP_DELAY_MS after the last
+// keystroke — a person who just stops typing without sending anything),
+// or explicitly from sendMessage()/switchChannel(), which both need the
+// stop notification to go out immediately rather than waiting out the
+// timer.
+function notifyTypingStopped() {
+    clearTimeout(typingStopTimer);
+    typingStopTimer = null;
+    if (amTyping) {
+        if (socket && currentChannel) socket.emit('stop_typing', { channel: currentChannel });
+        amTyping = false;
+    }
+}
+
+// Shared by the 'typing'/'stop_typing' socket listeners (see
+// initializeChat()) — isTyping distinguishes which one fired.
+function handleTypingEvent(data, isTyping) {
+    if (!data || !data.sender_id) return;
+    // Belt-and-suspenders alongside the server's own include_self=False
+    // — this client should never receive its own typing ping back, but
+    // showing yourself as typing to yourself would be a visible bug if
+    // that assumption were ever wrong.
+    if (data.sender_id === window.AUTO_CHAT_USER_ID) return;
+
+    if (typingUsers[data.sender_id]) {
+        clearTimeout(typingUsers[data.sender_id].timeout);
+        delete typingUsers[data.sender_id];
+    }
+    if (isTyping) {
+        // Auto-expires this person's indicator if their own stop_typing
+        // is ever lost (a dropped connection, a closed tab) — the extra
+        // slack past TYPING_STOP_DELAY_MS accounts for normal network
+        // delay on top of however long they'd already been idle before
+        // their client decided to send stop_typing in the first place.
+        const timeout = setTimeout(() => {
+            delete typingUsers[data.sender_id];
+            renderTypingIndicator();
+        }, TYPING_STOP_DELAY_MS + 2000);
+        typingUsers[data.sender_id] = { name: data.sender || 'Someone', timeout };
+    }
+    renderTypingIndicator();
+}
+
+function renderTypingIndicator() {
+    const el = document.getElementById('typingIndicator');
+    const nameEl = document.getElementById('typingUser');
+    const verbEl = document.getElementById('typingVerb');
+    if (!el || !nameEl || !verbEl) return;
+
+    const names = Object.values(typingUsers).map(u => u.name);
+    if (names.length === 0) {
+        el.classList.add('hidden');
+        return;
+    }
+    // 2+ people deliberately doesn't list every name — with a full
+    // family in a channel that's more likely to turn into a long,
+    // constantly-reflowing sentence than something actually useful to
+    // read at a glance.
+    nameEl.textContent = names.length === 1 ? names[0] : 'Multiple people';
+    verbEl.textContent = names.length === 1 ? 'is' : 'are';
+    el.classList.remove('hidden');
+}
+
+// Called from switchChannel() right before it leaves the old channel's
+// room — every entry here belongs to that room specifically (see the
+// typingUsers declaration above), so none of it is still meaningful
+// once that room's left, and the local "am I typing" state shouldn't
+// silently carry over into whatever channel is opened next either.
+function clearTypingIndicatorState() {
+    Object.values(typingUsers).forEach(u => clearTimeout(u.timeout));
+    typingUsers = {};
+    notifyTypingStopped();
+    renderTypingIndicator();
 }
 
 // Per-channel state for "load older history on scroll up" — reset
@@ -2163,6 +2301,11 @@ function switchChannel(slug, onLoaded) {
     document.querySelectorAll('.channel').forEach(c => {
         c.classList.toggle('active', c.dataset.channel === slug);
     });
+    // Before currentChannel changes below — notifyTypingStopped() (which
+    // this calls) needs to still see the *old* channel to correctly tell
+    // it we've stopped typing there, and every entry in typingUsers
+    // belongs to that same old channel's room, which is about to be left.
+    clearTypingIndicatorState();
     currentChannel = slug;
     try { localStorage.setItem('lastChannel', currentChannel); } catch (e) {}
     // A reply is tied to a message in the channel you were just in —
