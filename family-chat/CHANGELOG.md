@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.50.0
+
+### Added
+- **The admin Backup tab now shows an estimated backup size and the system's free disk space.** Computed live every time the tab is opened — the database's current size plus every uploaded file (avatars, custom emoji, attachments) — rather than needing a cached daily job, since summing file sizes is cheap enough to do on every page view. It's deliberately the *raw* size, not the real zip's compressed size: building the actual zip just to measure it would mean doing `/admin/export`'s own expensive work on every admin page load, and since most of what's backed up (images, video, PDFs) barely compresses anyway, the raw total is a close, honestly-conservative estimate of what the real download will be — called out as a heads-up right next to the number. Free space reflects whatever volume this app's own data directory lives on, which on a standard Home Assistant OS install is the real host disk.
+
 ## 2.49.1
 
 ### Fixed

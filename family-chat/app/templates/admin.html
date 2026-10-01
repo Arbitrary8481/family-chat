@@ -596,6 +596,13 @@
                     {% endif %}
 
                     <h3 class="subsection-title">Download a backup</h3>
+                    <p class="hint">
+                        Estimated size: <strong>{{ backup_size_display }}</strong> — the actual download is
+                        usually a little smaller, since zipping compresses what it can.
+                        {% if disk_free_display %}
+                        <br>Free space on this system: <strong>{{ disk_free_display }}</strong>.
+                        {% endif %}
+                    </p>
                     <p class="hint">Downloads immediately — this can take a moment on a large family history.</p>
                     <a href="./admin/export" class="button-link">⬇️ Download Backup</a>
 

@@ -10,6 +10,7 @@ eventlet.monkey_patch()
 import ipaddress
 import json
 import logging
+import math
 import shutil
 import tempfile
 import zipfile
@@ -1895,6 +1896,8 @@ def admin_panel():
         entry['target_channel_display'] = (
             _channel_display(entry['target_channel']) if entry['target_channel'] else None)
 
+    disk_free_bytes = get_disk_free_bytes()
+
     return render_template('admin.html', logged_in=True,
                           saved=request.args.get('saved'),
                           active_tab=request.args.get('tab', 'chatname'),
@@ -1908,7 +1911,9 @@ def admin_panel():
                           server_identity=get_server_identity(),
                           all_calendars=calendars_with_state,
                           calendar_error=calendar_error,
-                          moderation_log=moderation_log)
+                          moderation_log=moderation_log,
+                          backup_size_display=_format_bytes(get_backup_size_estimate()),
+                          disk_free_display=_format_bytes(disk_free_bytes) if disk_free_bytes is not None else None)
 
 @app.route('/admin/calendars/set', methods=['POST'])
 @require_admin
@@ -2012,6 +2017,47 @@ def admin_update_aliases():
         user_id = field[len('alias_'):]
         set_alias(user_id, value)
     return ingress_redirect(url_for('admin_panel', saved='1', tab='aliases'))
+
+def _format_bytes(n):
+    # Mirrors formatFileSize() in static/script.js so a size reads the
+    # same way everywhere in this app, whether it's server- or
+    # client-rendered.
+    if n == 0:
+        return '0 Bytes'
+    units = ['Bytes', 'KB', 'MB', 'GB']
+    i = min(int(math.log(n, 1024)), len(units) - 1)
+    return f'{n / (1024 ** i):.2f} {units[i]}'
+
+def get_backup_size_estimate():
+    """The raw, uncompressed size of what /admin/export would zip up —
+    the database plus every uploaded file. Deliberately not the actual
+    zip size: building the real zip just to measure it would mean
+    doing export's own expensive work on every admin page load, and
+    since most of what's in there (images, video, PDFs) is already a
+    compressed format, zipping it rarely shrinks it by much anyway —
+    this comes out a close, honestly-conservative estimate of the real
+    download."""
+    total = os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0
+    if UPLOAD_FOLDER.exists():
+        for root, _dirs, files in os.walk(UPLOAD_FOLDER):
+            for fname in files:
+                full_path = Path(root) / fname
+                try:
+                    total += full_path.stat().st_size
+                except OSError:
+                    continue
+    return total
+
+def get_disk_free_bytes():
+    """Free space on whatever volume this app's own data directory
+    (DATA_DIR) lives on. On a normal Home Assistant OS install that
+    directory is bind-mounted straight from the host's real storage,
+    so this reflects genuine free space on the system — not some
+    container-local quota."""
+    try:
+        return shutil.disk_usage(DATA_DIR).free
+    except OSError:
+        return None
 
 @app.route('/admin/export')
 @require_admin
