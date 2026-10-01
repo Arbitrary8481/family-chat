@@ -2419,6 +2419,19 @@ body {
         right: 16px;
         left: 16px;
     }
+
+    /* Same problem as .input-wrapper above, in the file-send modal's
+       footer: the caption field and two buttons side by side leave the
+       caption input squeezed into whatever's left over, and on a narrow
+       enough phone that's less than the buttons' own natural width —
+       confirmed the Cancel button was getting clipped off the edge of
+       the modal entirely on a 375px-wide screen. Stacking the caption
+       above the buttons, full-width, fixes both: the input gets its
+       whole width to work with, and the buttons have room to sit at
+       their natural size without fighting it for space. */
+    .file-preview-actions {
+        flex-direction: column;
+    }
     .settings-modal-content {
         width: 96%;
         height: 88vh;
