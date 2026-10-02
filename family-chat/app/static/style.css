@@ -426,9 +426,22 @@ body {
 .message-grouped .message-header {
     display: none;
 }
+/* Not a hard 0 — .messages-container's own 2px flex gap sits between
+   every pair of messages regardless of grouping, so a literal 0 here
+   meant a grouped continuation ended up a flat 2px from its neighbor
+   while two ungrouped messages sat a full 10px apart (4px padding on
+   each side, see .message above, plus that 2px gap). In a chat this
+   prose-heavy — full sentences, not Discord-style quick one-word
+   replies — that 2px-vs-10px swing read as broken/inconsistent
+   spacing rather than intentional grouping, confirmed by reproducing
+   the exact reported scenario (same sender, some messages under the
+   7-minute grouping window, some over it) in a real browser. 2px
+   narrows that swing to 6px-vs-10px — still visibly tighter for a
+   genuine continuation, without looking like it collapsed into an
+   unrelated previous sentence. */
 .message-grouped {
-    padding-top: 0;
-    padding-bottom: 0;
+    padding-top: 2px;
+    padding-bottom: 2px;
 }
 .message-timestamp-compact {
     display: none;
