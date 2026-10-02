@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.50.1
+
+### Fixed
+- **Inconsistent spacing between messages.** A continuation message (grouped with the one above it from the same sender, within a few minutes) sat only 2px from it, while a message starting a new group sat a full 52px below the previous one — a 25x swing driven by combining the message list's own fixed gap with each message's padding, which had gone all the way to 0 for a grouped continuation. In a conversation that mixes short, close-together messages with longer ones spaced further apart (so some pairs land inside the grouping window and some don't), that produced exactly what was reported: some messages reading as nearly fused into the one above while sitting right next to others with generous breathing room, for no reason a reader could follow. Grouped continuations now keep a small, consistent gap instead of collapsing to zero — still visibly tighter than a new sender block, just not flush against unrelated text above it.
+
 ## 2.50.0
 
 ### Added
