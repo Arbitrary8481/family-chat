@@ -1,6 +1,9 @@
 # Changelog
 
-## 2.50.2
+## 2.50.3
+
+### Fixed
+- **Grouped messages still looked inconsistently spaced even with padding at 0.** The real cause turned out to have nothing to do with padding: a message's hidden avatar circle (kept at a fixed 40px so the text column still lines up even when the avatar itself isn't shown) was forcing the *entire message row* to stay 40px tall, no matter how little content a grouped continuation actually had. A message with a visible header is already close to 40px tall on its own, so this was invisible there — but a grouped continuation hides its header entirely, leaving one real line of text (~22px) sitting inside a row forced to stay 40px, with dead empty space below it. That dead space is what was still reading as an inconsistent gap between consecutive messages from the same sender, confirmed by reproducing it with ten rapid-fire messages sent a couple seconds apart and watching every one after the first land 20px from the last instead of a consistent 2px. The avatar's height no longer stays pinned to 40px for a grouped message, so the row actually shrinks to match its real content.
 
 ### Fixed
 - **Message spacing was too loose within a single sender's own run of messages.** The previous fix (2.50.1) gave every grouped continuation a small 2px padding to stop it from sitting flush against the message above — but for a sender's messages that are genuinely meant to read as one condensed block, that extra padding made the whole conversation look evenly spaced out rather than tightly grouped by person. Continuations are back to a hard 0 padding of their own, relying on nothing but the message list's constant 2px gap between every message — condensed within one sender's block, with a new sender's own avatar/name header still providing the clear break between people.
