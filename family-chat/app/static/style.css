@@ -400,6 +400,18 @@ body {
 
 .message {
     display: flex;
+    /* Without this, flex's own default (stretch) forces .message-content
+       to match .message-avatar's full 40px height exactly. An ungrouped
+       message's content (header row + text) is already close to 40px on
+       its own, so stretch barely does anything there — but a grouped
+       continuation hides its header entirely (see .message-grouped
+       below), leaving one line of real text (~22px) stretched to fill
+       40px anyway, as dead empty space *inside* the box. That's what
+       was actually behind messages reading as inconsistently spaced:
+       every grouped message's own box was quietly ~18px taller than its
+       content needed, even though the boxes themselves sat a constant
+       2px apart (.messages-container's own gap) the whole time. */
+    align-items: flex-start;
     gap: 16px;
     padding: 4px 16px;
     margin: 0 -16px;
@@ -422,6 +434,19 @@ body {
 }
 .message-grouped .message-avatar {
     background: none;
+    /* .message-avatar's own height: 40px (see below) is fine for a
+       message with a visible header — that header's own content is
+       close to 40px tall anyway — but a grouped continuation hides its
+       header entirely, leaving just one line of real text (~22px). The
+       avatar's hidden circle was still forcing the *entire message row*
+       to stay 40px tall regardless (a flex row's height follows its
+       tallest child, no matter how any child's own content is aligned
+       within it), leaving dead empty space below every grouped
+       message's text — which is what actually made consecutive grouped
+       messages look inconsistently spaced, not their padding. Letting
+       the avatar's height shrink to match its (hidden) content here is
+       what makes the row itself shrink to match the text's real height. */
+    height: auto;
 }
 .message-grouped .message-header {
     display: none;
