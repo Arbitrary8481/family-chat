@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.50.2
+
+### Fixed
+- **Message spacing was too loose within a single sender's own run of messages.** The previous fix (2.50.1) gave every grouped continuation a small 2px padding to stop it from sitting flush against the message above — but for a sender's messages that are genuinely meant to read as one condensed block, that extra padding made the whole conversation look evenly spaced out rather than tightly grouped by person. Continuations are back to a hard 0 padding of their own, relying on nothing but the message list's constant 2px gap between every message — condensed within one sender's block, with a new sender's own avatar/name header still providing the clear break between people.
+
 ## 2.50.1
 
 ### Fixed
