@@ -1,6 +1,9 @@
 # Changelog
 
-## 2.50.3
+## 2.50.4
+
+### Fixed
+- **2.50.3's fix didn't hold for anyone with a real uploaded avatar photo.** It was verified against test accounts using the plain letter-initial fallback avatar, which has no size of its own and shrank exactly as intended — but a real avatar photo renders as an actual `<img>` sized at `height: 100%`, and against an auto-height parent that can't resolve to a percentage, so it fell back to the image's own aspect ratio instead. Since this app's own avatar cropper always produces a square photo, that reconstructed exactly 40px again at a 40px-wide circle — silently undoing the fix for every account with a real profile picture, which is to say most real accounts, while looking fixed on paper. Reproduced directly with a real uploaded square avatar this time; a grouped continuation's avatar image no longer has a height for its aspect ratio to fall back to.
 
 ### Fixed
 - **Grouped messages still looked inconsistently spaced even with padding at 0.** The real cause turned out to have nothing to do with padding: a message's hidden avatar circle (kept at a fixed 40px so the text column still lines up even when the avatar itself isn't shown) was forcing the *entire message row* to stay 40px tall, no matter how little content a grouped continuation actually had. A message with a visible header is already close to 40px tall on its own, so this was invisible there — but a grouped continuation hides its header entirely, leaving one real line of text (~22px) sitting inside a row forced to stay 40px, with dead empty space below it. That dead space is what was still reading as an inconsistent gap between consecutive messages from the same sender, confirmed by reproducing it with ten rapid-fire messages sent a couple seconds apart and watching every one after the first land 20px from the last instead of a consistent 2px. The avatar's height no longer stays pinned to 40px for a grouped message, so the row actually shrinks to match its real content.

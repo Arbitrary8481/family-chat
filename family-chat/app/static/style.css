@@ -448,6 +448,22 @@ body {
        what makes the row itself shrink to match the text's real height. */
     height: auto;
 }
+/* height: auto above isn't enough by itself for anyone with a real
+   uploaded avatar photo specifically (avatarInnerHtml() renders that
+   as <img class="avatar-img">, not the <span> a letter-fallback avatar
+   uses) — .avatar-img's own height: 100% (see its own rule) can't
+   resolve against an auto-height ancestor, so it falls back to the
+   image's intrinsic aspect ratio instead, which reconstructs exactly
+   40px again at a 40px width for anyone whose avatar happens to be
+   square (which this app's own avatar cropper always produces). Found
+   by reproducing the same gap with a real uploaded square avatar,
+   after the letter-avatar fix above measured correctly but the actual
+   reported account (a real photo) still didn't. An explicit height
+   overrides that aspect-ratio fallback outright, regardless of the
+   photo's own dimensions. */
+.message-grouped .message-avatar img.avatar-img {
+    height: 0;
+}
 .message-grouped .message-header {
     display: none;
 }
