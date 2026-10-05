@@ -2530,4 +2530,20 @@ body {
         opacity: 1;
         pointer-events: auto;
     }
+    /* iOS WebKit (Safari and the Home Assistant iOS companion app) only
+       dispatches a synthetic click event for a tap on a plain, otherwise
+       non-interactive element like .message if that element (or an
+       ancestor) looks clickable to it — in practice, having its own
+       cursor: pointer. Without this, the delegated click listener above
+       (see script.js) that opens the action bar never ran at all on
+       iOS, even though the exact same tap worked everywhere else —
+       reported as "can't tap reply/emoji on mobile" specifically from
+       an iPhone. tap-highlight-color: transparent alongside it is just
+       to stop that cursor: pointer from also turning on iOS's default
+       gray tap-flash overlay, which would otherwise flicker across the
+       whole message on every tap. */
+    .message {
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+    }
 }

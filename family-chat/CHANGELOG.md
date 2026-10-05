@@ -1,6 +1,9 @@
 # Changelog
 
-## 2.50.4
+## 2.50.5
+
+### Fixed
+- **On mobile, the reply/emoji/pin action buttons on a message couldn't be tapped at all.** Opening them is a tap on the message itself, handled by a delegated click listener — but iOS WebKit (Safari and the Home Assistant iOS companion app) only dispatches a synthetic `click` for a tap on an otherwise plain, non-interactive element like a message if it looks clickable to begin with, in practice meaning it needs its own `cursor: pointer`. `.message` had none, so that listener never ran on iOS and the action bar never opened — even though the identical tap already worked everywhere else. `-webkit-tap-highlight-color: transparent` goes with it, so turning on `cursor: pointer` doesn't also turn on iOS's default gray tap-flash across the whole message on every tap.
 
 ### Fixed
 - **2.50.3's fix didn't hold for anyone with a real uploaded avatar photo.** It was verified against test accounts using the plain letter-initial fallback avatar, which has no size of its own and shrank exactly as intended — but a real avatar photo renders as an actual `<img>` sized at `height: 100%`, and against an auto-height parent that can't resolve to a percentage, so it fell back to the image's own aspect ratio instead. Since this app's own avatar cropper always produces a square photo, that reconstructed exactly 40px again at a 40px-wide circle — silently undoing the fix for every account with a real profile picture, which is to say most real accounts, while looking fixed on paper. Reproduced directly with a real uploaded square avatar this time; a grouped continuation's avatar image no longer has a height for its aspect ratio to fall back to.
