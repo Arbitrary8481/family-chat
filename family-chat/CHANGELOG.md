@@ -1,6 +1,10 @@
 # Changelog
 
-## 2.50.5
+## 2.50.6
+
+### Fixed
+- **2.50.5 didn't fix the actual report — it targeted the wrong platform.** The follow-up came from a Samsung Galaxy S24: the action bar *does* open on tap now, but the buttons inside it (Reply, emoji, etc.) still don't respond. That's a different, Android-shaped version of the same class of bug: tapping a message to open the bar, then tapping a button inside it, is two taps landing close together in both time and position — exactly what a mobile browser's double-tap-to-zoom gesture recognizer looks for, and with nothing telling it otherwise, the second tap can get captured as half of a zoom gesture instead of firing as an ordinary click. `touch-action: manipulation` on both the message and each action button tells the browser this is tap/pan-only, never double-tap-zoom, so a tap always resolves immediately instead of waiting to see if a second one completes a gesture. 2.50.5's iOS fix stays in place alongside it — a real, separate iOS quirk, just not what this particular report turned out to be hitting.
+- **Caveat:** this is reasoned from a well-documented mobile browser gesture-conflict pattern, not reproduced directly — the sandbox this was built in can't fully simulate a real touchscreen's double-tap-zoom gesture recognition the way an actual device does. Please confirm on the Galaxy S24 (and ideally one other device) before considering this closed.
 
 ### Fixed
 - **On mobile, the reply/emoji/pin action buttons on a message couldn't be tapped at all.** Opening them is a tap on the message itself, handled by a delegated click listener — but iOS WebKit (Safari and the Home Assistant iOS companion app) only dispatches a synthetic `click` for a tap on an otherwise plain, non-interactive element like a message if it looks clickable to begin with, in practice meaning it needs its own `cursor: pointer`. `.message` had none, so that listener never ran on iOS and the action bar never opened — even though the identical tap already worked everywhere else. `-webkit-tap-highlight-color: transparent` goes with it, so turning on `cursor: pointer` doesn't also turn on iOS's default gray tap-flash across the whole message on every tap.
