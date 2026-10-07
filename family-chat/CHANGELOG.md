@@ -1,19 +1,35 @@
 # Changelog
 
+## 2.51.0
+
+### Added
+- **Channels in the admin panel can now be reordered by drag-and-drop**, replacing the old one-step-at-a-time ▲▼ buttons. Grab a channel by its ⠿ handle to drop it anywhere — within its own category to reorder, or into a different category entirely to move it there in the same motion. Works with touch as well as a mouse (built on pointer events rather than the browser's native drag-and-drop, which has a long history of being unreliable on touchscreens), since this panel gets opened from a phone over ingress as often as a desktop. Categories themselves still reorder with the ▲▼ buttons, since only channels can move *between* groups — the part a drag gesture actually earns its keep over a button for.
+
+### Fixed
+- The mobile "can't tap reply/emoji" report from the last couple of releases turned out to be neither of the two fixes shipped for it — it was the Home Assistant companion app's own WebView cache on that specific phone, serving old JS/CSS from before this session's mobile fixes even after the add-on itself was rebuilt. Confirmed resolved after clearing the app's cache on-device. 2.50.5 and 2.50.6's actual fixes (iOS tap dispatch, double-tap-zoom gesture conflict) are still real, correct fixes for their respective platforms — they just weren't what this particular report was hitting.
+
 ## 2.50.6
 
 ### Fixed
 - **2.50.5 didn't fix the actual report — it targeted the wrong platform.** The follow-up came from a Samsung Galaxy S24: the action bar *does* open on tap now, but the buttons inside it (Reply, emoji, etc.) still don't respond. That's a different, Android-shaped version of the same class of bug: tapping a message to open the bar, then tapping a button inside it, is two taps landing close together in both time and position — exactly what a mobile browser's double-tap-to-zoom gesture recognizer looks for, and with nothing telling it otherwise, the second tap can get captured as half of a zoom gesture instead of firing as an ordinary click. `touch-action: manipulation` on both the message and each action button tells the browser this is tap/pan-only, never double-tap-zoom, so a tap always resolves immediately instead of waiting to see if a second one completes a gesture. 2.50.5's iOS fix stays in place alongside it — a real, separate iOS quirk, just not what this particular report turned out to be hitting.
 - **Caveat:** this is reasoned from a well-documented mobile browser gesture-conflict pattern, not reproduced directly — the sandbox this was built in can't fully simulate a real touchscreen's double-tap-zoom gesture recognition the way an actual device does. Please confirm on the Galaxy S24 (and ideally one other device) before considering this closed.
 
+## 2.50.5
+
 ### Fixed
 - **On mobile, the reply/emoji/pin action buttons on a message couldn't be tapped at all.** Opening them is a tap on the message itself, handled by a delegated click listener — but iOS WebKit (Safari and the Home Assistant iOS companion app) only dispatches a synthetic `click` for a tap on an otherwise plain, non-interactive element like a message if it looks clickable to begin with, in practice meaning it needs its own `cursor: pointer`. `.message` had none, so that listener never ran on iOS and the action bar never opened — even though the identical tap already worked everywhere else. `-webkit-tap-highlight-color: transparent` goes with it, so turning on `cursor: pointer` doesn't also turn on iOS's default gray tap-flash across the whole message on every tap.
+
+## 2.50.4
 
 ### Fixed
 - **2.50.3's fix didn't hold for anyone with a real uploaded avatar photo.** It was verified against test accounts using the plain letter-initial fallback avatar, which has no size of its own and shrank exactly as intended — but a real avatar photo renders as an actual `<img>` sized at `height: 100%`, and against an auto-height parent that can't resolve to a percentage, so it fell back to the image's own aspect ratio instead. Since this app's own avatar cropper always produces a square photo, that reconstructed exactly 40px again at a 40px-wide circle — silently undoing the fix for every account with a real profile picture, which is to say most real accounts, while looking fixed on paper. Reproduced directly with a real uploaded square avatar this time; a grouped continuation's avatar image no longer has a height for its aspect ratio to fall back to.
 
+## 2.50.3
+
 ### Fixed
 - **Grouped messages still looked inconsistently spaced even with padding at 0.** The real cause turned out to have nothing to do with padding: a message's hidden avatar circle (kept at a fixed 40px so the text column still lines up even when the avatar itself isn't shown) was forcing the *entire message row* to stay 40px tall, no matter how little content a grouped continuation actually had. A message with a visible header is already close to 40px tall on its own, so this was invisible there — but a grouped continuation hides its header entirely, leaving one real line of text (~22px) sitting inside a row forced to stay 40px, with dead empty space below it. That dead space is what was still reading as an inconsistent gap between consecutive messages from the same sender, confirmed by reproducing it with ten rapid-fire messages sent a couple seconds apart and watching every one after the first land 20px from the last instead of a consistent 2px. The avatar's height no longer stays pinned to 40px for a grouped message, so the row actually shrinks to match its real content.
+
+## 2.50.2
 
 ### Fixed
 - **Message spacing was too loose within a single sender's own run of messages.** The previous fix (2.50.1) gave every grouped continuation a small 2px padding to stop it from sitting flush against the message above — but for a sender's messages that are genuinely meant to read as one condensed block, that extra padding made the whole conversation look evenly spaced out rather than tightly grouped by person. Continuations are back to a hard 0 padding of their own, relying on nothing but the message list's constant 2px gap between every message — condensed within one sender's block, with a new sender's own avatar/name header still providing the clear break between people.

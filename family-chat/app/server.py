@@ -999,6 +999,64 @@ def move_channel(slug, direction):
     conn.close()
     return True, None
 
+def reorder_channels(channels_by_category):
+    """Used by the admin panel's drag-and-drop channel list — unlike
+    move_channel() above, a single drag can change two categories'
+    orderings at once (the source category loses one channel and
+    everything after it shifts up, the destination gains one and
+    everything after the drop point shifts down), so a single relative
+    swap isn't enough information to apply. The client always sends the
+    complete picture instead: {category_id: [slug, slug, ...], ...}
+    covering every category currently shown, each with its channels in
+    their new order.
+
+    Validated as an all-or-nothing replacement of every channel's
+    (category_id, position) rather than trusted piecemeal — the
+    submitted slugs must be exactly this instance's current channels,
+    no more, no fewer, which catches a stale drag (another admin
+    deleted or added a channel since this page was loaded) rather than
+    silently losing or orphaning one."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    c.execute('SELECT id FROM channel_categories')
+    valid_category_ids = {row[0] for row in c.fetchall()}
+    c.execute('SELECT slug FROM channels')
+    existing_slugs = {row[0] for row in c.fetchall()}
+
+    submitted_slugs = set()
+    parsed = {}
+    for category_id, slugs in channels_by_category.items():
+        try:
+            category_id = int(category_id)
+        except (TypeError, ValueError):
+            conn.close()
+            return False, 'Invalid category.'
+        if category_id not in valid_category_ids:
+            conn.close()
+            return False, 'Unknown category.'
+        if not isinstance(slugs, list) or not all(isinstance(s, str) for s in slugs):
+            conn.close()
+            return False, 'Invalid channel list.'
+        for slug in slugs:
+            if slug not in existing_slugs:
+                conn.close()
+                return False, 'Unknown channel.'
+        submitted_slugs.update(slugs)
+        parsed[category_id] = slugs
+
+    if submitted_slugs != existing_slugs:
+        conn.close()
+        return False, "That doesn't match this instance's current channels — reload and try again."
+
+    for category_id, slugs in parsed.items():
+        for position, slug in enumerate(slugs):
+            c.execute('UPDATE channels SET category_id = ?, position = ? WHERE slug = ?',
+                       (category_id, position, slug))
+    conn.commit()
+    conn.close()
+    return True, None
+
 def delete_channel(slug):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -1980,6 +2038,23 @@ def admin_move_channel():
     if error:
         return ingress_redirect(url_for('admin_panel', channel_error=error, tab='channels'))
     return ingress_redirect(url_for('admin_panel', saved='1', tab='channels'))
+
+@app.route('/admin/channels/reorder', methods=['POST'])
+@require_admin
+def admin_reorder_channels():
+    # JSON + a direct JSON response, unlike every other form on this
+    # page — this is the one action here driven by a JS drag gesture
+    # rather than a plain form submit, so there's no page navigation to
+    # carry a redirect/flash message through; the client applies the
+    # result (or shows the error) in place instead.
+    data = request.get_json(silent=True) or {}
+    channels_by_category = data.get('channels')
+    if not isinstance(channels_by_category, dict):
+        return jsonify({'error': 'Invalid payload.'}), 400
+    ok, error = reorder_channels(channels_by_category)
+    if not ok:
+        return jsonify({'error': error}), 400
+    return jsonify({'success': True})
 
 @app.route('/admin/categories/add', methods=['POST'])
 @require_admin

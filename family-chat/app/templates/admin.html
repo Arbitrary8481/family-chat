@@ -195,6 +195,99 @@
             align-items: center;
             gap: 10px;
         }
+        /* Channel drag-and-drop (Channels section only — Categories
+           above still reorders with the plain ▲▼ buttons, since only
+           channels can move *between* groups, which is the part a
+           drag gesture actually earns its keep over a button for). */
+        .channel-category-group {
+            margin-bottom: 16px;
+        }
+        .channel-category-group-header {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+        }
+        .channel-category-group-list {
+            min-height: 34px;
+            /* A drop target needs *some* height to land on even when
+               its category is empty — without this, an empty group's
+               list collapses to 0px and there's nothing there for a
+               drag to ever be detected over. */
+            border-radius: 4px;
+        }
+        .channel-category-group-empty {
+            padding: 10px;
+            border: 1px dashed var(--text-muted);
+            border-radius: 4px;
+            color: var(--text-muted);
+            font-size: 13px;
+            text-align: center;
+            opacity: 0.6;
+        }
+        .channel-drag-row {
+            cursor: default;
+        }
+        /* .channel-row's own justify-content: space-between assumes two
+           children spread to opposite ends — true for every other row
+           on this page, but a drag row has three (handle, label,
+           actions), which space-between instead centers the middle one
+           between the other two. flex: 1 here claims the actual
+           left-aligned space between the handle and the actions. */
+        .channel-drag-row .channel-row-label {
+            flex: 1;
+            text-align: left;
+        }
+        .drag-handle {
+            cursor: grab;
+            color: var(--text-muted);
+            padding: 0 4px;
+            touch-action: none;
+            /* None of this text is meant to be selected — a drag that
+               starts with even a few px of vertical slop would
+               otherwise also highlight the row's own label like a
+               text selection, which looks broken mid-drag. */
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .drag-handle:hover {
+            color: var(--text-normal);
+        }
+        /* The row being dragged follows the pointer via position:fixed
+           (set in JS, not here — its left/top are computed per-drag)
+           so it can travel across category groups freely; everything
+           else about its look (size, shadow, slight tilt) lives here. */
+        .channel-row-dragging {
+            position: fixed;
+            z-index: 1000;
+            margin: 0;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+            opacity: 0.95;
+            pointer-events: none;
+            transform: rotate(1deg);
+        }
+        .channel-drag-placeholder {
+            height: 38px;
+            margin-bottom: 6px;
+            border: 2px dashed var(--bg-accent);
+            border-radius: 4px;
+            background: rgba(88, 101, 242, 0.08);
+        }
+        .channel-category-group-list.channel-group-drop-target {
+            outline: 2px dashed var(--bg-accent);
+            outline-offset: 2px;
+        }
+        .channel-reorder-status {
+            min-height: 18px;
+            font-size: 13px;
+            color: var(--text-muted);
+            margin: 4px 0 0;
+        }
+        .channel-reorder-status.channel-reorder-error {
+            color: var(--danger);
+        }
         .reorder-btns {
             display: flex;
             gap: 4px;
@@ -315,10 +408,6 @@
             font-size: 12px;
             margin-top: 20px;
             line-height: 1.5;
-        }
-        .channel-row-category {
-            color: var(--text-muted);
-            font-size: 12px;
         }
         .inline-add-form {
             display: flex;
@@ -470,34 +559,31 @@
                     <p class="hint">Only an admin can create or remove a category — the server owner can reorder them (here or from their own Settings), same as channels below. A category with channels still in it can't be deleted — move or delete those channels first. At least one category must always exist, since every channel needs one to belong to.</p>
 
                     <h2 class="section-title" style="margin-top: 32px;">Channels</h2>
-                    <div class="channel-manage-list">
-                        {% for ch in channels %}
-                        {% set is_first_in_category = loop.first or channels[loop.index0 - 1].category_id != ch.category_id %}
-                        {% set is_last_in_category = loop.last or channels[loop.index0 + 1].category_id != ch.category_id %}
-                        <div class="channel-row">
-                            <span class="channel-row-label">{{ ch.icon }} {{ ch.name }} <span class="channel-row-category">— {{ ch.category_name }}</span></span>
-                            <div class="channel-row-actions">
-                                <div class="reorder-btns">
-                                    <form method="post" action="./admin/channels/move">
-                                        <input type="hidden" name="slug" value="{{ ch.slug }}">
-                                        <input type="hidden" name="direction" value="up">
-                                        <button type="submit" class="reorder-btn" title="Move up"{% if is_first_in_category %} disabled{% endif %}>▲</button>
-                                    </form>
-                                    <form method="post" action="./admin/channels/move">
-                                        <input type="hidden" name="slug" value="{{ ch.slug }}">
-                                        <input type="hidden" name="direction" value="down">
-                                        <button type="submit" class="reorder-btn" title="Move down"{% if is_last_in_category %} disabled{% endif %}>▼</button>
-                                    </form>
+                    <div class="channel-dnd-root" id="channelDndRoot">
+                        {% for cat in categories %}
+                        <div class="channel-category-group">
+                            <div class="channel-category-group-header">{{ cat.name }}</div>
+                            <div class="channel-category-group-list" data-category-id="{{ cat.id }}">
+                                {% for ch in channels if ch.category_id == cat.id %}
+                                <div class="channel-row channel-drag-row" data-slug="{{ ch.slug }}">
+                                    <span class="drag-handle" title="Drag to reorder or move to another category">⠿</span>
+                                    <span class="channel-row-label">{{ ch.icon }} {{ ch.name }}</span>
+                                    <div class="channel-row-actions">
+                                        <form method="post" action="./admin/channels/delete">
+                                            <input type="hidden" name="slug" value="{{ ch.slug }}">
+                                            <button type="submit" class="delete-btn" title="Delete channel"{% if channels|length <= 1 %} disabled{% endif %}>✕</button>
+                                        </form>
+                                    </div>
                                 </div>
-                                <form method="post" action="./admin/channels/delete">
-                                    <input type="hidden" name="slug" value="{{ ch.slug }}">
-                                    <button type="submit" class="delete-btn" title="Delete channel"{% if channels|length <= 1 %} disabled{% endif %}>✕</button>
-                                </form>
+                                {% else %}
+                                <div class="channel-category-group-empty">Drag a channel here</div>
+                                {% endfor %}
                             </div>
                         </div>
                         {% endfor %}
                     </div>
-                    <p class="hint">Adding a channel is self-service — anyone can do it from the chat's own Settings (✏️) → Channels tab, into any category that already exists. Reordering and deleting are owner/admin only. A channel only moves within its own category — deleting one just hides it from the sidebar, its messages aren't deleted, and it reappears if a channel with the same name is added again later. At least one channel must always exist.</p>
+                    <p class="channel-reorder-status" id="channelReorderStatus" aria-live="polite"></p>
+                    <p class="hint">Adding a channel is self-service — anyone can do it from the chat's own Settings (✏️) → Channels tab, into any category that already exists. Dragging a channel (admin/owner only) reorders it, or drops it into a different category entirely — grab it by the ⠿ handle. Deleting one just hides it from the sidebar, its messages aren't deleted, and it reappears if a channel with the same name is added again later. At least one channel must always exist.</p>
                 </div>
 
                 <!-- Server Owner -->
@@ -678,6 +764,245 @@
         function confirmImport(form) {
             return confirm('This will replace every current message and file on this instance with the contents of the uploaded backup. This cannot be undone. Continue?');
         }
+
+        // Channel drag-and-drop — pointer events rather than the native
+        // HTML5 Drag and Drop API, deliberately: that API is built for
+        // a mouse and has a long history of being unreliable-to-absent
+        // on touchscreens, which this admin panel needs to work on too
+        // (opened from a phone over ingress like everything else here).
+        // Pointer events fire identically for mouse and touch input, so
+        // the same code drives both.
+        (function initChannelDragDrop() {
+            const root = document.getElementById('channelDndRoot');
+            const statusEl = document.getElementById('channelReorderStatus');
+            if (!root) return;
+
+            const DRAG_THRESHOLD_PX = 6;
+            let dragRow = null;
+            let placeholder = null;
+            let pointerId = null;
+            let grabOffsetX = 0, grabOffsetY = 0;
+            let startPointerX = 0, startPointerY = 0;
+            let dragging = false;
+
+            function lists() {
+                return Array.from(root.querySelectorAll('.channel-category-group-list'));
+            }
+
+            // Hides/shows each group's own "drag a channel here" placeholder
+            // based on whether it currently has any real row in it — called
+            // continuously during a drag (as the insertion placeholder moves
+            // between groups) and once more after it finishes.
+            function syncEmptyPlaceholders() {
+                lists().forEach(list => {
+                    const hasRealRow = !!list.querySelector('.channel-drag-row');
+                    let empty = list.querySelector('.channel-category-group-empty');
+                    if (hasRealRow) {
+                        if (empty) empty.remove();
+                    } else if (!empty) {
+                        empty = document.createElement('div');
+                        empty.className = 'channel-category-group-empty';
+                        empty.textContent = 'Drag a channel here';
+                        list.appendChild(empty);
+                    }
+                });
+            }
+
+            function onPointerDown(e) {
+                const handle = e.target.closest('.drag-handle');
+                if (!handle) return;
+                const row = handle.closest('.channel-drag-row');
+                if (!row) return;
+                // Right-click / non-primary buttons shouldn't start a drag.
+                if (e.button !== undefined && e.button !== 0) return;
+
+                dragRow = row;
+                pointerId = e.pointerId;
+                dragging = false;
+                startPointerX = e.clientX;
+                startPointerY = e.clientY;
+                const rect = row.getBoundingClientRect();
+                grabOffsetX = e.clientX - rect.left;
+                grabOffsetY = e.clientY - rect.top;
+                // Stashed on the element now, while the pointer's still
+                // down over it — by pointerup time e.clientX/Y refer to
+                // wherever the pointer ended up, not where dragRow's
+                // rect was at grab time, so this is the only reliable
+                // moment to record the row's own starting box.
+                row.dataset.dragStartLeft = String(rect.left);
+                row.dataset.dragStartTop = String(rect.top);
+                row.dataset.dragWidth = String(rect.width);
+                row.dataset.dragHeight = String(rect.height);
+
+                document.addEventListener('pointermove', onPointerMove);
+                document.addEventListener('pointerup', onPointerUp);
+                document.addEventListener('pointercancel', onPointerUp);
+            }
+
+            function activateDrag() {
+                dragging = true;
+                const startLeft = parseFloat(dragRow.dataset.dragStartLeft);
+                const startTop = parseFloat(dragRow.dataset.dragStartTop);
+                const width = parseFloat(dragRow.dataset.dragWidth);
+                const height = parseFloat(dragRow.dataset.dragHeight);
+
+                placeholder = document.createElement('div');
+                placeholder.className = 'channel-drag-placeholder';
+                dragRow.parentNode.insertBefore(placeholder, dragRow);
+
+                dragRow.classList.add('channel-row-dragging');
+                dragRow.style.width = width + 'px';
+                dragRow.style.left = startLeft + 'px';
+                dragRow.style.top = startTop + 'px';
+                // Moved to document.body (out of any category-group-list)
+                // once it's fixed-positioned — keeping it inside its
+                // original list would otherwise still count it as a real
+                // child when other code checks "does this group have any
+                // rows left", e.g. the empty-placeholder logic above.
+                document.body.appendChild(dragRow);
+                void height; // only needed to size the placeholder below
+                placeholder.style.height = height + 'px';
+            }
+
+            function onPointerMove(e) {
+                if (!dragRow || e.pointerId !== pointerId) return;
+                if (!dragging) {
+                    const dx = e.clientX - startPointerX;
+                    const dy = e.clientY - startPointerY;
+                    if (Math.abs(dx) < DRAG_THRESHOLD_PX && Math.abs(dy) < DRAG_THRESHOLD_PX) return;
+                    activateDrag();
+                }
+                e.preventDefault();
+                dragRow.style.left = (e.clientX - grabOffsetX) + 'px';
+                dragRow.style.top = (e.clientY - grabOffsetY) + 'px';
+                positionPlaceholder(e.clientX, e.clientY);
+            }
+
+            // Picks the category-group-list the pointer is currently over
+            // (falling back to whichever one's vertically closest, so a
+            // drag that strays slightly outside every list — easy to do
+            // with a touch drag in particular — doesn't just freeze in
+            // place) and inserts the placeholder at the right spot within
+            // it, judged by comparing the pointer against each existing
+            // row's own vertical midpoint.
+            function positionPlaceholder(x, y) {
+                const allLists = lists();
+                let target = allLists.find(list => {
+                    const r = list.getBoundingClientRect();
+                    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+                });
+                if (!target) {
+                    let bestDist = Infinity;
+                    allLists.forEach(list => {
+                        const r = list.getBoundingClientRect();
+                        const midY = (r.top + r.bottom) / 2;
+                        const dist = Math.abs(y - midY);
+                        if (dist < bestDist) {
+                            bestDist = dist;
+                            target = list;
+                        }
+                    });
+                }
+                if (!target) return;
+
+                target.classList.add('channel-group-drop-target');
+                allLists.forEach(list => {
+                    if (list !== target) list.classList.remove('channel-group-drop-target');
+                });
+
+                const rows = Array.from(target.querySelectorAll('.channel-drag-row'));
+                let before = null;
+                for (const row of rows) {
+                    const r = row.getBoundingClientRect();
+                    if (y < r.top + r.height / 2) {
+                        before = row;
+                        break;
+                    }
+                }
+                if (before) {
+                    target.insertBefore(placeholder, before);
+                } else {
+                    target.appendChild(placeholder);
+                }
+                syncEmptyPlaceholders();
+            }
+
+            function onPointerUp(e) {
+                if (!dragRow || e.pointerId !== pointerId) return;
+                document.removeEventListener('pointermove', onPointerMove);
+                document.removeEventListener('pointerup', onPointerUp);
+                document.removeEventListener('pointercancel', onPointerUp);
+
+                lists().forEach(list => list.classList.remove('channel-group-drop-target'));
+
+                const row = dragRow;
+                const wasDragging = dragging;
+                dragRow = null;
+                dragging = false;
+                pointerId = null;
+
+                if (!wasDragging) {
+                    // Never passed the movement threshold — just a tap/
+                    // click on the handle, not an actual drag. Nothing
+                    // moved, so there's nothing to clean up or save.
+                    return;
+                }
+
+                row.classList.remove('channel-row-dragging');
+                row.style.position = '';
+                row.style.left = '';
+                row.style.top = '';
+                row.style.width = '';
+                if (placeholder && placeholder.parentNode) {
+                    placeholder.parentNode.insertBefore(row, placeholder);
+                    placeholder.remove();
+                }
+                placeholder = null;
+                syncEmptyPlaceholders();
+
+                saveChannelOrder();
+            }
+
+            function currentChannelsByCategory() {
+                const result = {};
+                lists().forEach(list => {
+                    const categoryId = list.dataset.categoryId;
+                    result[categoryId] = Array.from(list.querySelectorAll('.channel-drag-row'))
+                        .map(row => row.dataset.slug);
+                });
+                return result;
+            }
+
+            function saveChannelOrder() {
+                statusEl.textContent = 'Saving…';
+                statusEl.classList.remove('channel-reorder-error');
+                fetch('./admin/channels/reorder', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ channels: currentChannelsByCategory() }),
+                })
+                    .then(r => r.json().then(data => ({ ok: r.ok, data })))
+                    .then(({ ok, data }) => {
+                        if (!ok) throw new Error(data.error || 'Could not save the new order.');
+                        statusEl.textContent = 'Saved.';
+                        setTimeout(() => { if (statusEl.textContent === 'Saved.') statusEl.textContent = ''; }, 2000);
+                    })
+                    .catch(err => {
+                        // The DOM now disagrees with the server (the drop
+                        // visually applied, the save didn't) — reloading
+                        // is simpler and more trustworthy than trying to
+                        // reconstruct the pre-drag order by hand, and
+                        // this is a rare-enough path (another admin
+                        // deleted the channel mid-drag, a network blip)
+                        // that the extra round-trip doesn't matter.
+                        statusEl.textContent = (err.message || 'Could not save the new order.') + ' Reloading…';
+                        statusEl.classList.add('channel-reorder-error');
+                        setTimeout(() => window.location.reload(), 1500);
+                    });
+            }
+
+            root.addEventListener('pointerdown', onPointerDown);
+        })();
     </script>
 </body>
 </html>
