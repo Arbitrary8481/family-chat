@@ -21,6 +21,8 @@ import re
 import secrets
 import socket
 import sqlite3
+import ssl
+import http.client
 import urllib.request
 import urllib.parse
 import urllib.error
@@ -1629,6 +1631,17 @@ def set_cache_headers(response):
     # rather than a cheap conditional GET) is negligible at this app's
     # scale and is a small price for actually eliminating the bug class.
     response.headers['Cache-Control'] = 'no-store'
+    # Stops a browser from guessing a different content type than what
+    # this app actually declared — relevant mainly for /uploads/<file>,
+    # the one place a response's body is arbitrary user-supplied data.
+    # Deliberately not adding X-Frame-Options or a frame-ancestors CSP
+    # here alongside it: this entire app is only ever meant to be
+    # reached framed inside Home Assistant's own ingress iframe, so
+    # anything restricting who's allowed to frame it risks breaking
+    # that legitimate embedding rather than stopping an illegitimate
+    # one — not a tradeoff worth making without being certain of every
+    # origin ingress actually frames this from.
+    response.headers['X-Content-Type-Options'] = 'nosniff'
     return response
 
 def resolve_ha_identity():
@@ -2134,14 +2147,22 @@ def get_disk_free_bytes():
     except OSError:
         return None
 
-@app.route('/admin/export')
+@app.route('/admin/export', methods=['POST'])
 @require_admin
 def admin_export():
     """Downloads a single zip containing everything this instance
     persists — the message database and every uploaded file (avatars,
     custom emoji, attachments) — as a self-contained backup an admin can
     keep somewhere safe, independent of Home Assistant's own backup
-    system. Exists specifically so a family member who runs into the
+    system. POST rather than GET specifically so SESSION_COOKIE_SAMESITE
+    = 'Lax' actually protects it — Lax still attaches the session cookie
+    to a cross-site top-level GET navigation, so a GET here could be
+    triggered by a malicious page an admin merely had open (forcing an
+    unwanted backup download; the attacker's page still couldn't read
+    the response cross-origin, but it's needless exposure a POST-only
+    route doesn't have at all, for the one button on this whole page
+    that used to be a plain link instead of a form like everything else
+    here). Exists specifically so a family member who runs into the
     kind of repository/store trouble this app's own maintainer has hit
     has a simple, in-app way to protect their data before touching
     anything risky, and a way to get it back afterward via
@@ -2236,15 +2257,37 @@ def admin_import():
         extract_dir = os.path.join(tmp_dir, 'extracted')
         os.makedirs(extract_dir, exist_ok=True)
         real_extract_dir = os.path.realpath(extract_dir)
+        # A zip bomb -- a small file that's enormous once decompressed --
+        # could otherwise fill /config before extractall() ever returns.
+        # The upload itself is already capped (2GB, set above), but that
+        # only bounds the *compressed* size; a crafted or just badly
+        # corrupted archive can still expand to many times that. Summed
+        # from each entry's own declared uncompressed size, which zipfile
+        # reads from the central directory without decompressing
+        # anything, so checking it costs nothing extract itself wouldn't.
+        # 20GB comfortably covers any real family's actual backup (the
+        # compressed upload is already capped at 2GB, and this app's own
+        # media is rarely dense enough to expand past single-digit-x)
+        # while still being a real, finite ceiling.
+        MAX_EXTRACTED_BYTES = 20 * 1024 * 1024 * 1024
+        MAX_EXTRACTED_ENTRIES = 100_000
         with zipfile.ZipFile(zip_path) as zf:
+            infolist = zf.infolist()
+            if len(infolist) > MAX_EXTRACTED_ENTRIES:
+                return ingress_redirect(url_for('admin_panel', tab='backup',
+                    import_error='That backup file has an unexpectedly large number of entries.'))
+            total_uncompressed = sum(info.file_size for info in infolist)
+            if total_uncompressed > MAX_EXTRACTED_BYTES:
+                return ingress_redirect(url_for('admin_panel', tab='backup',
+                    import_error='That backup file is far larger decompressed than any real backup should be.'))
             # A zip's own entry names can contain "../" sequences
             # designed to write outside the intended extraction folder
             # entirely (a "zip slip" attack) — Python's extractall()
             # does not guard against this itself, so every entry's
             # resolved destination is checked before anything is
             # extracted, not after.
-            for member in zf.namelist():
-                member_path = os.path.realpath(os.path.join(extract_dir, member))
+            for info in infolist:
+                member_path = os.path.realpath(os.path.join(extract_dir, info.filename))
                 if not (member_path == real_extract_dir or member_path.startswith(real_extract_dir + os.sep)):
                     return ingress_redirect(url_for('admin_panel', tab='backup',
                         import_error='That backup file looks malformed or tampered with.'))
@@ -2406,14 +2449,43 @@ def extract_single_url(text):
             trimmed = True
     return url or None
 
+def _safe_ips_for_hostname(hostname):
+    """Every IP a hostname resolves to, or None if any one of them is
+    internal/private/otherwise disallowed (Home Assistant's own local
+    API, a router's admin page, cloud metadata endpoints, etc.) -- the
+    shared resolve-and-check logic behind both is_safe_external_url()
+    (a cheap yes/no for places that just need to decide whether to
+    attempt a fetch at all) and the DNS-pinned connection classes below
+    (which need the actual validated addresses, not just a boolean, so
+    the connection that's ultimately made is guaranteed to go to one of
+    the exact IPs that got checked here -- see _PinnedHTTPConnection
+    for why that distinction matters)."""
+    try:
+        addrinfo = socket.getaddrinfo(hostname, None)
+    except socket.gaierror:
+        return None
+    ips = []
+    for family, _, _, _, sockaddr in addrinfo:
+        try:
+            ip = ipaddress.ip_address(sockaddr[0])
+        except ValueError:
+            continue
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
+            return None
+        ips.append(sockaddr[0])
+    return ips or None
+
 def is_safe_external_url(url):
     """Blocks this app's own server from being tricked into fetching an
-    internal/private network resource (Home Assistant's own local API,
-    a router's admin page, cloud metadata endpoints, etc.) via a pasted
-    link — checked against every IP a hostname actually resolves to,
-    not just whether the hostname string itself looks internal, since a
-    perfectly normal-looking hostname can still resolve to a private
-    address."""
+    internal/private network resource via a pasted link — checked
+    against every IP a hostname actually resolves to, not just whether
+    the hostname string itself looks internal, since a perfectly
+    normal-looking hostname can still resolve to a private address.
+    This alone is still only a point-in-time check -- see
+    _PinnedHTTPConnection for the part that makes it actually hold at
+    fetch time too -- but it's enough for callers that just need a
+    cheap, early yes/no (deciding whether to attempt a fetch at all, or
+    whether a redirect target is even worth considering)."""
     try:
         parsed = urllib.parse.urlparse(url)
     except ValueError:
@@ -2425,18 +2497,98 @@ def is_safe_external_url(url):
         return False
     if hostname.lower() in ('localhost', '0.0.0.0'):
         return False
-    try:
-        addrinfo = socket.getaddrinfo(hostname, None)
-    except socket.gaierror:
-        return False
-    for family, _, _, _, sockaddr in addrinfo:
+    return _safe_ips_for_hostname(hostname) is not None
+
+class _DisallowedAddress(OSError):
+    """Raised by the pinned connection classes below when a hostname's
+    resolved address turns out to be internal/private -- deliberately
+    an OSError subclass, not a bespoke exception, since that's what
+    urllib's own HTTP(S) handlers already expect a connect() failure to
+    raise, letting it propagate out through the normal
+    urllib.error.URLError path every caller already catches."""
+
+def _connect_to_one_of(ips, port, timeout, source_address):
+    """Tries each already-validated IP in turn, the same
+    try-the-next-one-on-failure behavior socket.create_connection()
+    itself has when given a hostname to resolve -- a single hostname
+    commonly resolves to several addresses (an IPv4 and an IPv6, say),
+    and pinning to only ever the first one would lose that resilience
+    (confirmed directly: this sandbox's own IPv6 connectivity is
+    disabled, and a hostname whose first/preferred resolved address
+    happened to be IPv6 would otherwise fail outright instead of
+    falling back to its perfectly good IPv4 address)."""
+    last_error = None
+    for ip in ips:
         try:
-            ip = ipaddress.ip_address(sockaddr[0])
-        except ValueError:
-            continue
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
-            return False
-    return True
+            return socket.create_connection((ip, port), timeout, source_address)
+        except OSError as e:
+            last_error = e
+    raise last_error
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    """A plain http.client.HTTPConnection resolves the host itself,
+    inside connect() -- which is exactly the gap that let this app's
+    own IP-allowlist check (_safe_ips_for_hostname, called once before
+    the fetch) and the actual network connection (made moments later,
+    by code with no memory of that check) resolve the *same hostname*
+    to two *different* addresses: DNS rebinding. A domain under an
+    attacker's control can answer the validation lookup with a public,
+    allowed IP and the connection's own lookup -- a separate query,
+    typically with a deliberately tiny or zero TTL -- with an internal
+    one, passing the check while still connecting somewhere this app
+    never meant to reach.
+
+    The fix is DNS pinning: resolve and validate once, then connect
+    directly to one of those exact validated addresses, so there is no
+    second lookup left for an attacker's nameserver to answer
+    differently. connect() below does exactly that -- it never calls
+    socket.getaddrinfo(self.host, ...) at all, only
+    socket.create_connection() against the already-resolved,
+    already-checked self._pinned_ips."""
+
+    def __init__(self, host, *args, **kwargs):
+        super().__init__(host, *args, **kwargs)
+        safe_ips = _safe_ips_for_hostname(self.host)
+        if not safe_ips:
+            raise _DisallowedAddress(f'{self.host} did not resolve to an allowed address')
+        self._pinned_ips = safe_ips
+
+    def connect(self):
+        self.sock = _connect_to_one_of(self._pinned_ips, self.port, self.timeout, self.source_address)
+        if self._tunnel_host:
+            self._tunnel()
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """Same DNS-pinning fix as _PinnedHTTPConnection, for HTTPS -- the
+    TCP connection itself goes to one of the pinned, validated IPs, but
+    the TLS handshake still presents and verifies the *original*
+    hostname (via server_hostname below), exactly as a normal HTTPS
+    request would. Pinning the connection's destination doesn't mean
+    trusting whatever answers there instead of the real site -- the
+    certificate check still has to succeed against the hostname the
+    link actually named, the same as always."""
+
+    def __init__(self, host, *args, **kwargs):
+        super().__init__(host, *args, **kwargs)
+        safe_ips = _safe_ips_for_hostname(self.host)
+        if not safe_ips:
+            raise _DisallowedAddress(f'{self.host} did not resolve to an allowed address')
+        self._pinned_ips = safe_ips
+
+    def connect(self):
+        sock = _connect_to_one_of(self._pinned_ips, self.port, self.timeout, self.source_address)
+        if self._tunnel_host:
+            self.sock = sock
+            self._tunnel()
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+
+class _PinnedHTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(_PinnedHTTPConnection, req)
+
+class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(_PinnedHTTPSConnection, req, context=self._context)
 
 class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
     """urllib's default redirect handling follows a 3xx Location header
@@ -2451,7 +2603,10 @@ class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
     Re-checking every redirect target here, before it's followed,
     closes that off; max_redirections (inherited default: 10) is also
     lowered, since a link preview has no legitimate reason to need many
-    hops."""
+    hops. This is a fast, early rejection on top of (not instead of)
+    the DNS-pinned connection classes above, which are what actually
+    guarantee the hop's connection can't land somewhere different from
+    what got checked here."""
     max_redirections = 5
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -2460,7 +2615,7 @@ class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
                 newurl, code, 'Refused to follow a redirect to a disallowed address', headers, fp)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
-_SAFE_URL_OPENER = urllib.request.build_opener(_SafeRedirectHandler)
+_SAFE_URL_OPENER = urllib.request.build_opener(_PinnedHTTPHandler, _PinnedHTTPSHandler, _SafeRedirectHandler)
 
 YOUTUBE_HOSTS = {'youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be', 'music.youtube.com'}
 
@@ -3712,6 +3867,25 @@ def handle_message(data):
     if not sender:
         logger.warning('send_message from a request with no resolvable HA identity (sender_id=%s)', sender_id)
         emit('server_error', {'message': "Couldn't identify you as a Home Assistant user — try reloading the page."})
+        return
+
+    # Validated against the real channels table, the same principle
+    # move_message() and the Home Assistant bridge already apply to
+    # their own channel field — unlike those, this was never checked
+    # at all: a hand-crafted socket event (bypassing the UI entirely)
+    # could store and broadcast a message under any string, including
+    # one no real channel uses. Harmless on its own (there's no
+    # per-channel access control a bogus channel would bypass), but it
+    # left an orphan message sitting in the database under a channel
+    # name that would never show up in the sidebar for anyone to see
+    # or clean up.
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT 1 FROM channels WHERE slug = ?', (channel,))
+    channel_is_real = c.fetchone() is not None
+    conn.close()
+    if not channel_is_real:
+        emit('server_error', {'message': f'There is no channel "{channel}".'})
         return
 
     file_error = validate_outgoing_file(msg_type, file_info)

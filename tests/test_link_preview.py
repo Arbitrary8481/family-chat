@@ -32,6 +32,23 @@ except ImportError as e:  # pragma: no cover - depends on the environment
     server = None
     _IMPORT_ERROR = str(e)
 
+if server is not None:
+    # The fake site below deliberately runs on 127.0.0.1 to stand in for
+    # "a real external site" in these tests. server.py's own SSRF
+    # protection correctly treats 127.0.0.1 as an unsafe address in
+    # production -- that is the entire point of it -- which would
+    # otherwise make every fetch in this file fail closed exactly like a
+    # genuinely blocked address would, rather than actually exercising
+    # the OG-parsing/retry logic these tests are for. Patched here, in
+    # this test process only, to also allow loopback; this has no effect
+    # on the real app, which never imports this file.
+    _real_safe_ips_for_hostname = server._safe_ips_for_hostname
+    def _safe_ips_for_hostname_allowing_test_loopback(hostname):
+        if hostname in ('127.0.0.1', 'localhost'):
+            return ['127.0.0.1']
+        return _real_safe_ips_for_hostname(hostname)
+    server._safe_ips_for_hostname = _safe_ips_for_hostname_allowing_test_loopback
+
 OG_PAGE = (
     '<html><head><title>Plain title</title>'
     '<meta property="og:title" content="OG Title">'
