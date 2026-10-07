@@ -690,7 +690,9 @@
                         {% endif %}
                     </p>
                     <p class="hint">Downloads immediately — this can take a moment on a large family history.</p>
-                    <a href="./admin/export" class="button-link">⬇️ Download Backup</a>
+                    <form method="post" action="./admin/export">
+                        <button type="submit" class="button-link">⬇️ Download Backup</button>
+                    </form>
 
                     <h3 class="subsection-title" style="margin-top: 32px;">Restore from a backup</h3>
                     <p class="hint">
