@@ -346,6 +346,10 @@ function initializeChat() {
         updateReaction(data.message_id, data.emoji, data.user, data.added);
     });
 
+    socket.on('poll_updated', function(data) {
+        updatePollVotes(data.message_id, data.votes);
+    });
+
     socket.on('message_deleted', function(data) {
         removeMessageFromDom(data.message_id);
     });
@@ -614,6 +618,7 @@ function initializeChat() {
         input.addEventListener('input', () => {
             autoResizeMessageInput(input);
             checkMentionTrigger(input);
+            saveDraft(currentChannel, input.value);
             // Whitespace-only input (someone hit space/enter then
             // erased it, or the composer just got cleared) doesn't
             // count as "typing" — matches the same trim() send_message
@@ -635,6 +640,10 @@ function initializeChat() {
             // handler gets a chance to run.
             setTimeout(closeMentionPicker, 150);
         });
+        // Emoji and @mention picks set the value directly, without an
+        // 'input' event, so catch those on the way out too.
+        window.addEventListener('pagehide', () => saveDraft(currentChannel, input.value));
+        restoreDraft(currentChannel);
     }
     
     document.querySelectorAll('.channel').forEach(ch => {
@@ -643,6 +652,8 @@ function initializeChat() {
         });
     });
     
+    initVoiceRecording();
+
     currentEmojiCategory = 'people';
     loadEmojiCategory('people');
 
@@ -661,6 +672,38 @@ function initializeChat() {
 function autoResizeMessageInput(input) {
     input.style.height = 'auto';
     input.style.height = input.scrollHeight + 'px';
+}
+
+// Unsent composer text, per channel. Keyed by user id because a shared
+// family tablet shares one localStorage across everyone who signs in on it.
+function draftsStorageKey() {
+    return `composerDrafts:${window.AUTO_CHAT_USER_ID || ''}`;
+}
+
+function loadDrafts() {
+    try {
+        return JSON.parse(localStorage.getItem(draftsStorageKey()) || '{}') || {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function saveDraft(channel, text) {
+    if (!channel) return;
+    const drafts = loadDrafts();
+    if (text && text.trim()) {
+        drafts[channel] = text;
+    } else {
+        delete drafts[channel];
+    }
+    try { localStorage.setItem(draftsStorageKey(), JSON.stringify(drafts)); } catch (e) {}
+}
+
+function restoreDraft(channel) {
+    const input = document.getElementById('messageInput');
+    if (!input) return;
+    input.value = loadDrafts()[channel] || '';
+    autoResizeMessageInput(input);
 }
 
 // null when no reply is active, otherwise { id, sender, summary } —
@@ -822,7 +865,7 @@ document.addEventListener('click', (e) => {
     const messageEl = e.target.closest('.message');
     const hitExcludedTarget = e.target.closest(
         '.message-actions, .message-image, .file-attachment, .reaction, ' +
-        '.message-reply-quote, .link-preview-card, a'
+        '.message-reply-quote, .link-preview-card, a, .poll-option, audio, .voice-message'
     );
 
     if (messageEl && !hitExcludedTarget) {
@@ -972,6 +1015,7 @@ function sendMessageClick() {
         sendMessage(content);
         input.value = '';
         input.style.height = 'auto';
+        saveDraft(currentChannel, '');
     }
 }
 
@@ -1336,6 +1380,8 @@ function addMessage(data, insertMode = 'append') {
     
     let contentHtml = msgType === 'calendar_event'
         ? buildCalendarEventHtml(data.content)
+        : msgType === 'poll'
+        ? buildPollHtml(data.id, data.content, data.poll_votes)
         : `<div class="message-text">${renderMessageText(data.content)}</div>`;
 
     // A reply's quote sits above its own content — built from the
@@ -1363,8 +1409,15 @@ function addMessage(data, insertMode = 'append') {
         const fileUrl = safeUrl(resolveUrl(data.file?.url || data.file_url));
         const fileName = escapeHtml(rawFileName);
         const mimeType = escapeHtml(data.file?.mime_type || data.mime_type || '');
-        
-        if (looksLikeImageFile(mimeType, rawFileName)) {
+
+        if (msgType === 'voice') {
+            contentHtml += `
+                <div class="voice-message">
+                    <span class="voice-message-icon" aria-hidden="true">🎤</span>
+                    <audio controls preload="metadata" src="${fileUrl}"></audio>
+                </div>
+            `;
+        } else if (looksLikeImageFile(mimeType, rawFileName)) {
             // The URL goes in a data-* attribute, read by the delegated
             // click handler below, rather than interpolated into an
             // inline onclick="..." string — a URL containing a quote
@@ -1779,7 +1832,7 @@ function highlightCustomEmoji(text) {
         return `\x00EMOJI${idx}\x00`;
     });
 
-    const urlPattern = /https?:\/\/[^\s<>"']+/g;
+    const urlPattern = /https?:\/\/[^\s<>"'\x00]+/g;
     let result = '';
     let lastIndex = 0;
     let match;
@@ -1803,16 +1856,100 @@ function restoreCustomEmojiPlaceholders(html, emojiShortcodes) {
     });
 }
 
-// The one place both of the above should actually be used — wraps
-// linkifyText so every call site (the message feed, search results)
-// gets mention highlighting applied consistently, in the right order,
-// without each one having to know about the placeholder mechanism.
-function renderMessageText(text) {
+// Mentions, custom emoji and links for a run of plain text, in the right
+// order, without each caller having to know about the placeholder
+// mechanism. Escapes everything itself.
+function renderPlainText(text) {
     const { text: afterMentions, mentions } = highlightMentions(text || '');
     const { text: afterEmoji, emojiShortcodes } = highlightCustomEmoji(afterMentions);
     const linkified = linkifyText(afterEmoji);
     const withMentions = restoreMentionPlaceholders(linkified, mentions);
     return restoreCustomEmojiPlaceholders(withMentions, emojiShortcodes);
+}
+
+const FORMAT_TAGS = { 1: '<strong>', 2: '</strong>', 3: '<em>', 4: '</em>' };
+const BULLET_LINE = /^\s*[-*•]\s+(.+)$/;
+const NUMBERED_LINE = /^\s*(\d{1,3})[.)]\s+(.+)$/;
+const CODE_FENCE_OPEN = /^\s*```/;
+const CODE_FENCE_CLOSE = /^\s*```\s*$/;
+
+// **bold**, *italic* / _italic_ and `code` within one line of text.
+// Formatting is swapped for \x00 placeholders before renderPlainText()
+// escapes the text, and only fixed tags are put back afterward, so no
+// user text ever reaches innerHTML unescaped. URLs are shielded while the
+// emphasis patterns run so an underscore or asterisk inside a link can't
+// turn into <em> in the middle of its href. Emphasis markers must sit at
+// a word boundary, which keeps snake_case, 5*3*2 and :custom_emoji:
+// untouched.
+function renderInlineText(text) {
+    const codeSpans = [];
+    let t = text.replace(/(`{1,3})([^`\n]+?)\1/g, (m, ticks, code) => {
+        codeSpans.push(code);
+        return `\x00K${codeSpans.length - 1}\x00`;
+    });
+    const urls = [];
+    t = t.replace(/https?:\/\/[^\s<>"'\x00]+/g, (raw) => {
+        const url = trimUrlTrailingPunctuation(raw);
+        if (!url) return raw;
+        urls.push(url);
+        return `\x00U${urls.length - 1}\x00` + raw.slice(url.length);
+    });
+    t = t
+        .replace(/(?<![\w*])\*\*(?=[^\s*])(.+?)(?<=[^\s*])\*\*(?![\w*])/g, '\x00F1\x00$1\x00F2\x00')
+        .replace(/(?<![\w*])\*(?=[^\s*])(.+?)(?<=[^\s*])\*(?![\w*])/g, '\x00F3\x00$1\x00F4\x00')
+        .replace(/(?<![\w_])_(?=[^\s_])(.+?)(?<=[^\s_])_(?![\w_])/g, '\x00F3\x00$1\x00F4\x00');
+    t = t.replace(/\x00U(\d+)\x00/g, (m, i) => urls[Number(i)]);
+    return renderPlainText(t)
+        .replace(/\x00F([1-4])\x00/g, (m, k) => FORMAT_TAGS[k])
+        .replace(/\x00K(\d+)\x00/g, (m, i) => `<code class="md-inline-code">${escapeHtml(codeSpans[Number(i)])}</code>`);
+}
+
+// Every place message text is shown (the feed, edits, search results)
+// goes through here. Block-level formatting first — ``` fenced code
+// blocks and - / 1. lists — then inline formatting for everything else.
+function renderMessageText(text) {
+    // \x00 is reserved for the placeholders above; a hand-crafted message
+    // containing one could otherwise forge them.
+    const lines = String(text || '').replace(/\x00/g, '').split('\n');
+    const out = [];
+    let prose = [];
+    const flushProse = () => {
+        if (prose.length) out.push(renderInlineText(prose.join('\n')));
+        prose = [];
+    };
+    let i = 0;
+    while (i < lines.length) {
+        if (CODE_FENCE_OPEN.test(lines[i])) {
+            let close = i + 1;
+            while (close < lines.length && !CODE_FENCE_CLOSE.test(lines[close])) close++;
+            if (close < lines.length) {
+                flushProse();
+                const code = lines.slice(i + 1, close).join('\n');
+                out.push(`<pre class="md-code-block"><code>${escapeHtml(code)}</code></pre>`);
+                i = close + 1;
+                continue;
+            }
+        }
+        const numbered = lines[i].match(NUMBERED_LINE);
+        if (numbered || BULLET_LINE.test(lines[i])) {
+            flushProse();
+            const pattern = numbered ? NUMBERED_LINE : BULLET_LINE;
+            const items = [];
+            let m;
+            while (i < lines.length && (m = lines[i].match(pattern))) {
+                items.push(`<li>${renderInlineText(m[m.length - 1])}</li>`);
+                i++;
+            }
+            out.push(numbered
+                ? `<ol class="md-list" start="${Number(numbered[1])}">${items.join('')}</ol>`
+                : `<ul class="md-list">${items.join('')}</ul>`);
+            continue;
+        }
+        prose.push(lines[i]);
+        i++;
+    }
+    flushProse();
+    return out.join('');
 }
 
 // Four shapes, tried in this order:
@@ -1856,6 +1993,32 @@ function phoneMatchToTelHref(phoneGroup, extGroup) {
     return extGroup ? `${href};ext=${extGroup}` : href;
 }
 
+// Trailing punctuation almost always belongs to the sentence, not the
+// link — "check this out: https://example.com." should not swallow the
+// period, and "**https://example.com**" should not swallow the bold
+// markers. Strips one character at a time so "(see https://example.com)."
+// unwraps correctly in either order. A closing paren/bracket is only
+// stripped if it has no matching opener earlier in the URL, since some
+// real URLs (e.g. Wikipedia article titles) legitimately end in one.
+// extract_single_url() server-side mirrors this.
+function trimUrlTrailingPunctuation(url) {
+    let trimmed = true;
+    while (trimmed && url.length > 0) {
+        trimmed = false;
+        if (/[.,!?:;*]$/.test(url)) {
+            url = url.slice(0, -1);
+            trimmed = true;
+        } else if (url.endsWith(')') && (url.match(/\(/g) || []).length < (url.match(/\)/g) || []).length) {
+            url = url.slice(0, -1);
+            trimmed = true;
+        } else if (url.endsWith(']') && (url.match(/\[/g) || []).length < (url.match(/\]/g) || []).length) {
+            url = url.slice(0, -1);
+            trimmed = true;
+        }
+    }
+    return url;
+}
+
 function linkifyText(text) {
     if (!text) return '';
     // URL and phone-number detection share a single scan (URL
@@ -1867,7 +2030,7 @@ function linkifyText(text) {
     // the whole thing, the same reason highlightCustomEmoji() above
     // has to explicitly skip over URLs too.
     const pattern = new RegExp(
-        `(https?:\\/\\/[^\\s<>"']+)|(?<phone>${PHONE_PATTERN_SOURCE})(?:\\s?(?:x|ext\\.?|extension)\\s?(?<ext>\\d{1,6}))?\\b`,
+        `(https?:\\/\\/[^\\s<>"'\\x00]+)|(?<phone>${PHONE_PATTERN_SOURCE})(?:\\s?(?:x|ext\\.?|extension)\\s?(?<ext>\\d{1,6}))?\\b`,
         'gi'
     );
     let result = '';
@@ -1876,34 +2039,8 @@ function linkifyText(text) {
 
     while ((match = pattern.exec(text)) !== null) {
         if (match[1]) {
-            let url = match[1];
-            let end = match.index + url.length;
-
-            // Trailing punctuation almost always belongs to the sentence,
-            // not the link — "check this out: https://example.com." should
-            // not swallow the period. Strips one character at a time so
-            // something like "(see https://example.com)." unwraps correctly
-            // in either order. A closing paren/bracket is only stripped if
-            // it doesn't have a matching opener earlier in the URL, since
-            // some real URLs (e.g. Wikipedia article titles) legitimately
-            // end in one.
-            let trimmed = true;
-            while (trimmed && url.length > 0) {
-                trimmed = false;
-                if (/[.,!?:;]$/.test(url)) {
-                    url = url.slice(0, -1);
-                    end -= 1;
-                    trimmed = true;
-                } else if (url.endsWith(')') && (url.match(/\(/g) || []).length < (url.match(/\)/g) || []).length) {
-                    url = url.slice(0, -1);
-                    end -= 1;
-                    trimmed = true;
-                } else if (url.endsWith(']') && (url.match(/\[/g) || []).length < (url.match(/\]/g) || []).length) {
-                    url = url.slice(0, -1);
-                    end -= 1;
-                    trimmed = true;
-                }
-            }
+            const url = trimUrlTrailingPunctuation(match[1]);
+            const end = match.index + url.length;
             if (!url) continue;
 
             result += escapeHtml(text.slice(lastIndex, match.index));
@@ -2306,7 +2443,10 @@ function switchChannel(slug, onLoaded) {
     // it we've stopped typing there, and every entry in typingUsers
     // belongs to that same old channel's room, which is about to be left.
     clearTypingIndicatorState();
+    const composer = document.getElementById('messageInput');
+    if (composer) saveDraft(currentChannel, composer.value);
     currentChannel = slug;
+    restoreDraft(slug);
     try { localStorage.setItem('lastChannel', currentChannel); } catch (e) {}
     // A reply is tied to a message in the channel you were just in —
     // switching wipes that channel's messages from the DOM entirely, so
@@ -2915,6 +3055,13 @@ function summarizeMessageForReply(data, msgType) {
         const title = event.title || 'Untitled event';
         return when ? `📅 ${title} — ${when}` : `📅 ${title}`;
     }
+    if (msgType === 'poll') {
+        try {
+            return `📊 Poll: ${JSON.parse(data.content).question}`;
+        } catch (e) {
+            return 'Started a poll';
+        }
+    }
     const content = (data.content || '').trim();
     if (content) {
         return content.length <= 200 ? content : content.slice(0, 197) + '…';
@@ -2922,6 +3069,7 @@ function summarizeMessageForReply(data, msgType) {
     if (msgType === 'gif') return 'Sent a GIF';
     if (msgType === 'image') return 'Sent a photo';
     if (msgType === 'video') return 'Sent a video';
+    if (msgType === 'voice') return 'Sent a voice message';
     if (msgType === 'file') {
         const name = data.file?.filename || data.file_name;
         return name ? `Shared ${name}` : 'Shared a file';
@@ -3047,6 +3195,376 @@ function buildCalendarEventHtml(content) {
             </div>
         </div>
     `;
+}
+
+// ---- Voice messages ----
+// Hold the mic button to record, let go to send, or slide well away from
+// it before letting go to cancel. Recorded with MediaRecorder and sent
+// through the same /api/upload route as any attachment.
+const VOICE_MIN_MS = 600;
+const VOICE_MAX_MS = 5 * 60 * 1000;
+const VOICE_CANCEL_DISTANCE_PX = 80;
+const VOICE_HOLD_HINT = 'Hold the mic button to record, then let go to send.';
+// Chrome/Firefox/Android record WebM/Opus; Safari and the iOS app only
+// record MP4/AAC.
+const VOICE_MIME_TYPES = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/webm'];
+let voiceRecording = null;
+let voiceHintTimer = null;
+
+function initVoiceRecording() {
+    const btn = document.getElementById('micBtn');
+    if (!btn) return;
+    btn.addEventListener('contextmenu', e => e.preventDefault());
+    btn.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        btn.setPointerCapture(e.pointerId);
+        startVoiceRecording();
+    });
+    btn.addEventListener('pointermove', (e) => {
+        if (voiceRecording) updateVoiceCancelState(e);
+    });
+    btn.addEventListener('pointerup', (e) => {
+        if (!voiceRecording) return;
+        updateVoiceCancelState(e);
+        finishVoiceRecording(!voiceRecording.cancelArmed);
+    });
+    btn.addEventListener('pointercancel', () => finishVoiceRecording(false));
+    // Keyboard: hold Space or Enter on the focused button.
+    btn.addEventListener('keydown', (e) => {
+        if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) {
+            e.preventDefault();
+            startVoiceRecording();
+        } else if (e.key === 'Escape') {
+            finishVoiceRecording(false);
+        }
+    });
+    btn.addEventListener('keyup', (e) => {
+        if (e.key === ' ' || e.key === 'Enter') finishVoiceRecording(true);
+    });
+}
+
+async function startVoiceRecording() {
+    if (voiceRecording) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
+        alert(window.isSecureContext
+            ? "This browser can't record audio."
+            : 'Voice messages need Home Assistant to be opened over HTTPS. Browsers only allow microphone access on secure connections.');
+        return;
+    }
+    const btn = document.getElementById('micBtn');
+    const rect = btn.getBoundingClientRect();
+    const state = {
+        originX: rect.left + rect.width / 2,
+        originY: rect.top + rect.height / 2,
+        released: false,
+        cancelArmed: false,
+        chunks: [],
+    };
+    voiceRecording = state;
+
+    let stream;
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+        voiceRecording = null;
+        alert(err && err.name === 'NotAllowedError'
+            ? 'Microphone access is blocked. Allow it in your browser or Home Assistant app settings to send voice messages.'
+            : "Couldn't access a microphone.");
+        return;
+    }
+    // Let go before the microphone was ready (a quick tap, or while
+    // answering the permission prompt the first time): nothing to send.
+    if (state.released) {
+        stream.getTracks().forEach(t => t.stop());
+        voiceRecording = null;
+        showVoiceHint(VOICE_HOLD_HINT);
+        return;
+    }
+
+    const mimeType = VOICE_MIME_TYPES.find(t => MediaRecorder.isTypeSupported(t));
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    recorder.addEventListener('dataavailable', (ev) => {
+        if (ev.data && ev.data.size) state.chunks.push(ev.data);
+    });
+    state.stream = stream;
+    state.recorder = recorder;
+    recorder.start();
+    state.startedAt = Date.now();
+    btn.classList.add('recording');
+    renderVoiceRecordingBar();
+    state.timer = setInterval(() => {
+        if (Date.now() - state.startedAt >= VOICE_MAX_MS) {
+            finishVoiceRecording(true);
+        } else {
+            renderVoiceRecordingBar();
+        }
+    }, 250);
+}
+
+function updateVoiceCancelState(e) {
+    const state = voiceRecording;
+    if (!state) return;
+    const distance = Math.hypot(e.clientX - state.originX, e.clientY - state.originY);
+    state.cancelArmed = distance > VOICE_CANCEL_DISTANCE_PX;
+    if (state.recorder) renderVoiceRecordingBar();
+}
+
+function finishVoiceRecording(send) {
+    const state = voiceRecording;
+    if (!state) return;
+    if (!state.recorder) {
+        // Still waiting on the microphone; startVoiceRecording() cleans up.
+        state.released = true;
+        return;
+    }
+    voiceRecording = null;
+    clearInterval(state.timer);
+    document.getElementById('micBtn').classList.remove('recording');
+    hideVoiceRecordingBar();
+    const durationMs = Date.now() - state.startedAt;
+
+    state.recorder.addEventListener('stop', () => {
+        state.stream.getTracks().forEach(t => t.stop());
+        if (!send) {
+            showVoiceHint('Voice message cancelled.');
+            return;
+        }
+        if (durationMs < VOICE_MIN_MS) {
+            showVoiceHint(VOICE_HOLD_HINT);
+            return;
+        }
+        const type = state.recorder.mimeType || 'audio/webm';
+        uploadVoiceMessage(new Blob(state.chunks, { type }), type);
+    }, { once: true });
+    state.recorder.stop();
+}
+
+function renderVoiceRecordingBar() {
+    const bar = document.getElementById('voiceRecordingBar');
+    const text = document.getElementById('voiceRecordingText');
+    const state = voiceRecording;
+    if (!bar || !text || !state) return;
+    clearTimeout(voiceHintTimer);
+    const seconds = Math.floor((Date.now() - state.startedAt) / 1000);
+    const clock = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+    text.textContent = state.cancelArmed
+        ? `${clock} · Let go to cancel`
+        : `Recording ${clock} · slide away to cancel`;
+    bar.classList.toggle('voice-recording-cancel', state.cancelArmed);
+    bar.classList.remove('voice-recording-hint');
+    bar.classList.remove('hidden');
+}
+
+function hideVoiceRecordingBar() {
+    const bar = document.getElementById('voiceRecordingBar');
+    if (bar) bar.classList.add('hidden');
+}
+
+function showVoiceHint(message) {
+    const bar = document.getElementById('voiceRecordingBar');
+    const text = document.getElementById('voiceRecordingText');
+    if (!bar || !text) return;
+    text.textContent = message;
+    bar.classList.remove('voice-recording-cancel');
+    bar.classList.add('voice-recording-hint');
+    bar.classList.remove('hidden');
+    clearTimeout(voiceHintTimer);
+    voiceHintTimer = setTimeout(hideVoiceRecordingBar, 2500);
+}
+
+function uploadVoiceMessage(blob, mimeType) {
+    const ext = mimeType.includes('mp4') ? 'm4a' : mimeType.includes('ogg') ? 'ogg' : 'webm';
+    const formData = new FormData();
+    formData.append('file', blob, `voice-message.${ext}`);
+    // Captured now so switching channels mid-upload still posts it where
+    // it was recorded.
+    const channel = currentChannel;
+    fetch(apiUrl('/api/upload'), { method: 'POST', body: formData })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert("Couldn't send the voice message: " + (data.error || 'upload failed'));
+                return;
+            }
+            const msgData = { content: '', channel, type: 'voice', file: data };
+            if (replyContext && channel === currentChannel) {
+                msgData.reply_to_id = replyContext.id;
+                cancelReply();
+            }
+            socket.emit('send_message', msgData);
+        })
+        .catch(() => alert("Couldn't send the voice message. Check your connection and try again."));
+}
+
+// Chrome's MediaRecorder writes WebM files with no duration in the
+// header, so the player shows 0:00 and can't seek until it has played
+// through once. Seeking far past the end makes it work out the real
+// length. Media events don't bubble, hence the capture listener.
+document.addEventListener('loadedmetadata', (e) => {
+    const audio = e.target;
+    if (!(audio instanceof HTMLAudioElement) || !audio.closest('.voice-message')) return;
+    if (audio.duration !== Infinity) return;
+    const onDurationChange = () => {
+        if (audio.duration === Infinity) return;
+        audio.removeEventListener('durationchange', onDurationChange);
+        audio.currentTime = 0;
+    };
+    audio.addEventListener('durationchange', onDurationChange);
+    audio.currentTime = 1e101;
+}, true);
+
+// Only one voice message plays at a time.
+document.addEventListener('play', (e) => {
+    if (!(e.target instanceof HTMLAudioElement)) return;
+    document.querySelectorAll('.voice-message audio').forEach(a => {
+        if (a !== e.target) a.pause();
+    });
+}, true);
+
+// ---- Polls ----
+// A poll message's content is a JSON payload ({question, options,
+// multiple}, see validate_poll() server-side); votes arrive separately as
+// {option_index: [{id, name}]} on the message itself (poll_votes) and in
+// every 'poll_updated' event.
+const POLL_MAX_OPTIONS = 10;
+
+function buildPollHtml(messageId, content, votes) {
+    let poll;
+    try {
+        poll = JSON.parse(content);
+    } catch (e) {
+        poll = null;
+    }
+    if (!poll || !Array.isArray(poll.options)) {
+        return `<div class="message-text">${escapeHtml(content || '')}</div>`;
+    }
+    votes = votes || {};
+    const voterIds = new Set();
+    Object.values(votes).forEach(list => list.forEach(v => voterIds.add(v.id)));
+    const totalVoters = voterIds.size;
+
+    const optionsHtml = poll.options.map((option, i) => {
+        const optionVotes = votes[i] || [];
+        const mine = optionVotes.some(v => v.id === window.AUTO_CHAT_USER_ID);
+        const percent = totalVoters ? Math.round(optionVotes.length / totalVoters * 100) : 0;
+        const names = optionVotes.map(v => v.name).join(', ');
+        return `
+            <button type="button" class="poll-option${mine ? ' poll-option-mine' : ''}" data-poll-id="${Number(messageId)}" data-option-index="${i}" aria-pressed="${mine}">
+                <span class="poll-option-bar" style="width: ${percent}%"></span>
+                <span class="poll-option-marker${poll.multiple ? ' poll-option-marker-multi' : ''}">${mine ? '✓' : ''}</span>
+                <span class="poll-option-body">
+                    <span class="poll-option-label">${escapeHtml(option)}</span>
+                    ${names ? `<span class="poll-option-voters">${escapeHtml(names)}</span>` : ''}
+                </span>
+                <span class="poll-option-count">${optionVotes.length}</span>
+            </button>
+        `;
+    }).join('');
+
+    const votedText = totalVoters === 0 ? 'No votes yet'
+        : totalVoters === 1 ? '1 person voted' : `${totalVoters} people voted`;
+    return `
+        <div class="poll-card">
+            <div class="poll-question">📊 ${escapeHtml(poll.question || '')}</div>
+            <div class="poll-options">${optionsHtml}</div>
+            <div class="poll-footer">${votedText} · ${poll.multiple ? 'Choose any' : 'Choose one'}</div>
+        </div>
+    `;
+}
+
+function updatePollVotes(messageId, votes) {
+    const messageEl = document.querySelector(`.message[data-id="${Number(messageId)}"]`);
+    const card = messageEl && messageEl.querySelector('.poll-card');
+    if (!card) return;
+    card.outerHTML = buildPollHtml(messageId, messageEl.dataset.rawContent, votes);
+}
+
+document.addEventListener('click', (e) => {
+    const option = e.target.closest('.poll-option');
+    if (!option || !socket) return;
+    socket.emit('poll_vote', {
+        message_id: Number(option.dataset.pollId),
+        option_index: Number(option.dataset.optionIndex),
+    });
+});
+
+function addPollOptionInput(value = '') {
+    const list = document.getElementById('pollOptions');
+    if (!list || list.children.length >= POLL_MAX_OPTIONS) return;
+    const row = document.createElement('div');
+    row.className = 'poll-option-input-row';
+    row.innerHTML = `
+        <input type="text" class="settings-select poll-option-input" maxlength="100" placeholder="Option ${list.children.length + 1}">
+        <button type="button" class="poll-option-remove" title="Remove option" onclick="removePollOptionInput(this)">×</button>
+    `;
+    row.querySelector('input').value = value;
+    list.appendChild(row);
+    refreshPollOptionInputs();
+}
+
+function removePollOptionInput(button) {
+    const list = document.getElementById('pollOptions');
+    if (!list || list.children.length <= 2) return;
+    button.closest('.poll-option-input-row').remove();
+    refreshPollOptionInputs();
+}
+
+// Keeps the placeholders numbered, at least two rows without a remove
+// button, and the add button hidden once the option limit is reached.
+function refreshPollOptionInputs() {
+    const list = document.getElementById('pollOptions');
+    const rows = Array.from(list.children);
+    rows.forEach((row, i) => {
+        row.querySelector('input').placeholder = `Option ${i + 1}`;
+        row.querySelector('.poll-option-remove').classList.toggle('hidden', rows.length <= 2);
+    });
+    const addBtn = document.getElementById('pollAddOption');
+    if (addBtn) addBtn.classList.toggle('hidden', rows.length >= POLL_MAX_OPTIONS);
+}
+
+function openPollModal() {
+    const modal = document.getElementById('pollModal');
+    if (!modal) return;
+    document.getElementById('pollQuestion').value = '';
+    document.getElementById('pollMultiple').checked = false;
+    document.getElementById('pollOptions').innerHTML = '';
+    addPollOptionInput();
+    addPollOptionInput();
+    modal.classList.remove('hidden');
+    document.getElementById('pollQuestion').focus();
+}
+
+function closePollModal() {
+    const modal = document.getElementById('pollModal');
+    if (modal) modal.classList.add('hidden');
+}
+
+function submitPoll() {
+    const question = document.getElementById('pollQuestion').value.trim();
+    const options = Array.from(document.querySelectorAll('#pollOptions .poll-option-input'))
+        .map(input => input.value.trim())
+        .filter(Boolean);
+    const distinct = new Set(options.map(o => o.toLowerCase()));
+    if (!question) {
+        alert('Give the poll a question.');
+        return;
+    }
+    if (distinct.size < 2) {
+        alert('A poll needs at least two different options.');
+        return;
+    }
+    if (distinct.size !== options.length) {
+        alert('Two of the options are the same.');
+        return;
+    }
+    socket.emit('create_poll', {
+        channel: currentChannel,
+        question,
+        options,
+        multiple: document.getElementById('pollMultiple').checked,
+    });
+    closePollModal();
 }
 
 function switchSettingsTab(tab) {

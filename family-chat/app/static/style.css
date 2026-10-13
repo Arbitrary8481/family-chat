@@ -29,6 +29,11 @@
     --bg-floating: #fff;
     --text-normal: #2e3338;
     --text-muted: #5e6772;
+    --bg-modifier-hover: rgba(116, 127, 141, 0.16);
+    --bg-modifier-active: rgba(116, 127, 141, 0.28);
+    --channels-default: #5c5e66;
+    --interactive-hover: #2e3338;
+    --interactive-active: #060607;
 }
 
 * {
@@ -641,6 +646,37 @@ body {
     margin-right: 3px;
 }
 
+.md-inline-code,
+.md-code-block {
+    font-family: Consolas, "Andale Mono", "Courier New", monospace;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    font-size: 0.875em;
+}
+
+.md-inline-code {
+    padding: 1px 4px;
+}
+
+.md-code-block {
+    display: block;
+    margin: 4px 0;
+    padding: 8px 10px;
+    white-space: pre;
+    overflow-x: auto;
+    max-width: 100%;
+}
+
+.md-list {
+    margin: 2px 0;
+    padding-left: 22px;
+    white-space: normal;
+}
+
+.md-list li {
+    white-space: pre-wrap;
+}
+
 .mention {
     background: rgba(88, 101, 242, 0.15);
     color: var(--bg-accent-hover);
@@ -819,13 +855,24 @@ body {
     font-size: 13px;
 }
 
+/* Absolutely positioned inside .input-container's 24px bottom padding,
+   below the message box: as an in-flow row it shrank the message list
+   when it appeared and pushed the newest message out of view. */
 .typing-indicator {
-    padding: 8px 16px;
+    position: absolute;
+    left: 20px;
+    right: 20px;
+    bottom: 4px;
+    height: 16px;
+    line-height: 16px;
     color: var(--text-muted);
-    font-size: 14px;
+    font-size: 12px;
     display: flex;
     align-items: center;
     gap: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    pointer-events: none;
 }
 
 .typing-indicator .dots {
@@ -946,7 +993,7 @@ body {
     flex-shrink: 0;
 }
 
-.attach-btn, .emoji-btn, .gif-btn, .calendar-btn, .send-btn {
+.attach-btn, .emoji-btn, .gif-btn, .calendar-btn, .poll-btn, .mic-btn, .send-btn {
     background: transparent;
     border: none;
     color: var(--text-muted);
@@ -962,7 +1009,7 @@ body {
     flex-shrink: 0;
 }
 
-.attach-btn:hover, .emoji-btn:hover, .gif-btn:hover, .calendar-btn:hover {
+.attach-btn:hover, .emoji-btn:hover, .gif-btn:hover, .calendar-btn:hover, .poll-btn:hover, .mic-btn:hover {
     color: var(--interactive-hover);
     background: var(--bg-modifier-hover);
 }
@@ -989,6 +1036,79 @@ body {
     flex: 1;
     display: flex;
     align-items: center;
+    position: relative;
+}
+
+.voice-recording-bar {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-secondary);
+    color: var(--text-normal);
+    font-size: 15px;
+}
+
+.voice-recording-bar {
+    pointer-events: none;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.voice-recording-bar.voice-recording-cancel {
+    color: var(--danger);
+}
+
+.voice-recording-bar.voice-recording-hint {
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+.voice-recording-hint .voice-recording-dot {
+    display: none;
+}
+
+.voice-recording-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--danger);
+    animation: voice-recording-pulse 1s ease-in-out infinite;
+}
+
+@keyframes voice-recording-pulse {
+    50% { opacity: 0.3; }
+}
+
+/* Holding the button must not select text, open a context menu or
+   scroll the page on a phone. */
+.mic-btn {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    touch-action: none;
+}
+
+.mic-btn.recording,
+.mic-btn.recording:hover {
+    color: #fff;
+    background: var(--danger);
+    transform: scale(1.15);
+}
+
+.voice-message {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+    max-width: 360px;
+}
+
+.voice-message audio {
+    flex: 1;
+    min-width: 0;
+    height: 40px;
 }
 
 #messageInput {
@@ -2101,6 +2221,153 @@ body {
 /* Calendar event confirmation card — its own distinct rendering in the
    message feed, same reasoning as images/GIFs getting their own look
    instead of just showing as a plain link or line of text. */
+.poll-card {
+    margin-top: 6px;
+    padding: 12px;
+    max-width: 420px;
+    background: var(--bg-secondary);
+    border-left: 3px solid var(--bg-accent);
+    border-radius: 4px;
+}
+
+.poll-question {
+    font-weight: 600;
+    color: var(--text-normal);
+    margin-bottom: 10px;
+    overflow-wrap: anywhere;
+}
+
+.poll-options {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.poll-option {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 10px;
+    background: var(--bg-tertiary);
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: var(--text-normal);
+    font: inherit;
+    font-size: 14px;
+    text-align: left;
+    cursor: pointer;
+    overflow: hidden;
+    touch-action: manipulation;
+}
+
+.poll-option:hover {
+    border-color: var(--bg-modifier-active);
+}
+
+.poll-option-mine {
+    border-color: var(--bg-accent);
+}
+
+/* The vote-share bar sits behind the option's text. */
+.poll-option-bar {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: rgba(88, 101, 242, 0.25);
+    transition: width 0.25s ease;
+    pointer-events: none;
+}
+
+.poll-option-marker,
+.poll-option-body,
+.poll-option-count {
+    position: relative;
+}
+
+.poll-option-marker {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--text-muted);
+    border-radius: 50%;
+    font-size: 11px;
+    line-height: 14px;
+    text-align: center;
+    color: #fff;
+}
+
+.poll-option-marker-multi {
+    border-radius: 4px;
+}
+
+.poll-option-mine .poll-option-marker {
+    background: var(--bg-accent);
+    border-color: var(--bg-accent);
+}
+
+.poll-option-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.poll-option-label {
+    overflow-wrap: anywhere;
+}
+
+.poll-option-voters {
+    font-size: 12px;
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+}
+
+.poll-option-count {
+    flex-shrink: 0;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.poll-footer {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.poll-option-inputs {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.poll-option-input-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.poll-option-remove {
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 20px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.poll-option-remove:hover {
+    color: var(--danger);
+    background: var(--bg-modifier-hover);
+}
+
+.poll-add-option {
+    margin-top: 8px;
+}
+
 .calendar-event-card {
     display: flex;
     gap: 12px;
@@ -2376,6 +2643,17 @@ body {
     #membersSidebarToggle {
         display: none;
     }
+    /* Leaves the message box more room beside the composer buttons on
+       tablet widths, where they still share one row with it. */
+    .composer-actions {
+        gap: 6px;
+    }
+}
+
+@media (max-width: 360px) {
+    .composer-actions button {
+        padding: 4px;
+    }
 }
 
 @media (max-width: 768px) {
@@ -2415,8 +2693,11 @@ body {
         align-items: stretch;
         gap: 6px;
     }
+    /* gap: up to seven buttons (attach, GIF, calendar, poll, emoji, mic,
+       send) have to fit one row on the narrowest phones. */
     .composer-actions {
         justify-content: flex-end;
+        gap: 4px;
     }
 
     .drawer-close-btn {

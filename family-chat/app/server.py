@@ -30,6 +30,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from flask import Flask, render_template, request, jsonify, send_from_directory, send_file, session, redirect, url_for
 from flask_socketio import SocketIO, emit, join_room, leave_room, rooms
+from werkzeug.exceptions import HTTPException
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
@@ -307,7 +308,7 @@ UPLOAD_FOLDER = DATA_DIR / 'uploads'
 UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
 ALLOWED_EXTENSIONS = {
     'png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4', 'webm', 'mp3',
-    'wav', 'pdf', 'txt', 'md', 'doc', 'docx'
+    'wav', 'm4a', 'ogg', 'pdf', 'txt', 'md', 'doc', 'docx'
 }
 ALLOWED_AVATAR_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
@@ -638,6 +639,17 @@ def init_db():
                   pinned_by_id TEXT,
                   pinned_at TEXT NOT NULL)''')
     c.execute('CREATE INDEX IF NOT EXISTS idx_pinned_messages_channel ON pinned_messages(channel)')
+
+    # One row per person per option they picked on a poll message. Keyed
+    # on the stable user_id (not the display name) for the same reason
+    # reactions are: an alias has no uniqueness constraint.
+    c.execute('''CREATE TABLE IF NOT EXISTS poll_votes
+                 (message_id INTEGER NOT NULL,
+                  option_index INTEGER NOT NULL,
+                  user_id TEXT NOT NULL,
+                  user_name TEXT NOT NULL,
+                  voted_at TEXT NOT NULL,
+                  PRIMARY KEY (message_id, option_index, user_id))''')
 
     conn.commit()
     conn.close()
@@ -1163,8 +1175,29 @@ def get_messages(limit=100, channel='general', before_id=None):
         for msg in result:
             msg['pinned'] = msg['id'] in pinned_ids
 
+        poll_ids = [msg['id'] for msg in result if msg.get('message_type') == 'poll']
+        if poll_ids:
+            votes = get_poll_votes(c, poll_ids)
+            for msg in result:
+                if msg.get('message_type') == 'poll':
+                    msg['poll_votes'] = votes.get(msg['id'], {})
+
     conn.close()
     return list(reversed(result))
+
+def get_poll_votes(c, message_ids):
+    """{message_id: {option_index: [{'id', 'name'}, ...]}}, with each
+    voter's current alias resolved at read time like reactions."""
+    placeholders = ','.join('?' * len(message_ids))
+    c.execute(f'''SELECT v.message_id, v.option_index, v.user_id, COALESCE(ua.alias, v.user_name)
+                  FROM poll_votes v
+                  LEFT JOIN user_aliases ua ON ua.user_id = v.user_id
+                  WHERE v.message_id IN ({placeholders})
+                  ORDER BY v.voted_at''', message_ids)
+    votes = {}
+    for message_id, option_index, user_id, name in c.fetchall():
+        votes.setdefault(message_id, {}).setdefault(option_index, []).append({'id': user_id, 'name': name})
+    return votes
 
 def get_message_by_id(message_id):
     """Fetches one message in the same shape get_messages() hands back --
@@ -1208,6 +1241,9 @@ def get_message_by_id(message_id):
 
     c.execute('SELECT 1 FROM pinned_messages WHERE message_id = ?', (message_id,))
     msg['pinned'] = c.fetchone() is not None
+
+    if msg.get('message_type') == 'poll':
+        msg['poll_votes'] = get_poll_votes(c, [message_id]).get(message_id, {})
 
     conn.close()
     return msg
@@ -1324,6 +1360,7 @@ def delete_message(message_id, requester_id, can_manage, actor_name, privileged_
 
     c.execute('DELETE FROM reactions WHERE message_id = ?', (message_id,))
     c.execute('DELETE FROM pinned_messages WHERE message_id = ?', (message_id,))
+    c.execute('DELETE FROM poll_votes WHERE message_id = ?', (message_id,))
     c.execute('DELETE FROM messages WHERE id = ?', (message_id,))
     conn.commit()
     conn.close()
@@ -1679,6 +1716,12 @@ def handle_too_large(e):
 
 @app.errorhandler(Exception)
 def handle_uncaught_exception(e):
+    # A 404/405/400 is a normal HTTP answer, not a crash: keep its real
+    # status instead of reporting it as a 500 and logging a traceback.
+    if isinstance(e, HTTPException):
+        if request.path.startswith('/api/'):
+            return jsonify({'error': e.description}), e.code
+        return e
     logger.exception('Unhandled exception on %s %s', request.method, request.path)
     if request.path.startswith('/api/'):
         return jsonify({'error': 'Internal server error — check the app log for details.'}), 500
@@ -1811,7 +1854,7 @@ def api_search():
         # content is a JSON payload for calendar_event messages, not
         # display text (see api_create_calendar_event()) — would
         # otherwise show as raw JSON in search results.
-        display_content = summarize_message_for_notification(content, message_type, None) if message_type == 'calendar_event' else content
+        display_content = summarize_message_for_notification(content, message_type, None) if message_type in STRUCTURED_MESSAGE_TYPES else content
         results.append({
             'id': msg_id,
             'sender': alias or sender,
@@ -2316,6 +2359,9 @@ def admin_import():
         # etc.), this instance is never left with neither the old data
         # nor a complete new copy.
         shutil.copy2(imported_db_path, DB_PATH)
+        # A backup from an older version may predate tables this version
+        # queries unconditionally (e.g. poll_votes on every delete).
+        init_db()
 
         imported_uploads = os.path.join(extract_dir, 'uploads')
         if os.path.isdir(imported_uploads):
@@ -2438,7 +2484,7 @@ def extract_single_url(text):
     trimmed = True
     while trimmed and url:
         trimmed = False
-        if re.search(r'[.,!?:;]$', url):
+        if re.search(r'[.,!?:;*]$', url):
             url = url[:-1]
             trimmed = True
         elif url.endswith(')') and url.count('(') < url.count(')'):
@@ -3091,6 +3137,9 @@ def get_subscribers_for_channel(channel, exclude_user_id=None):
     conn.close()
     return [(uid, svc) for uid, svc in rows if svc and uid != exclude_user_id]
 
+# Message types whose content is a JSON payload rather than typed text.
+STRUCTURED_MESSAGE_TYPES = {'calendar_event', 'poll'}
+
 def summarize_message_for_notification(content, msg_type, file_info):
     if msg_type == 'calendar_event':
         # content is a JSON payload here, not display text (see
@@ -3114,6 +3163,12 @@ def summarize_message_for_notification(content, msg_type, file_info):
                 pass
         title = event.get('title', 'Untitled event')
         return f'📅 Added: {title} — {when}' if when else f'📅 Added: {title}'
+    if msg_type == 'poll':
+        try:
+            question = json.loads(content).get('question', '')
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            question = ''
+        return f'📊 Poll: {question}' if question else 'Started a poll'
     content = (content or '').strip()
     if content:
         return content if len(content) <= 200 else content[:197] + '…'
@@ -3123,6 +3178,8 @@ def summarize_message_for_notification(content, msg_type, file_info):
         return 'Sent a photo'
     if msg_type == 'video':
         return 'Sent a video'
+    if msg_type == 'voice':
+        return 'Sent a voice message'
     if msg_type == 'file':
         name = (file_info or {}).get('filename')
         return f'Shared {name}' if name else 'Shared a file'
@@ -3186,7 +3243,7 @@ def record_unread_mentions(channel, message_id, content, msg_type, exclude_user_
     the same find_mentioned_user_ids() call. calendar_event content is
     a JSON payload, not typed text, so there's nothing to scan there —
     same reasoning as the notification path."""
-    if msg_type == 'calendar_event':
+    if msg_type in STRUCTURED_MESSAGE_TYPES:
         return
     mentioned_ids = find_mentioned_user_ids(content, exclude_user_id=exclude_user_id)
     if not mentioned_ids:
@@ -3293,7 +3350,7 @@ def notify_message_subscribers(channel, sender, sender_id, content, msg_type, fi
     # content is a JSON payload, not something a person actually typed —
     # every other type (text, or a caption on an image/file/gif) is real
     # typed content worth scanning.
-    mentioned_ids = find_mentioned_user_ids(content, exclude_user_id=sender_id) if msg_type != 'calendar_event' else []
+    mentioned_ids = find_mentioned_user_ids(content, exclude_user_id=sender_id) if msg_type not in STRUCTURED_MESSAGE_TYPES else []
     prefs_cache = {}
     for user_id in mentioned_ids:
         if user_id in subscribers:
@@ -3815,7 +3872,7 @@ def publish_message(sender, sender_id, content, channel, msg_type='text',
 # produce -- calendar_event messages are created solely by
 # api_create_calendar_event(), a separate, already-validated REST route,
 # never through this event.
-ALLOWED_MESSAGE_TYPES = {'text', 'image', 'video', 'gif', 'file'}
+ALLOWED_MESSAGE_TYPES = {'text', 'image', 'video', 'gif', 'file', 'voice'}
 
 def validate_outgoing_file(msg_type, file_info):
     """A send_message socket payload is otherwise-untrusted client
@@ -3838,6 +3895,10 @@ def validate_outgoing_file(msg_type, file_info):
     fine to store/broadcast as-is."""
     if msg_type not in ALLOWED_MESSAGE_TYPES:
         return 'Not a valid message type.'
+    if msg_type == 'voice':
+        mime_type = file_info.get('mime_type') if isinstance(file_info, dict) else None
+        if not isinstance(mime_type, str) or not mime_type.startswith('audio/'):
+            return 'Invalid voice message.'
     if not file_info:
         return None
     url = file_info.get('url') if isinstance(file_info, dict) else None
@@ -3991,6 +4052,108 @@ def handle_reaction(data):
         'user': requester_name,
         'added': added
     }, room=channel)
+
+POLL_MAX_QUESTION_LENGTH = 300
+POLL_MAX_OPTION_LENGTH = 100
+POLL_MAX_OPTIONS = 10
+
+def validate_poll(data):
+    """Returns (poll_payload, error) from an untrusted create_poll event."""
+    question = data.get('question')
+    question = question.strip() if isinstance(question, str) else ''
+    raw_options = data.get('options')
+    options = []
+    seen = set()
+    for option in raw_options if isinstance(raw_options, list) else []:
+        if not isinstance(option, str) or not option.strip():
+            continue
+        option = option.strip()
+        if option.lower() in seen:
+            continue
+        seen.add(option.lower())
+        options.append(option)
+
+    if not question:
+        return None, 'Give the poll a question.'
+    if len(question) > POLL_MAX_QUESTION_LENGTH:
+        return None, f'Keep the question under {POLL_MAX_QUESTION_LENGTH} characters.'
+    if len(options) < 2:
+        return None, 'A poll needs at least two different options.'
+    if len(options) > POLL_MAX_OPTIONS:
+        return None, f'A poll can have at most {POLL_MAX_OPTIONS} options.'
+    if any(len(o) > POLL_MAX_OPTION_LENGTH for o in options):
+        return None, f'Keep each option under {POLL_MAX_OPTION_LENGTH} characters.'
+    return {'question': question, 'options': options, 'multiple': data.get('multiple') is True}, None
+
+@socketio.on('create_poll')
+@log_socket_errors
+def handle_create_poll(data):
+    sender_id, sender = resolve_ha_identity()
+    if not sender:
+        emit('server_error', {'message': "Couldn't identify you as a Home Assistant user — try reloading the page."})
+        return
+    data = data if isinstance(data, dict) else {}
+    channel = data.get('channel')
+    if channel not in {c['slug'] for c in get_channels()}:
+        emit('server_error', {'message': f'There is no channel "{channel}".'})
+        return
+    poll, error = validate_poll(data)
+    if error:
+        emit('server_error', {'message': error})
+        return
+    # ensure_ascii=False keeps non-English questions searchable, since
+    # /api/search matches against the stored content.
+    publish_message(sender, sender_id, json.dumps(poll, ensure_ascii=False), channel, 'poll')
+
+@socketio.on('poll_vote')
+@log_socket_errors
+def handle_poll_vote(data):
+    voter_id, voter_name = resolve_ha_identity()
+    if not voter_id:
+        emit('server_error', {'message': "Couldn't identify you as a Home Assistant user — try reloading the page."})
+        return
+    data = data if isinstance(data, dict) else {}
+    try:
+        message_id = int(data.get('message_id'))
+        option_index = int(data.get('option_index'))
+    except (TypeError, ValueError):
+        return
+
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT channel, content FROM messages WHERE id = ? AND message_type = 'poll'", (message_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return
+    channel, content = row
+    try:
+        poll = json.loads(content)
+        option_count = len(poll['options'])
+    except (json.JSONDecodeError, TypeError, KeyError):
+        conn.close()
+        return
+    if not 0 <= option_index < option_count:
+        conn.close()
+        return
+
+    # Clicking an option you already picked takes the vote back. On a
+    # single-answer poll, picking a different option moves your vote.
+    c.execute('SELECT option_index FROM poll_votes WHERE message_id = ? AND user_id = ?', (message_id, voter_id))
+    current = {r[0] for r in c.fetchall()}
+    if option_index in current:
+        c.execute('DELETE FROM poll_votes WHERE message_id = ? AND user_id = ? AND option_index = ?',
+                  (message_id, voter_id, option_index))
+    else:
+        if not poll.get('multiple'):
+            c.execute('DELETE FROM poll_votes WHERE message_id = ? AND user_id = ?', (message_id, voter_id))
+        c.execute('INSERT INTO poll_votes (message_id, option_index, user_id, user_name, voted_at) VALUES (?, ?, ?, ?, ?)',
+                  (message_id, option_index, voter_id, voter_name or 'Someone', datetime.now().isoformat()))
+    conn.commit()
+    votes = get_poll_votes(c, [message_id]).get(message_id, {})
+    conn.close()
+
+    emit('poll_updated', {'message_id': message_id, 'votes': votes}, room=channel)
 
 @socketio.on('delete_message')
 @log_socket_errors

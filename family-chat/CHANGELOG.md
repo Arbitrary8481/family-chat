@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.52.0
+
+### Added
+- **Polls.** A new 📊 button in the message bar opens a small form: a question, 2–10 options, and an "Allow more than one answer" switch. Everyone in the channel can vote by tapping an option. Votes update live for everyone, each option shows its count, a bar for its share of voters and who picked it, and your own picks are marked. Tapping an option you already picked takes the vote back; on a one-answer poll, tapping a different option moves your vote. Polls can be pinned, moved to another channel (votes go with them) and deleted (votes are deleted with them). A poll shows as "📊 Poll: question" in notifications, search, replies, the pinned list and the admin Activity log.
+- **Voice messages.** Hold the new 🎤 button to record, let go to send. Slide your finger (or mouse) well away from the button before letting go to cancel. A quick tap shows a "hold to record" hint instead of sending, and recordings stop and send on their own after 5 minutes. Voice messages play inline, and starting one pauses any other that's playing.
+- **Basic message formatting:** `**bold**`, `*italic*` or `_italic_`, `` `inline code` ``, ``` fenced code blocks, and lists (lines starting with `- ` or `1. `). Formatting markers have to sit at word boundaries, so `snake_case`, `5*3*2` and custom emoji names like `:smug_face:` are left alone, and links, @mentions and phone numbers still work inside formatted text. Text inside code is shown exactly as typed. Editing a message shows the original markers again.
+- **Unsent drafts are kept per channel.** Text you've typed but not sent now stays with its channel when you switch away, comes back when you return, and survives a reload. Previously the text stayed in the box and followed you into whichever channel you opened next. Drafts are stored in the browser, separately for each person signed in on it, and are cleared once sent.
+
+### Fixed
+- **The "is typing…" indicator pushed the newest message out of view.** When it appeared it added a row above the message box, shrinking the message list. It now sits in the empty space just below the message box, so nothing moves when it appears.
+- **Every "page not found" or "method not allowed" response was reported as a 500 server error**, with a traceback in the log, because the catch-all error handler also caught Flask's normal HTTP errors. Those now return their real status codes.
+- Restoring a backup made by an older version now adds any missing database tables right away, instead of on the next restart.
+- A link wrapped in bold (`**https://…**`) no longer includes the asterisks in the link or its preview.
+- **The light theme showed sender names, the "Welcome to #channel" heading and other headings as white text on a white background.** It never overrode the dark theme's near-white text colors. It now sets dark values for them, plus lighter selected/hover backgrounds for the channel list. The dark theme is unchanged.
+
+### Notes
+- **Voice messages need Home Assistant to be opened over HTTPS** (for example through Home Assistant Cloud, or with your own certificate). Browsers only allow microphone access on secure connections, so on a plain `http://` address the 🎤 button explains this instead of recording. The Home Assistant companion app also needs microphone permission. Recording was tested in Chromium with a simulated microphone, including press-and-hold on a phone-sized touch screen. It hasn't been tested on a real iPhone or Android phone yet.
+- Android phones and desktop browsers record WebM audio; iPhones record M4A. Older iPhones and iPads may not be able to play WebM recordings.
+- The message bar can now hold up to seven buttons. Spacing tightens on narrow screens so they all fit on a 320px-wide phone.
+- 11 new automated tests cover poll validation, voting (moving, taking back and multiple-answer votes, ignored invalid votes, cleanup on delete), voice-message validation and the new summaries. All 50 tests pass.
+
 ## 2.51.1
 
 ### Security
