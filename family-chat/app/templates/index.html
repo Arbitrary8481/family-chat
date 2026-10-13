@@ -132,15 +132,6 @@
                 <span class="scroll-to-bottom-badge hidden" id="scrollToBottomBadge">0</span>
             </button>
 
-            <!-- Typing indicator — populated and shown/hidden entirely
-                 from script.js (renderTypingIndicator()); the name and
-                 is/are here are just placeholder text for anyone
-                 viewing the page source before any typing event has
-                 ever arrived. -->
-            <div class="typing-indicator hidden" id="typingIndicator">
-                <span id="typingUser">Someone</span> <span id="typingVerb">is</span> typing<span class="dots">...</span>
-            </div>
-
             <div class="input-container">
                 <div class="reply-preview-bar hidden" id="replyPreviewBar">
                     <div class="reply-preview-content">
@@ -156,6 +147,11 @@
                                maxlength="20000"
                                autocomplete="off"
                                rows="1"></textarea>
+                        <!-- Covers the text box while the mic button is held. -->
+                        <div class="voice-recording-bar hidden" id="voiceRecordingBar" aria-live="polite">
+                            <span class="voice-recording-dot"></span>
+                            <span id="voiceRecordingText">Recording 0:00</span>
+                        </div>
                     </div>
 
                     <!-- Grouped into its own container (rather than
@@ -194,8 +190,24 @@
                         </button>
                         {% endif %}
 
+                        <button class="poll-btn" onclick="openPollModal()" title="Start a poll">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                                <line x1="5" y1="20" x2="5" y2="12"/>
+                                <line x1="12" y1="20" x2="12" y2="5"/>
+                                <line x1="19" y1="20" x2="19" y2="9"/>
+                            </svg>
+                        </button>
+
                         <button class="emoji-btn" onclick="toggleEmojiPicker()" title="Add emoji">
                             😊
+                        </button>
+
+                        <button class="mic-btn" id="micBtn" type="button" title="Hold to record a voice message" aria-label="Hold to record a voice message">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="9" y="2" width="6" height="12" rx="3"/>
+                                <path d="M5 10a7 7 0 0 0 14 0"/>
+                                <line x1="12" y1="17" x2="12" y2="22"/>
+                            </svg>
                         </button>
 
                         <button class="send-btn" onclick="sendMessageClick()" title="Send">
@@ -204,6 +216,14 @@
                             </svg>
                         </button>
                     </div>
+                </div>
+
+                <!-- Typing indicator, shown/hidden from script.js
+                     (renderTypingIndicator()). Sits in the composer's
+                     existing bottom padding so showing it never shifts
+                     the message list. -->
+                <div class="typing-indicator hidden" id="typingIndicator">
+                    <span id="typingUser">Someone</span> <span id="typingVerb">is</span> typing<span class="dots">...</span>
                 </div>
 
                 <!-- @mention autocomplete — appears while typing @Name in
@@ -553,6 +573,30 @@
 
                 <button class="btn btn-primary" onclick="submitCalendarEvent()" style="width:100%; margin-top:14px;">Add to Calendar</button>
                 <p id="calendarEventStatus" class="settings-save-status hidden"></p>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal hidden" id="pollModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>📊 Start a Poll</h3>
+                <button class="close-btn" onclick="closePollModal()">×</button>
+            </div>
+            <div class="settings-section">
+                <label for="pollQuestion" class="form-label">Question</label>
+                <input type="text" id="pollQuestion" class="settings-select" maxlength="300" placeholder="Pizza or tacos tonight?">
+
+                <label class="form-label" style="margin-top: 14px;">Options</label>
+                <div id="pollOptions" class="poll-option-inputs"></div>
+                <button type="button" class="btn btn-secondary poll-add-option" id="pollAddOption" onclick="addPollOptionInput()">+ Add option</button>
+
+                <label class="settings-toggle-label" style="margin-top: 14px;">
+                    <input type="checkbox" id="pollMultiple">
+                    Allow more than one answer
+                </label>
+
+                <button class="btn btn-primary" onclick="submitPoll()" style="width:100%; margin-top:14px;">Post Poll</button>
             </div>
         </div>
     </div>
