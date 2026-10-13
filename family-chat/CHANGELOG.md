@@ -13,6 +13,7 @@
 - **Every "page not found" or "method not allowed" response was reported as a 500 server error**, with a traceback in the log, because the catch-all error handler also caught Flask's normal HTTP errors. Those now return their real status codes.
 - Restoring a backup made by an older version now adds any missing database tables right away, instead of on the next restart.
 - A link wrapped in bold (`**https://…**`) no longer includes the asterisks in the link or its preview.
+- **The light theme showed sender names, the "Welcome to #channel" heading and other headings as white text on a white background.** It never overrode the dark theme's near-white text colors. It now sets dark values for them, plus lighter selected/hover backgrounds for the channel list. The dark theme is unchanged.
 
 ### Notes
 - **Voice messages need Home Assistant to be opened over HTTPS** (for example through Home Assistant Cloud, or with your own certificate). Browsers only allow microphone access on secure connections, so on a plain `http://` address the 🎤 button explains this instead of recording. The Home Assistant companion app also needs microphone permission. Recording was tested in Chromium with a simulated microphone, including press-and-hold on a phone-sized touch screen. It hasn't been tested on a real iPhone or Android phone yet.

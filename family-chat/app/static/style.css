@@ -29,6 +29,11 @@
     --bg-floating: #fff;
     --text-normal: #2e3338;
     --text-muted: #5e6772;
+    --bg-modifier-hover: rgba(116, 127, 141, 0.16);
+    --bg-modifier-active: rgba(116, 127, 141, 0.28);
+    --channels-default: #5c5e66;
+    --interactive-hover: #2e3338;
+    --interactive-active: #060607;
 }
 
 * {
