@@ -14,33 +14,45 @@ function getStoredChannel() {
     return null;
 }
 
-function getChannelFromUrl() {
-    // Set by a notification's clickAction (see send_ha_notification()
-    // server-side) — best-effort, since whether this query param
-    // actually survives Home Assistant's own redirect into a fresh
-    // ingress session is genuinely uncertain, not something this app
-    // controls either way. If it doesn't arrive intact, this simply
-    // returns null and falls through to the normal stored/default
-    // channel below, same as any other page load.
-    try {
-        const params = new URLSearchParams(window.location.search);
-        const requested = params.get('channel');
-        if (!requested) return null;
-        // Cleaned from the address bar right away regardless of whether
-        // it turned out to be a real, currently-existing channel —
-        // otherwise reloading the page (or the ingress iframe simply
-        // re-rendering) would keep forcing the same channel indefinitely.
-        const url = new URL(window.location.href);
-        url.searchParams.delete('channel');
-        window.history.replaceState({}, '', url);
-        if (document.querySelector(`.channel[data-channel="${CSS.escape(requested)}"]`)) {
-            return requested;
+// Home Assistant 2026.2+ shows this app inside its /app/<slug> page and,
+// once asked with subscribe-properties, posts any extra path from that
+// page's address to the app. A tapped notification opens
+// /app/<slug>/channel/<channel> (see notification_link() server-side),
+// so that path picks the channel. The address is then reset to the plain
+// app page; otherwise the same path, re-sent whenever the phone rotates,
+// or a reload, would keep pulling you back to that channel.
+function listenForHomeAssistantRoute() {
+    if (window.parent === window) return;
+    window.addEventListener('message', (e) => {
+        if (e.source !== window.parent || e.origin !== window.location.origin) return;
+        const data = e.data;
+        if (data && data.type === 'home-assistant/properties' && data.route) {
+            handleHomeAssistantRoute(data.route);
         }
-    } catch (e) {}
-    return null;
+    });
+    window.parent.postMessage({ type: 'home-assistant/subscribe-properties' }, window.location.origin);
 }
 
-let currentChannel = getChannelFromUrl() || getStoredChannel() || window.DEFAULT_CHANNEL || 'general';
+function handleHomeAssistantRoute(route) {
+    const match = /^\/channel\/([^/]+)/.exec(route.path || '');
+    if (!match) return;
+    let slug = null;
+    try {
+        slug = decodeURIComponent(match[1]);
+    } catch (e) {}
+    if (slug && slug !== currentChannel && document.querySelector(`.channel[data-channel="${CSS.escape(slug)}"]`)) {
+        switchChannel(slug);
+    }
+    if (typeof route.prefix === 'string' && route.prefix.startsWith('/app/')) {
+        window.parent.postMessage({
+            type: 'home-assistant/navigate',
+            path: route.prefix,
+            options: { replace: true },
+        }, window.location.origin);
+    }
+}
+
+let currentChannel = getStoredChannel() || window.DEFAULT_CHANNEL || 'general';
 let selectedFile = null;
 
 // --- Typing indicator state ---
@@ -653,6 +665,7 @@ function initializeChat() {
     });
     
     initVoiceRecording();
+    listenForHomeAssistantRoute();
 
     currentEmojiCategory = 'people';
     loadEmojiCategory('people');
