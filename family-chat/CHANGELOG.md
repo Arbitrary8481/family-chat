@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.52.1
+
+### Fixed
+- **Tapping a notification showed "Unable to connect to Home Assistant" instead of opening the chat.** Notifications linked to `/hassio/ingress/<app>`, a page Home Assistant removed in 2026.2 along with the old Supervisor panel. Apps now open at `/app/<app>`. Notifications now link to `/app/<app>/channel/<channel>`, and the chat opens straight to the channel the message was posted in. On versions before 2026.2 the old link is still used, which opens the chat on its usual channel.
+- **Tapping a notification on an iPhone didn't open the chat at all.** Only Android's `clickAction` field was set; the iPhone Companion App reads `url`. Both are set now.
+
+### Notes
+- Home Assistant passes the `/channel/<channel>` part of the address to the app inside its page. The chat then switches channel and resets the address to the plain app page, so a reload, or rotating the phone, doesn't keep pulling you back to that channel.
+- Tested against a stand-in for Home Assistant's app page that behaves like its current frontend code, plus 6 new automated tests for the link and the notification data. It hasn't been tested on a real phone yet.
+
 ## 2.52.0
 
 ### Added

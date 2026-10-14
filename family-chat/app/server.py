@@ -3024,6 +3024,39 @@ def get_own_slug():
         logger.warning('Could not determine this app\'s own slug (notification deep links will be skipped): %s', e)
         return None
 
+_uses_app_panel_cache = None
+
+def ha_uses_app_panel():
+    """Whether Home Assistant opens apps at /app/<slug> (2026.2 and later,
+    when the Supervisor panel and its /hassio/ingress/<slug> route were
+    removed) rather than /hassio/ingress/<slug>. Assumes the newer layout
+    if the version can't be read. Cached once known."""
+    global _uses_app_panel_cache
+    if _uses_app_panel_cache is not None:
+        return _uses_app_panel_cache
+    config, _ = ha_api_request('GET', '/config')
+    match = re.match(r'(\d+)\.(\d+)', str((config or {}).get('version', '')))
+    if not match:
+        return True
+    _uses_app_panel_cache = (int(match.group(1)), int(match.group(2))) >= (2026, 2)
+    return _uses_app_panel_cache
+
+def notification_link(channel=None):
+    """The Home Assistant page a tapped notification should open, or None
+    if this app's slug is unknown. On 2026.2+ the app panel passes any
+    path after /app/<slug> to the app (see handleHomeAssistantRoute() in
+    script.js), which is how /channel/<slug> opens the right channel.
+    Older versions can only open the app itself."""
+    own_slug = get_own_slug()
+    if not own_slug:
+        return None
+    if not ha_uses_app_panel():
+        return f'/hassio/ingress/{own_slug}'
+    link = f'/app/{own_slug}'
+    if channel:
+        link += f'/channel/{urllib.parse.quote(channel, safe="")}'
+    return link
+
 def send_ha_notification(notify_service, title, message, channel=None):
     """Calls notify.<service> in Home Assistant. notify_service may be
     given with or without the "notify." prefix. channel, if given, is the
@@ -3053,24 +3086,11 @@ def send_ha_notification(notify_service, title, message, channel=None):
         return False, 'Invalid device.'
 
     payload = {'title': title, 'message': message}
-    # /hassio/ingress/<slug> is Home Assistant's own stable, session-
-    # independent entry point for an ingress app — the same URL "Open
-    # Web UI" itself links to — which is why it's usable here at all;
-    # the actual per-session ingress proxy URL (/api/hassio_ingress/
-    # <token>/...) is generated fresh by Home Assistant's frontend and
-    # can't be constructed ahead of time for a notification. The
-    # channel query param is attached on the chance it survives HA's
-    # own redirect into that session — genuinely uncertain given how
-    # that redirect is generated, so the frontend treats it as
-    # optional and this degrades gracefully either way: worst case, the
-    # notification still opens this app directly instead of Home
-    # Assistant's main dashboard, which is the reliable part.
-    own_slug = get_own_slug()
-    if own_slug:
-        click_action = f'/hassio/ingress/{own_slug}'
-        if channel:
-            click_action += f'?channel={urllib.parse.quote(channel)}'
-        payload['data'] = {'clickAction': click_action}
+    # The Companion App opens this page when the notification is tapped:
+    # Android reads clickAction, iOS reads url.
+    link = notification_link(channel)
+    if link:
+        payload['data'] = {'clickAction': link, 'url': link}
 
     _, error = ha_api_request('POST', f'/services/notify/{service}', payload)
     return (error is None), error
