@@ -1407,7 +1407,7 @@ function addMessage(data, insertMode = 'append') {
     const replyQuoteHtml = data.reply_to_id ? `
         <div class="message-reply-quote" data-jump-to="${data.reply_to_id}">
             <span class="reply-quote-sender">${escapeHtml(data.reply_to_sender || 'Someone')}</span>
-            <span class="reply-quote-text">${escapeHtml(data.reply_to_summary || '')}</span>
+            <span class="reply-quote-text">${escapeHtml(stripFormatting(data.reply_to_summary || ''))}</span>
         </div>
     ` : '';
 
@@ -1881,8 +1881,15 @@ function renderPlainText(text) {
 }
 
 const FORMAT_TAGS = { 1: '<strong>', 2: '</strong>', 3: '<em>', 4: '</em>' };
-const BULLET_LINE = /^\s*[-*•]\s+(.+)$/;
-const NUMBERED_LINE = /^\s*(\d{1,3})[.)]\s+(.+)$/;
+// Every pattern here has exactly one way to match a given span, so a
+// long hostile message costs linear time, not quadratic: list text must
+// start with a non-space after the \s+, bold text can't contain "**",
+// and italic text can't contain its own marker. server.py mirrors these.
+const BULLET_LINE = /^\s*[-*•]\s+(\S.*)$/;
+const NUMBERED_LINE = /^\s*(\d{1,3})[.)]\s+(\S.*)$/;
+const BOLD_STARS = /(?<![\w*])\*\*(?=[^\s*])((?:[^*\n]|\*(?!\*))+?)(?<=[^\s*])\*\*(?![\w*])/g;
+const ITALIC_STAR = /(?<![\w*])\*(?=[^\s*])([^*\n]+?)(?<=\S)\*(?![\w*])/g;
+const ITALIC_UNDERSCORE = /(?<![\w_])_(?=[^\s_])([^_\n]+?)(?<=\S)_(?![\w_])/g;
 const CODE_FENCE_OPEN = /^\s*```/;
 const CODE_FENCE_CLOSE = /^\s*```\s*$/;
 
@@ -1908,9 +1915,9 @@ function renderInlineText(text) {
         return `\x00U${urls.length - 1}\x00` + raw.slice(url.length);
     });
     t = t
-        .replace(/(?<![\w*])\*\*(?=[^\s*])(.+?)(?<=[^\s*])\*\*(?![\w*])/g, '\x00F1\x00$1\x00F2\x00')
-        .replace(/(?<![\w*])\*(?=[^\s*])(.+?)(?<=[^\s*])\*(?![\w*])/g, '\x00F3\x00$1\x00F4\x00')
-        .replace(/(?<![\w_])_(?=[^\s_])(.+?)(?<=[^\s_])_(?![\w_])/g, '\x00F3\x00$1\x00F4\x00');
+        .replace(BOLD_STARS, '\x00F1\x00$1\x00F2\x00')
+        .replace(ITALIC_STAR, '\x00F3\x00$1\x00F4\x00')
+        .replace(ITALIC_UNDERSCORE, '\x00F3\x00$1\x00F4\x00');
     t = t.replace(/\x00U(\d+)\x00/g, (m, i) => urls[Number(i)]);
     return renderPlainText(t)
         .replace(/\x00F([1-4])\x00/g, (m, k) => FORMAT_TAGS[k])
@@ -2006,6 +2013,26 @@ function phoneMatchToTelHref(phoneGroup, extGroup) {
     return extGroup ? `${href};ext=${extGroup}` : href;
 }
 
+// One-line plain text for a reply preview: the formatting marks are
+// removed exactly as renderMessageText() would hide them. Rendered into
+// an inert <template>, so no image in it loads and nothing runs.
+function stripFormatting(text) {
+    const tpl = document.createElement('template');
+    tpl.innerHTML = renderMessageText(text);
+    const root = tpl.content;
+    root.querySelectorAll('ol').forEach(ol => {
+        const start = Number(ol.getAttribute('start')) || 1;
+        ol.querySelectorAll(':scope > li').forEach((li, i) => li.prepend(`${start + i}. `));
+    });
+    root.querySelectorAll('ul > li').forEach(li => li.prepend('• '));
+    root.querySelectorAll('li, pre').forEach(el => {
+        el.before(' ');
+        el.after(' ');
+    });
+    root.querySelectorAll('img[alt]').forEach(img => img.replaceWith(img.alt));
+    return root.textContent.replace(/\s+/g, ' ').trim();
+}
+
 // Trailing punctuation almost always belongs to the sentence, not the
 // link — "check this out: https://example.com." should not swallow the
 // period, and "**https://example.com**" should not swallow the bold
@@ -2015,21 +2042,24 @@ function phoneMatchToTelHref(phoneGroup, extGroup) {
 // real URLs (e.g. Wikipedia article titles) legitimately end in one.
 // extract_single_url() server-side mirrors this.
 function trimUrlTrailingPunctuation(url) {
-    let trimmed = true;
-    while (trimmed && url.length > 0) {
-        trimmed = false;
-        if (/[.,!?:;*]$/.test(url)) {
-            url = url.slice(0, -1);
-            trimmed = true;
-        } else if (url.endsWith(')') && (url.match(/\(/g) || []).length < (url.match(/\)/g) || []).length) {
-            url = url.slice(0, -1);
-            trimmed = true;
-        } else if (url.endsWith(']') && (url.match(/\[/g) || []).length < (url.match(/\]/g) || []).length) {
-            url = url.slice(0, -1);
-            trimmed = true;
+    // Counted once and walked backwards: re-counting on every step made a
+    // link followed by thousands of ")" take quadratic time.
+    const count = (ch) => url.split(ch).length - 1;
+    const opens = { ')': count('('), ']': count('[') };
+    const closes = { ')': count(')'), ']': count(']') };
+    let end = url.length;
+    while (end > 0) {
+        const ch = url[end - 1];
+        if ('.,!?:;*'.includes(ch)) {
+            end -= 1;
+        } else if ((ch === ')' || ch === ']') && opens[ch] < closes[ch]) {
+            closes[ch] -= 1;
+            end -= 1;
+        } else {
+            break;
         }
     }
-    return url;
+    return url.slice(0, end);
 }
 
 function linkifyText(text) {
@@ -3075,7 +3105,7 @@ function summarizeMessageForReply(data, msgType) {
             return 'Started a poll';
         }
     }
-    const content = (data.content || '').trim();
+    const content = stripFormatting(data.content || '');
     if (content) {
         return content.length <= 200 ? content : content.slice(0, 197) + '…';
     }

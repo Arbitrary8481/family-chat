@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.52.2
+
+### Fixed
+- **Message previews showed raw formatting marks**, like `**Saturday**` or `` `sunscreen` ``. They're now plain text, with list items as `• item`, in:
+  - the quote on a reply and the "Replying to…" bar above the message box
+  - push notifications
+  - the 📌 pinned messages list
+  - the admin Activity log
+
+  Marks are removed exactly where a message would hide them, so `snake_case`, `5*3*2` and links are left as typed. Older replies, pins and Activity log entries are cleaned up too.
+
+### Security
+- **A specially crafted message could make the chat or the server slow to a crawl.** Some of the formatting patterns (lists, bold, italic) could match the same text in many ways, so a long message full of spaces or unclosed `*`/`_` marks took time that grew with the square of its length. Measured on a 20,000-character message:
+  - up to 170ms in the browser for each message shown
+  - up to 1.2 seconds on the server for each notification, pin list or Activity log that summarized it, stalling the server for everyone
+
+  The same happened with a link followed by thousands of `)` or `]`, in the link-trimming code that link previews have always used. Each pattern now has only one way to match, and those cases take 1–4ms. GitHub's CodeQL scan flagged the list patterns. The others were found by timing worst-case messages after that.
+- One visible side effect: bold text can't contain `**`, and italic text can't contain its own marker. So `_snake_case_` is no longer shown in italics as a whole. `**bold *italic* inside**` still works.
+
+### Notes
+- The server has its own copy of the browser's mark-removal rules, for notifications, pins and the Activity log. A check across 13 sample messages gave identical results in both. 4 new automated tests cover the server side; all 60 tests pass.
+
 ## 2.52.1
 
 ### Fixed
