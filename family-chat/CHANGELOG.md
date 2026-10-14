@@ -3,7 +3,16 @@
 ## 2.52.2
 
 ### Fixed
-- **Reply previews showed raw formatting marks**, like `**Saturday**` or `` `sunscreen` ``. The quote on a reply and the "Replying to…" bar above the message box now show the plain text, with list items as `• item`. Marks are removed exactly where a message would hide them, so `snake_case`, `5*3*2` and links are left as typed. This also applies to replies sent before this version.
+- **Message previews showed raw formatting marks**, like `**Saturday**` or `` `sunscreen` ``. They're now plain text, with list items as `• item`, in:
+  - the quote on a reply and the "Replying to…" bar above the message box
+  - push notifications
+  - the 📌 pinned messages list
+  - the admin Activity log
+
+  Marks are removed exactly where a message would hide them, so `snake_case`, `5*3*2` and links are left as typed. Older replies, pins and Activity log entries are cleaned up too.
+
+### Notes
+- The server has its own copy of the browser's mark-removal rules, for notifications, pins and the Activity log. A check across 13 sample messages gave identical results in both. 4 new automated tests cover the server side; all 60 tests pass.
 
 ## 2.52.1
 

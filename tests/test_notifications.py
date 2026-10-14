@@ -72,5 +72,45 @@ class NotificationLinkTests(unittest.TestCase):
         self.assertEqual(body["data"], {"clickAction": link, "url": link})
 
 
+@unittest.skipIf(server is None, "the app's dependencies (Flask etc.) are not installed")
+class StripFormattingTests(unittest.TestCase):
+    def test_marks_are_removed_like_the_chat_hides_them(self):
+        cases = [
+            ("Trip on **Saturday**, _bring snacks_:\n- `sunscreen`\n- towels",
+             "Trip on Saturday, bring snacks:\n• sunscreen\n• towels"),
+            ("3. leave at 9\n4. lunch at **noon**", "3. leave at 9\n4. lunch at noon"),
+            ("look:\n```\ngate **code**\n```\nthanks", "look:\ngate **code**\nthanks"),
+            ("snake_case, 5*3*2 and :smug_face: stay", "snake_case, 5*3*2 and :smug_face: stay"),
+            ("**https://example.com/a_b_c**", "https://example.com/a_b_c"),
+            ("`code with **stars**` then **bold**", "code with **stars** then bold"),
+            ("** not bold **", "** not bold **"),
+            ("", ""),
+        ]
+        for text, expected in cases:
+            with self.subTest(text=text):
+                self.assertEqual(server.strip_formatting(text), expected)
+
+    def test_summaries_are_stripped_before_truncating(self):
+        # 203 characters raw, 199 without the marks: fits, so nothing is cut.
+        summary = server.summarize_message_for_notification("**" + "a" * 199 + "**", "text", None)
+        self.assertEqual(summary, "a" * 199)
+        self.assertEqual(server.summarize_message_for_notification("_hi_ **there**", "text", None), "hi there")
+
+    def test_notification_body_has_no_marks(self):
+        sent = []
+        with mock.patch.object(server, "SUPERVISOR_TOKEN", "token"), \
+             mock.patch.object(server, "get_subscribers_for_channel", return_value=[("bob", "mobile_app_pixel")]), \
+             mock.patch.object(server, "get_notify_service", return_value=None), \
+             mock.patch.object(server, "send_ha_notification", side_effect=lambda *a, **k: sent.append(a) or (True, None)):
+            server.notify_message_subscribers("general", "Alice", "alice", "Dinner at **6**, bring `forks`", "text", None)
+        self.assertEqual(sent[0][2], "Dinner at 6, bring forks")
+
+    def test_activity_log_entries_saved_with_marks_are_shown_without_them(self):
+        server.init_db()
+        server.record_moderation_action("delete", 1, "Alice", "alice", "general", "**old** raw _summary_",
+                                        "alice", "Alice", "self")
+        self.assertEqual(server.get_moderation_log(limit=1)[0]["message_summary"], "old raw summary")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1321,6 +1321,9 @@ def get_moderation_log(limit=200):
                'channel', 'target_channel', 'actor_name', 'actor_role']
     result = [dict(zip(columns, row)) for row in c.fetchall()]
     conn.close()
+    # Entries recorded before summaries were stripped still hold raw marks.
+    for entry in result:
+        entry['message_summary'] = strip_formatting(entry['message_summary'])
     return result
 
 def _moderation_role(sender_id, requester_id, privileged_role):
@@ -2480,7 +2483,10 @@ def extract_single_url(text):
     matches = LINK_PREVIEW_URL_PATTERN.findall(text or '')
     if len(matches) != 1:
         return None
-    url = matches[0]
+    return trim_url_trailing_punctuation(matches[0]) or None
+
+def trim_url_trailing_punctuation(url):
+    """Mirrors trimUrlTrailingPunctuation() in script.js."""
     trimmed = True
     while trimmed and url:
         trimmed = False
@@ -2493,7 +2499,64 @@ def extract_single_url(text):
         elif url.endswith(']') and url.count('[') < url.count(']'):
             url = url[:-1]
             trimmed = True
-    return url or None
+    return url
+
+# Same rules as renderMessageText()/renderInlineText() in script.js.
+# re.ASCII keeps \w matching JavaScript's ASCII-only \w.
+_CODE_FENCE_OPEN = re.compile(r'^\s*```')
+_CODE_FENCE_CLOSE = re.compile(r'^\s*```\s*$')
+_BULLET_LINE = re.compile(r'^\s*[-*•]\s+(.+)$')
+_NUMBERED_LINE = re.compile(r'^\s*\d{1,3}[.)]\s+.+$')
+_INLINE_CODE = re.compile(r'(`{1,3})([^`\n]+?)\1')
+_URL_IN_TEXT = re.compile(r'https?://[^\s<>"\'\x00]+')
+_EMPHASIS_PATTERNS = [re.compile(p, re.ASCII) for p in (
+    r'(?<![\w*])\*\*(?=[^\s*])(.+?)(?<=[^\s*])\*\*(?![\w*])',
+    r'(?<![\w*])\*(?=[^\s*])(.+?)(?<=[^\s*])\*(?![\w*])',
+    r'(?<![\w_])_(?=[^\s_])(.+?)(?<=[^\s_])_(?![\w_])',
+)]
+
+def _strip_inline_formatting(text):
+    code_spans = []
+    urls = []
+
+    def shield_code(m):
+        code_spans.append(m.group(2))
+        return f'\x00K{len(code_spans) - 1}\x00'
+
+    def shield_url(m):
+        url = trim_url_trailing_punctuation(m.group(0))
+        if not url:
+            return m.group(0)
+        urls.append(url)
+        return f'\x00U{len(urls) - 1}\x00' + m.group(0)[len(url):]
+
+    text = _INLINE_CODE.sub(shield_code, text)
+    text = _URL_IN_TEXT.sub(shield_url, text)
+    for pattern in _EMPHASIS_PATTERNS:
+        text = pattern.sub(r'\1', text)
+    text = re.sub(r'\x00U(\d+)\x00', lambda m: urls[int(m.group(1))], text)
+    return re.sub(r'\x00K(\d+)\x00', lambda m: code_spans[int(m.group(1))], text)
+
+def strip_formatting(text):
+    """A message's text without the formatting marks the chat hides when
+    showing it (bold, italic, code, code fences, list dashes), for
+    notifications and other plain-text summaries. Line breaks are kept;
+    bullet items become "• item"."""
+    lines = (text or '').replace('\x00', '').split('\n')
+    out = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if _CODE_FENCE_OPEN.match(line):
+            close = next((j for j in range(i + 1, len(lines)) if _CODE_FENCE_CLOSE.match(lines[j])), None)
+            if close is not None:
+                out.extend(lines[i + 1:close])
+                i = close + 1
+                continue
+        bullet = None if _NUMBERED_LINE.match(line) else _BULLET_LINE.match(line)
+        out.append(f'• {_strip_inline_formatting(bullet.group(1))}' if bullet else _strip_inline_formatting(line))
+        i += 1
+    return '\n'.join(out)
 
 def _safe_ips_for_hostname(hostname):
     """Every IP a hostname resolves to, or None if any one of them is
@@ -3189,7 +3252,7 @@ def summarize_message_for_notification(content, msg_type, file_info):
         except (json.JSONDecodeError, TypeError, AttributeError):
             question = ''
         return f'📊 Poll: {question}' if question else 'Started a poll'
-    content = (content or '').strip()
+    content = strip_formatting(content).strip()
     if content:
         return content if len(content) <= 200 else content[:197] + '…'
     if msg_type == 'gif':
