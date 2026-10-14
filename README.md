@@ -86,7 +86,7 @@ Family Chat is a Home Assistant app that provides a self-hosted, real-time messa
 ### Notifications
 | Feature | Description |
 |---------|-------------|
-| **Push Notifications** | Get notified on your phone via Home Assistant Companion App |
+| **Push Notifications** | Get notified on your phone via Home Assistant Companion App. Tapping one opens the chat on the channel the message was posted in |
 | **Per-Channel Subscriptions** | Choose which channels notify you |
 | **@Mention Alerts** | Always notified when mentioned, regardless of subscription |
 | **Post from Home Assistant** | Any automation can post a message into any channel (see [Home Assistant Automations](#home-assistant-automations)); it's labelled `BOT` and notifies people by their own preferences |
@@ -462,6 +462,7 @@ See [CHANGELOG.md](family-chat/CHANGELOG.md) for detailed version history.
 
 **Recent Highlights:**
 
+- **v2.52.1** — Tapping a notification opens the chat on the right channel
 - **v2.52.0** — Polls, voice messages, message formatting, per-channel drafts, and a light theme fix
 - **v2.51.1** — Security fixes (DNS-rebinding SSRF, backup decompression bomb, and more)
 - **v2.51.0** — Drag-and-drop channel reordering in the admin panel
