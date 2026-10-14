@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.52.2
+
+### Fixed
+- **Reply previews showed raw formatting marks**, like `**Saturday**` or `` `sunscreen` ``. The quote on a reply and the "Replying to…" bar above the message box now show the plain text, with list items as `• item`. Marks are removed exactly where a message would hide them, so `snake_case`, `5*3*2` and links are left as typed. This also applies to replies sent before this version.
+
 ## 2.52.1
 
 ### Fixed

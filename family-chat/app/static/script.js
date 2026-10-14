@@ -1407,7 +1407,7 @@ function addMessage(data, insertMode = 'append') {
     const replyQuoteHtml = data.reply_to_id ? `
         <div class="message-reply-quote" data-jump-to="${data.reply_to_id}">
             <span class="reply-quote-sender">${escapeHtml(data.reply_to_sender || 'Someone')}</span>
-            <span class="reply-quote-text">${escapeHtml(data.reply_to_summary || '')}</span>
+            <span class="reply-quote-text">${escapeHtml(stripFormatting(data.reply_to_summary || ''))}</span>
         </div>
     ` : '';
 
@@ -2004,6 +2004,26 @@ const PHONE_PATTERN_SOURCE =
 function phoneMatchToTelHref(phoneGroup, extGroup) {
     const href = 'tel:' + (phoneGroup.trim().startsWith('+') ? '+' : '') + phoneGroup.replace(/\D/g, '');
     return extGroup ? `${href};ext=${extGroup}` : href;
+}
+
+// One-line plain text for a reply preview: the formatting marks are
+// removed exactly as renderMessageText() would hide them. Rendered into
+// an inert <template>, so no image in it loads and nothing runs.
+function stripFormatting(text) {
+    const tpl = document.createElement('template');
+    tpl.innerHTML = renderMessageText(text);
+    const root = tpl.content;
+    root.querySelectorAll('ol').forEach(ol => {
+        const start = Number(ol.getAttribute('start')) || 1;
+        ol.querySelectorAll(':scope > li').forEach((li, i) => li.prepend(`${start + i}. `));
+    });
+    root.querySelectorAll('ul > li').forEach(li => li.prepend('• '));
+    root.querySelectorAll('li, pre').forEach(el => {
+        el.before(' ');
+        el.after(' ');
+    });
+    root.querySelectorAll('img[alt]').forEach(img => img.replaceWith(img.alt));
+    return root.textContent.replace(/\s+/g, ' ').trim();
 }
 
 // Trailing punctuation almost always belongs to the sentence, not the
@@ -3075,7 +3095,7 @@ function summarizeMessageForReply(data, msgType) {
             return 'Started a poll';
         }
     }
-    const content = (data.content || '').trim();
+    const content = stripFormatting(data.content || '');
     if (content) {
         return content.length <= 200 ? content : content.slice(0, 197) + '…';
     }
