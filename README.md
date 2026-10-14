@@ -49,18 +49,26 @@ Family Chat is a Home Assistant app that provides a self-hosted, real-time messa
 | **Channel Categories** | Group channels under collapsible category headers (Discord-style) |
 | **Message Replies** | Reply to specific messages with quoted context; the quote keeps its snapshot even if the original is later edited or deleted |
 | **Message Editing** | Fix a typo or reword something after sending — your own messages only, with a small "(edited)" label so it's never hidden that something changed |
+| **Formatting** | `**bold**`, `*italic*` or `_italic_`, `` `inline code` ``, ```` ``` ```` code blocks, and lists (lines starting with `- ` or `1. `). Links, @mentions and phone numbers still work inside formatted text |
+| **Polls** | Quick family votes like "pizza or tacos?" — 2–10 options, one answer or several, with live counts and who voted for what. Tap your pick again to take the vote back |
+| **Pinned Messages** | Pin important messages to a channel (up to 50); the 📌 panel in the channel header lists them |
+| **Move Messages** | Move a message to a different channel; reactions, poll votes and pins go with it |
+| **Typing Indicator** | See when someone is typing in the channel you're viewing |
+| **Drafts** | Unsent text stays with its channel when you switch away, and survives a reload |
 | **Message Grouping** | Consecutive messages from the same person within a few minutes are visually grouped, Discord-style, instead of repeating the name and avatar every time |
 | **Date Dividers** | A "Today" / "Yesterday" / full-date divider appears once per day in the history, not repeated on every message |
 | **@Mentions** | Mention family members with `@` — they'll get notified even if they haven't subscribed to the channel |
+| **Tap-to-Call** | Phone numbers in a message become links that open your phone's dialer |
 | **Unread Indicators** | Bold channel names show new activity; red badges show @mentions |
 | **Search** | Search across all channels for message history |
-| **Link Previews** | Automatic preview cards for shared URLs (with SSRF protection) — a thumbnail and description for most sites, an embedded player for YouTube. A failed or blocked preview shows a small, honest fallback card rather than nothing at all |
+| **Link Previews** | Automatic preview cards for shared URLs (with SSRF protection) — a thumbnail and description for most sites including Facebook and Instagram, an embedded player for YouTube. A failed or blocked preview shows a small, honest fallback card rather than nothing at all |
 | **Message History** | Infinite scroll to load older messages (cursor-based pagination) |
 
 ### Media & Files
 | Feature | Description |
 |---------|-------------|
 | **File Sharing** | Upload images, videos, documents, and more (configurable file types) |
+| **Voice Messages** | Hold the 🎤 button to record and let go to send; slide away to cancel. Plays inline in the chat. Needs Home Assistant opened over HTTPS (see [Requirements](#requirements)) |
 | **Screenshot Paste** | Paste screenshots directly from clipboard (Ctrl+V / Cmd+V) |
 | **GIF Picker** | Search and post GIFs from GIPHY (requires free API key) |
 | **Custom Emoji** | Upload your own emoji for family inside jokes — usable from the picker, or typed directly into a message as `:shortcode:` |
@@ -87,7 +95,7 @@ Family Chat is a Home Assistant app that provides a self-hosted, real-time messa
 | Feature | Description |
 |---------|-------------|
 | **Display Names** | Set a custom name separate from your Home Assistant username |
-| **Light/Dark Theme** | Choose your preferred color scheme |
+| **Light/Dark Theme** | Choose the app's color scheme with the `theme` option (see [Configuration](#configuration)) |
 | **Custom Chat Name** | Rebrand the chat to match your family name |
 | **Collapsible Sidebars** | Hide the channel list for more space |
 
@@ -95,11 +103,12 @@ Family Chat is a Home Assistant app that provides a self-hosted, real-time messa
 | Feature | Description |
 |---------|-------------|
 | **Admin Panel** | Password-protected panel for server management |
-| **Channel Management** | Add, delete, and reorder channels and categories |
+| **Channel Management** | Add, delete, and reorder channels and categories. Drag a channel by its ⠿ handle to reorder it or move it into another category (works with touch too) |
+| **Activity Log** | A record of every message deletion and move: what the message said, who sent it, and who removed or moved it |
 | **User Management** | Set display names for family members |
 | **Server Owner** | Designate an owner with elevated privileges |
 | **Calendar Restrictions** | Control which calendars can receive events |
-| **Backup & Restore** | Download a single file containing every message and every uploaded file, and restore from it later — independent of Home Assistant's own backup system, and a safety net worth having before doing anything risky to the underlying Home Assistant instance |
+| **Backup & Restore** | Download a single file containing every message and every uploaded file, and restore from it later — independent of Home Assistant's own backup system, and a safety net worth having before doing anything risky to the underlying Home Assistant instance. The Backup tab shows the estimated backup size and free disk space |
 
 ---
 
@@ -119,18 +128,20 @@ Family Chat is a Home Assistant app that provides a self-hosted, real-time messa
 ### Project Structure
 
 ```text
-family-chat/
-├── app/
-│   ├── server.py           # Flask/SocketIO application
-│   ├── ha_bridge.py        # Listens for Home Assistant automation events and posts them
-│   ├── requirements.txt    # Python dependencies
-│   ├── static/             # CSS, JavaScript, assets
-│   └── templates/          # HTML templates
-├── tests/                  # Standard-library unit tests (see below)
-├── config.yaml             # App configuration schema
-├── Dockerfile              # Container build instructions
-├── apparmor.txt            # Security profile
-└── run.sh                  # Container entrypoint
+family-chat/                    # repository root
+├── family-chat/                # the Home Assistant app itself
+│   ├── app/
+│   │   ├── server.py           # Flask/SocketIO application
+│   │   ├── ha_bridge.py        # Listens for Home Assistant automation events and posts them
+│   │   ├── requirements.txt    # Python dependencies
+│   │   ├── static/             # CSS, JavaScript, assets
+│   │   └── templates/          # HTML templates
+│   ├── CHANGELOG.md            # Version history
+│   ├── config.yaml             # App configuration schema
+│   ├── Dockerfile              # Container build instructions
+│   ├── apparmor.txt            # Security profile
+│   └── run.sh                  # Container entrypoint
+└── tests/                      # Unit tests (see Development and tests)
 ```
 
 ### Key Dependencies
@@ -321,11 +332,14 @@ Use it as an automation trigger, or find it in **Developer Tools → Events** (l
 
 ### Development and tests
 
-Unit tests use only the standard library (no Home Assistant needed):
+Run the tests from the repository root (no Home Assistant needed):
 
 ```bash
+pip install -r family-chat/app/requirements.txt
 python -m unittest discover -s tests -v
 ```
+
+The Home Assistant bridge tests use only the standard library. The link preview, poll and voice message tests need the app's own dependencies and are skipped if they aren't installed.
 
 To run the server outside Home Assistant, point it at a scratch folder and, optionally, a real Home Assistant:
 
@@ -345,13 +359,15 @@ Family Chat has a three-tier permission system:
 
 ### Everyone (All Users)
 
-- Send messages and reactions
+- Send messages, voice messages and reactions
+- Start polls and vote in them
 - Reply to and edit their own messages
+- Pin and unpin any message
 - Create channels
 - Upload custom emoji
 - Set personal display name
 - Manage notification subscriptions
-- Delete own messages
+- Delete or move their own messages
 
 ### Admin
 
@@ -361,12 +377,13 @@ Family Chat has a three-tier permission system:
 - Manage everyone's display names
 - Restrict calendar access
 - Designate server owner
-- Delete any message
+- Delete or move any message
+- View the Activity log of message deletions and moves
 - Download or restore a full backup
 
 ### Server Owner
 
-- All admin message- and channel-deletion powers tied to Home Assistant login
+- Can delete or move any message, like an admin, tied to their Home Assistant login
 - No admin password required day-to-day
 - Can delete channels from Settings panel
 
@@ -381,13 +398,14 @@ Editing a message is deliberately sender-only, with no admin or owner override �
 Family Chat takes security seriously:
 
 - **Custom AppArmor Profile**: Container is restricted to only necessary filesystem and network access
-- **SSRF Protection**: Link previews validate resolved IPs to prevent internal network probing
-- **Input Validation**: All user inputs are sanitized and validated server-side
-- **Session Security**: HttpOnly cookies with SameSite=Lax protection
+- **SSRF Protection**: Link previews only connect to public addresses. Every redirect is re-checked, and the connection is pinned to the address that was checked, so a hostname can't switch to an internal address mid-request (DNS rebinding)
+- **Input Validation**: All user inputs are sanitized and validated server-side, including poll contents, votes and voice messages sent directly over the socket
+- **Session Security**: HttpOnly cookies with SameSite=Lax protection; admin actions that change or download data require a POST
 - **Brute-force Protection**: Admin panel locks after 10 failed attempts (5 minutes)
 - **No External Exposure**: Only accessible through Home Assistant ingress (no direct port mapping)
 - **File Upload Security**: Filename sanitization, type validation, and size limits
-- **XSS Prevention**: All dynamic content is HTML-escaped
+- **Backup Restore Checks**: A backup file is checked for path tricks and for an implausible decompressed size before anything is extracted
+- **XSS Prevention**: All dynamic content is HTML-escaped, including formatted messages; responses send `X-Content-Type-Options: nosniff`
 
 See [SECURITY.md](SECURITY.md) for vulnerability reporting.
 
@@ -404,6 +422,7 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting.
 
 - **GIPHY API Key** — for GIF search functionality
 - **Home Assistant Companion App** — for push notifications on mobile devices
+- **HTTPS access to Home Assistant** (for example through Home Assistant Cloud, or your own certificate) — for voice messages. Browsers only allow microphone access on secure connections. In the Companion App, also allow microphone access
 
 ### Architecture Support
 
@@ -422,6 +441,9 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting.
 | **Notifications not working** | Ensure Companion App is installed and `homeassistant_api` permission is granted |
 | **GIF picker missing** | Add a GIPHY API key in configuration |
 | **Avatar not updating** | Hard refresh the page (Ctrl+Shift+R) |
+| **Phone still shows the old version after an update** | Clear the Companion App's cache (in the app's settings, or your phone's app settings), then reopen the chat |
+| **Mic button says HTTPS is needed** | Open Home Assistant through an `https://` address. Voice messages can't record over plain `http://` |
+| **Mic button says microphone access is blocked** | Allow microphone access for your browser or the Companion App in your phone's settings |
 | **Mobile sidebar issues** | Tap the ✕ button or dimmed backdrop to close |
 
 ### Debug Logs
@@ -440,14 +462,16 @@ See [CHANGELOG.md](family-chat/CHANGELOG.md) for detailed version history.
 
 **Recent Highlights:**
 
-- **v2.41.0** — Message editing
-- **v2.40.0** — Date dividers between days
-- **v2.39.0** — Message grouping for consecutive messages
-- **v2.38.0** — Backup & restore from the admin panel
-- **v2.37.0** — Persistent storage migration for better upgrade/reinstall safety
-- **v2.36.0** — Link previews with SSRF protection
-- **v2.35.0** — Infinite scroll message history
-- **v2.34.0** — Message replies with quoted context
+- **v2.52.0** — Polls, voice messages, message formatting, per-channel drafts, and a light theme fix
+- **v2.51.1** — Security fixes (DNS-rebinding SSRF, backup decompression bomb, and more)
+- **v2.51.0** — Drag-and-drop channel reordering in the admin panel
+- **v2.50.0** — Estimated backup size and free disk space on the Backup tab
+- **v2.49.0** — Typing indicator
+- **v2.48.0** — Pinned messages
+- **v2.47.0** — Tap-to-call phone numbers
+- **v2.45.0** — Admin Activity log for message deletions and moves
+- **v2.44.0** — Move messages to another channel
+- **v2.43.0** — Home Assistant automations can post into any channel
 
 ---
 
