@@ -2486,33 +2486,37 @@ def extract_single_url(text):
     return trim_url_trailing_punctuation(matches[0]) or None
 
 def trim_url_trailing_punctuation(url):
-    """Mirrors trimUrlTrailingPunctuation() in script.js."""
-    trimmed = True
-    while trimmed and url:
-        trimmed = False
-        if re.search(r'[.,!?:;*]$', url):
-            url = url[:-1]
-            trimmed = True
-        elif url.endswith(')') and url.count('(') < url.count(')'):
-            url = url[:-1]
-            trimmed = True
-        elif url.endswith(']') and url.count('[') < url.count(']'):
-            url = url[:-1]
-            trimmed = True
-    return url
+    """Mirrors trimUrlTrailingPunctuation() in script.js. Counted once and
+    walked backwards: re-counting on every step made a link followed by
+    thousands of ")" take quadratic time."""
+    opens = {')': url.count('('), ']': url.count('[')}
+    closes = {')': url.count(')'), ']': url.count(']')}
+    end = len(url)
+    while end:
+        ch = url[end - 1]
+        if ch in '.,!?:;*':
+            end -= 1
+        elif ch in closes and opens[ch] < closes[ch]:
+            closes[ch] -= 1
+            end -= 1
+        else:
+            break
+    return url[:end]
 
 # Same rules as renderMessageText()/renderInlineText() in script.js.
-# re.ASCII keeps \w matching JavaScript's ASCII-only \w.
+# re.ASCII keeps \w matching JavaScript's ASCII-only \w. Each pattern has
+# exactly one way to match a given span, so a long hostile message costs
+# linear time, not quadratic (see the comment on BULLET_LINE in script.js).
 _CODE_FENCE_OPEN = re.compile(r'^\s*```')
 _CODE_FENCE_CLOSE = re.compile(r'^\s*```\s*$')
-_BULLET_LINE = re.compile(r'^\s*[-*•]\s+(.+)$')
-_NUMBERED_LINE = re.compile(r'^\s*\d{1,3}[.)]\s+.+$')
+_BULLET_LINE = re.compile(r'^\s*[-*•]\s+(\S.*)$')
+_NUMBERED_LINE = re.compile(r'^\s*\d{1,3}[.)]\s+\S.*$')
 _INLINE_CODE = re.compile(r'(`{1,3})([^`\n]+?)\1')
 _URL_IN_TEXT = re.compile(r'https?://[^\s<>"\'\x00]+')
 _EMPHASIS_PATTERNS = [re.compile(p, re.ASCII) for p in (
-    r'(?<![\w*])\*\*(?=[^\s*])(.+?)(?<=[^\s*])\*\*(?![\w*])',
-    r'(?<![\w*])\*(?=[^\s*])(.+?)(?<=[^\s*])\*(?![\w*])',
-    r'(?<![\w_])_(?=[^\s_])(.+?)(?<=[^\s_])_(?![\w_])',
+    r'(?<![\w*])\*\*(?=[^\s*])((?:[^*\n]|\*(?!\*))+?)(?<=[^\s*])\*\*(?![\w*])',
+    r'(?<![\w*])\*(?=[^\s*])([^*\n]+?)(?<=\S)\*(?![\w*])',
+    r'(?<![\w_])_(?=[^\s_])([^_\n]+?)(?<=\S)_(?![\w_])',
 )]
 
 def _strip_inline_formatting(text):

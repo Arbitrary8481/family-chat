@@ -90,6 +90,22 @@ class StripFormattingTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(server.strip_formatting(text), expected)
 
+    def test_hostile_messages_stay_fast(self):
+        # Each of these took 0.7-1.2 seconds with the original patterns,
+        # stalling the whole server; now they take a few milliseconds.
+        import time
+        hostile = [" *a" * 6666, " _a" * 6666, " **a" * 5000, "- " + " " * 19990 + "\r",
+                   "https://a.b/" + ")" * 19980, "https://a.b/" + ".)" * 9990]
+        start = time.perf_counter()
+        for text in hostile:
+            server.strip_formatting(text)
+            server.trim_url_trailing_punctuation(text)
+        self.assertLess(time.perf_counter() - start, 0.5)
+
+    def test_bold_can_hold_italic_and_snake_case_is_left_alone(self):
+        self.assertEqual(server.strip_formatting("**bold *italic* inside**"), "bold italic inside")
+        self.assertEqual(server.strip_formatting("_snake_case_ word"), "_snake_case_ word")
+
     def test_summaries_are_stripped_before_truncating(self):
         # 203 characters raw, 199 without the marks: fits, so nothing is cut.
         summary = server.summarize_message_for_notification("**" + "a" * 199 + "**", "text", None)
