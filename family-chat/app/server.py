@@ -301,7 +301,10 @@ if not SUPERVISOR_TOKEN:
 # Inlining it removes that race entirely — if the HTML document loaded at
 # all, the styles are already in it, no second request required.
 _STYLE_CSS_PATH = Path(__file__).parent / 'static' / 'style.css'
-INLINE_CSS = _STYLE_CSS_PATH.read_text() if _STYLE_CSS_PATH.exists() else ''
+# Channel drag-and-drop styles, shared by the chat page and the admin panel.
+_CHANNEL_DRAG_CSS_PATH = Path(__file__).parent / 'static' / 'channel-drag.css'
+CHANNEL_DRAG_CSS = _CHANNEL_DRAG_CSS_PATH.read_text() if _CHANNEL_DRAG_CSS_PATH.exists() else ''
+INLINE_CSS = (_STYLE_CSS_PATH.read_text() if _STYLE_CSS_PATH.exists() else '') + '\n' + CHANNEL_DRAG_CSS
 
 # Upload directory
 UPLOAD_FOLDER = DATA_DIR / 'uploads'
@@ -968,8 +971,8 @@ def add_channel(name, icon, category_id):
     if c.fetchone():
         conn.close()
         return None, 'A channel with that name already exists.'
-    # Position is scoped within the category (see move_channel()) — a
-    # freshly-added channel lands at the end of its own category's
+    # Position is scoped within the category (see reorder_channels()) —
+    # a freshly-added channel lands at the end of its own category's
     # list, not the end of some single global ordering.
     c.execute('SELECT COALESCE(MAX(position), -1) + 1 FROM channels WHERE category_id = ?', (category_id,))
     next_position = c.fetchone()[0]
@@ -979,44 +982,9 @@ def add_channel(name, icon, category_id):
     conn.close()
     return slug, None
 
-def move_channel(slug, direction):
-    if direction not in ('up', 'down'):
-        return False, 'Invalid direction.'
-
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('SELECT id, category_id FROM channels WHERE slug = ?', (slug,))
-    row = c.fetchone()
-    if not row:
-        conn.close()
-        return False, 'Channel not found.'
-    this_channel_id, category_id = row
-
-    # Scoped to siblings within the same category — a channel only ever
-    # moves relative to the others in its own category, never across
-    # categories (moving a channel to a *different* category is a
-    # separate, unrelated action this doesn't attempt).
-    c.execute('SELECT id, position FROM channels WHERE category_id = ? ORDER BY position ASC', (category_id,))
-    rows = c.fetchall()
-    ids = [r[0] for r in rows]
-    idx = ids.index(this_channel_id)
-    neighbor_idx = idx - 1 if direction == 'up' else idx + 1
-    if neighbor_idx < 0 or neighbor_idx >= len(ids):
-        conn.close()
-        return True, None
-
-    this_id, this_pos = rows[idx]
-    neighbor_id, neighbor_pos = rows[neighbor_idx]
-    c.execute('UPDATE channels SET position = ? WHERE id = ?', (neighbor_pos, this_id))
-    c.execute('UPDATE channels SET position = ? WHERE id = ?', (this_pos, neighbor_id))
-    conn.commit()
-    conn.close()
-    return True, None
-
 def reorder_channels(channels_by_category):
-    """Used by the admin panel's drag-and-drop channel list — unlike
-    move_channel() above, a single drag can change two categories'
-    orderings at once (the source category loses one channel and
+    """Used by the drag-and-drop channel lists (admin panel and the chat's
+    Settings). A single drag can change two categories' orderings at once (the source category loses one channel and
     everything after it shifts up, the destination gains one and
     everything after the drop point shifts down), so a single relative
     swap isn't enough information to apply. The client always sends the
@@ -1039,6 +1007,7 @@ def reorder_channels(channels_by_category):
     existing_slugs = {row[0] for row in c.fetchall()}
 
     submitted_slugs = set()
+    submitted_count = 0
     parsed = {}
     for category_id, slugs in channels_by_category.items():
         try:
@@ -1057,9 +1026,12 @@ def reorder_channels(channels_by_category):
                 conn.close()
                 return False, 'Unknown channel.'
         submitted_slugs.update(slugs)
+        submitted_count += len(slugs)
         parsed[category_id] = slugs
 
-    if submitted_slugs != existing_slugs:
+    # The count check catches a channel listed twice (in two categories,
+    # say), which the set comparison alone would let through.
+    if submitted_slugs != existing_slugs or submitted_count != len(existing_slugs):
         conn.close()
         return False, "That doesn't match this instance's current channels — reload and try again."
 
@@ -1801,18 +1773,20 @@ def api_delete_channel():
         return jsonify({'error': error}), 400
     return jsonify({'success': True, 'channels': get_channels()})
 
-@app.route('/api/channels/move', methods=['POST'])
-def api_move_channel():
-    # Reordering is owner-or-admin, same as deleting — unlike creating a
-    # category (admin only, see admin_add_category), this only ever
-    # rearranges what's already there rather than adding something new,
-    # so it's granted the same way channel deletion already is.
+@app.route('/api/channels/reorder', methods=['POST'])
+def api_reorder_channels():
+    # Owner-or-admin, same as deleting a channel: it only rearranges
+    # what's already there. Takes the complete new order from a drag, see
+    # reorder_channels().
     ha_user_id = request.headers.get('X-Remote-User-Id')
     if not (bool(session.get('is_admin')) or is_owner(ha_user_id)):
         return jsonify({'error': 'Only the server owner or an admin can reorder channels.'}), 403
     data = request.get_json(silent=True) or {}
-    ok, error = move_channel(data.get('slug', ''), data.get('direction', ''))
-    if error:
+    channels_by_category = data.get('channels')
+    if not isinstance(channels_by_category, dict):
+        return jsonify({'error': 'Invalid payload.'}), 400
+    ok, error = reorder_channels(channels_by_category)
+    if not ok:
         return jsonify({'error': error}), 400
     return jsonify({'success': True, 'channels': get_channels()})
 
@@ -2016,6 +1990,7 @@ def admin_panel():
     disk_free_bytes = get_disk_free_bytes()
 
     return render_template('admin.html', logged_in=True,
+                          channel_drag_css=CHANNEL_DRAG_CSS,
                           saved=request.args.get('saved'),
                           active_tab=request.args.get('tab', 'chatname'),
                           channels=channels,
@@ -2089,31 +2064,6 @@ def admin_delete_channel():
     if error:
         return ingress_redirect(url_for('admin_panel', channel_error=error, tab='channels'))
     return ingress_redirect(url_for('admin_panel', saved='1', tab='channels'))
-
-@app.route('/admin/channels/move', methods=['POST'])
-@require_admin
-def admin_move_channel():
-    ok, error = move_channel(request.form.get('slug', ''), request.form.get('direction', ''))
-    if error:
-        return ingress_redirect(url_for('admin_panel', channel_error=error, tab='channels'))
-    return ingress_redirect(url_for('admin_panel', saved='1', tab='channels'))
-
-@app.route('/admin/channels/reorder', methods=['POST'])
-@require_admin
-def admin_reorder_channels():
-    # JSON + a direct JSON response, unlike every other form on this
-    # page — this is the one action here driven by a JS drag gesture
-    # rather than a plain form submit, so there's no page navigation to
-    # carry a redirect/flash message through; the client applies the
-    # result (or shows the error) in place instead.
-    data = request.get_json(silent=True) or {}
-    channels_by_category = data.get('channels')
-    if not isinstance(channels_by_category, dict):
-        return jsonify({'error': 'Invalid payload.'}), 400
-    ok, error = reorder_channels(channels_by_category)
-    if not ok:
-        return jsonify({'error': error}), 400
-    return jsonify({'success': True})
 
 @app.route('/admin/categories/add', methods=['POST'])
 @require_admin

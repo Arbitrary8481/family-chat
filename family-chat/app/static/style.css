@@ -1742,6 +1742,19 @@ body {
     font-size: 14px;
 }
 
+/* Channels grouped by category, draggable (see channel-drag.js). */
+#settingsChannelList .channel-category-group {
+    margin-bottom: 10px;
+}
+#settingsChannelList .channel-category-group-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+#settingsChannelList .channel-drag-placeholder {
+    margin-bottom: 0;
+}
+
 .settings-channel-delete {
     background: transparent;
     border: 1px solid var(--danger);

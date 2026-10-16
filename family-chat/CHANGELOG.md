@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.53.0
+
+### Changed
+- **The channel list in Settings → Channels now works like the admin panel's: drag and drop.** Channels are grouped under their categories. The server owner, or anyone signed into the admin panel, can grab a channel by its ⠿ handle and drop it anywhere, within its category or into another one. This replaces the one-step ▲▼ buttons, and works with touch as well as a mouse. Everyone else sees the same grouped list, read-only. Categories still reorder with ▲▼, as in the admin panel. The sidebar updates right after a drop.
+- Both pages now share one copy of the drag-and-drop code and styles, so they can't drift apart.
+
+### Fixed
+- Saving a new channel order now rejects a list that names the same channel twice. Before, that could slip past the check that every channel is accounted for.
+
+### Removed
+- The old one-step channel move endpoints (`/api/channels/move`, `/admin/channels/move`), which nothing uses any more. The admin-only `/admin/channels/reorder` is replaced by `/api/channels/reorder`, which the server owner can also use.
+
+### Notes
+- 5 new tests cover who can reorder (owner and admins yes, others no), moving a channel into another category, and rejecting stale, unknown or duplicated channel lists. All 67 tests pass. Tested in a browser with mouse and touch, in Settings and in the admin panel.
+
 ## 2.52.2
 
 ### Fixed
