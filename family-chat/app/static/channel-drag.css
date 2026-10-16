@@ -1,0 +1,73 @@
+/* Channel drag-and-drop (see channel-drag.js), shared by the admin
+   panel and the chat's Settings → Channels tab. Inlined into both pages
+   by the server, like style.css. */
+.channel-category-group {
+    margin-bottom: 16px;
+}
+.channel-category-group-header {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+/* An empty category still needs height for a drop to land on. */
+.channel-category-group-list {
+    min-height: 34px;
+    border-radius: 4px;
+}
+.channel-category-group-empty {
+    padding: 10px;
+    border: 1px dashed var(--text-muted);
+    border-radius: 4px;
+    color: var(--text-muted);
+    font-size: 13px;
+    text-align: center;
+    opacity: 0.6;
+}
+.channel-drag-row .channel-row-label {
+    flex: 1;
+    text-align: left;
+}
+.drag-handle {
+    cursor: grab;
+    color: var(--text-muted);
+    padding: 0 4px;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.drag-handle:hover {
+    color: var(--text-normal);
+}
+/* The dragged row floats with the pointer (left/top set in JS), above
+   every dialog on the page. */
+.channel-row-dragging {
+    position: fixed;
+    z-index: 3000;
+    margin: 0;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+    opacity: 0.95;
+    pointer-events: none;
+    transform: rotate(1deg);
+}
+.channel-drag-placeholder {
+    margin-bottom: 6px;
+    border: 2px dashed var(--bg-accent);
+    border-radius: 4px;
+    background: rgba(88, 101, 242, 0.08);
+}
+.channel-category-group-list.channel-group-drop-target {
+    outline: 2px dashed var(--bg-accent);
+    outline-offset: 2px;
+}
+.channel-reorder-status {
+    min-height: 18px;
+    font-size: 13px;
+    color: var(--text-muted);
+    margin: 4px 0 0;
+}
+.channel-reorder-status.channel-reorder-error {
+    color: var(--danger);
+}

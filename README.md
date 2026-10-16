@@ -103,7 +103,7 @@ Family Chat is a Home Assistant app that provides a self-hosted, real-time messa
 | Feature | Description |
 |---------|-------------|
 | **Admin Panel** | Password-protected panel for server management |
-| **Channel Management** | Add, delete, and reorder channels and categories. Drag a channel by its ⠿ handle to reorder it or move it into another category (works with touch too) |
+| **Channel Management** | Add, delete, and reorder channels and categories. Drag a channel by its ⠿ handle to reorder it or move it into another category (works with touch too), in the admin panel or the server owner's own Settings |
 | **Activity Log** | A record of every message deletion and move: what the message said, who sent it, and who removed or moved it |
 | **User Management** | Set display names for family members |
 | **Server Owner** | Designate an owner with elevated privileges |

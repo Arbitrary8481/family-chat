@@ -467,6 +467,7 @@
                             <div id="settingsChannelList" class="settings-channel-list">
                                 <p class="settings-hint">Loading channels…</p>
                             </div>
+                            <p class="channel-reorder-status" id="settingsChannelReorderStatus" aria-live="polite"></p>
                             <label style="display:block; font-size: 13px; color: var(--text-muted); margin: 16px 0 6px;">
                                 Add a channel
                             </label>
@@ -480,7 +481,7 @@
                             </div>
                             <p id="addChannelStatus" class="settings-save-status hidden"></p>
                             <p style="font-size: 12px; color: var(--text-muted); margin-top: 12px;">
-                                Anyone can add a channel, into any category that already exists. Categories themselves are admin-only, from the admin panel.
+                                Anyone can add a channel, into any category that already exists. The server owner and admins can drag a channel by its ⠿ handle to reorder it or move it into another category. Categories themselves are admin-only, from the admin panel.
                             </p>
                         </div>
                     </div>
@@ -675,6 +676,7 @@
         // — see that comment for the full explanation of why this is
         // document.write() rather than a static src= or a
         // createElement+appendChild.
+        document.write('<script src="./static/channel-drag.js?v=' + Date.now() + '"><\/script>');
         document.write('<script src="./static/script.js?v=' + Date.now() + '"><\/script>');
     </script>
 </body>

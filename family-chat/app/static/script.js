@@ -3762,34 +3762,38 @@ function loadChannelsSettings() {
 
     const canManage = window.IS_ADMIN || window.IS_OWNER;
 
-    fetch(apiUrl('/api/channels'))
-        .then(r => r.json())
-        .then(channels => {
+    Promise.all([
+        fetch(apiUrl('/api/channels')).then(r => r.json()),
+        fetch(apiUrl('/api/categories')).then(r => r.json()),
+    ])
+        .then(([channels, categories]) => {
             if (!channels || channels.length === 0) {
                 list.innerHTML = '<p class="settings-hint">No channels yet.</p>';
                 return;
             }
-            list.innerHTML = channels.map((ch, idx, arr) => {
-                // A channel only ever reorders among its own category's
-                // siblings, so "first/last" here means first/last WITHIN
-                // that category, not first/last in this flat list overall
-                // — checked by comparing against the neighboring entry's
-                // own category_id, since channels sharing a category are
-                // always grouped consecutively in what /api/channels returns.
-                const isFirstInCategory = idx === 0 || arr[idx - 1].category_id !== ch.category_id;
-                const isLastInCategory = idx === arr.length - 1 || arr[idx + 1].category_id !== ch.category_id;
+            // Same layout as the admin panel's Channels tab: one group per
+            // category, and for the owner or an admin a ⠿ handle to drag a
+            // channel within its category or into another one.
+            list.innerHTML = categories.map(cat => {
+                const rows = channels.filter(ch => ch.category_id === cat.id).map(ch => `
+                    <div class="settings-channel-row channel-drag-row" data-slug="${escapeHtml(ch.slug)}">
+                        ${canManage ? '<span class="drag-handle" title="Drag to reorder or move to another category">⠿</span>' : ''}
+                        <span>${escapeHtml(ch.icon)}</span>
+                        <span style="flex:1;">${escapeHtml(ch.name)}</span>
+                        ${canManage ? `<button class="settings-channel-delete" onclick="deleteChannelSettings('${escapeHtml(ch.slug)}')" title="Delete channel"${channels.length <= 1 ? ' disabled' : ''}>✕</button>` : ''}
+                    </div>
+                `).join('');
+                if (!rows && !canManage) return '';
                 return `
-                <div class="settings-channel-row">
-                    <span>${escapeHtml(ch.icon)}</span>
-                    <span style="flex:1;">${escapeHtml(ch.name)}</span>
-                    ${canManage ? `
-                        <button class="settings-reorder-btn" onclick="moveChannelSettings('${escapeHtml(ch.slug)}', 'up')" title="Move up"${isFirstInCategory ? ' disabled' : ''}>▲</button>
-                        <button class="settings-reorder-btn" onclick="moveChannelSettings('${escapeHtml(ch.slug)}', 'down')" title="Move down"${isLastInCategory ? ' disabled' : ''}>▼</button>
-                        <button class="settings-channel-delete" onclick="deleteChannelSettings('${escapeHtml(ch.slug)}')" title="Delete channel"${channels.length <= 1 ? ' disabled' : ''}>✕</button>
-                    ` : ''}
-                </div>
-            `;
+                    <div class="channel-category-group">
+                        <div class="channel-category-group-header">${escapeHtml(cat.name)}</div>
+                        <div class="channel-category-group-list" data-category-id="${Number(cat.id)}">
+                            ${rows || '<div class="channel-category-group-empty">Drag a channel here</div>'}
+                        </div>
+                    </div>
+                `;
             }).join('');
+            if (canManage) initChannelDragDrop(list, saveChannelOrderSettings);
         })
         .catch(() => {
             list.innerHTML = '<p class="settings-hint">Couldn\'t load channels.</p>';
@@ -3797,6 +3801,34 @@ function loadChannelsSettings() {
 
     loadChannelCategoriesForAddForm();
     loadCategoriesSettings();
+}
+
+function saveChannelOrderSettings(channelsByCategory) {
+    const status = document.getElementById('settingsChannelReorderStatus');
+    const show = (text, isError) => {
+        if (!status) return;
+        status.textContent = text;
+        status.classList.toggle('channel-reorder-error', !!isError);
+    };
+    show('Saving…');
+    fetch(apiUrl('/api/channels/reorder'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channels: channelsByCategory }),
+    })
+        .then(r => r.json().then(data => ({ ok: r.ok, data })))
+        .then(({ ok, data }) => {
+            if (!ok) throw new Error(data.error || 'Could not save the new order.');
+            show('Saved.');
+            setTimeout(() => { if (status && status.textContent === 'Saved.') show(''); }, 2000);
+            rebuildChannelSidebar(data.channels);
+        })
+        .catch(err => {
+            // The list now shows an order the server didn't save; reload
+            // it to put back the real one.
+            show(err.message || 'Could not save the new order.', true);
+            loadChannelsSettings();
+        });
 }
 
 // Categories themselves aren't creatable or deletable from here (that
@@ -3832,24 +3864,6 @@ function loadCategoriesSettings() {
         });
 }
 
-function moveChannelSettings(slug, direction) {
-    fetch(apiUrl('/api/channels/move'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug, direction })
-    })
-        .then(r => r.json())
-        .then(data => {
-            if (data.error) {
-                alert(data.error);
-                return;
-            }
-            loadChannelsSettings();
-            rebuildChannelSidebar(data.channels);
-        })
-        .catch(() => alert("Couldn't move the channel. Please try again."));
-}
-
 function moveCategorySettings(categoryId, direction) {
     fetch(apiUrl('/api/categories/move'), {
         method: 'POST',
@@ -3862,7 +3876,8 @@ function moveCategorySettings(categoryId, direction) {
                 alert(data.error);
                 return;
             }
-            loadCategoriesSettings();
+            // Also redraws the channel list, which is grouped in category order.
+            loadChannelsSettings();
             rebuildChannelSidebar(data.channels);
         })
         .catch(() => alert("Couldn't move the category. Please try again."));
