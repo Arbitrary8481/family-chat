@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.54.0
+
+### Added
+- **Drag a file onto the chat to share it.** While you drag a file over the chat, a "Drop to share in #channel" box shows where it will go. Dropping it opens the same preview-and-caption dialog as the 📎 button and pasting a screenshot, with the same file-type and size limits. One file at a time: if you drop several, a note says so and the first one is shared.
+- A file dropped anywhere on the page is no longer opened by the browser itself, which used to navigate away from the chat. While a dialog such as Settings is open, dropped files are ignored, so nothing is shared by surprise.
+
 ## 2.53.0
 
 ### Changed

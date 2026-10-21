@@ -219,6 +219,37 @@ body {
     position: relative;
 }
 
+/* pointer-events: none so the drag keeps reporting the elements
+   underneath; the drop itself is handled at the window level. */
+.file-drop-overlay {
+    position: absolute;
+    inset: 8px;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 3px dashed var(--bg-accent);
+    border-radius: 12px;
+    background: rgba(88, 101, 242, 0.15);
+    backdrop-filter: blur(2px);
+    pointer-events: none;
+}
+
+.file-drop-box {
+    padding: 20px 28px;
+    border-radius: 10px;
+    background: var(--bg-floating);
+    color: var(--text-normal);
+    font-size: 16px;
+    text-align: center;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.file-drop-icon {
+    font-size: 32px;
+    margin-bottom: 6px;
+}
+
 .scroll-to-bottom-btn {
     position: absolute;
     right: 24px;

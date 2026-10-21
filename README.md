@@ -69,6 +69,7 @@ Family Chat is a Home Assistant app that provides a self-hosted, real-time messa
 |---------|-------------|
 | **File Sharing** | Upload images, videos, documents, and more (configurable file types) |
 | **Voice Messages** | Hold the 🎤 button to record and let go to send; slide away to cancel. Plays inline in the chat. Needs Home Assistant opened over HTTPS (see [Requirements](#requirements)) |
+| **Drag and Drop** | Drag a file from your computer onto the chat to share it in the channel you're viewing |
 | **Screenshot Paste** | Paste screenshots directly from clipboard (Ctrl+V / Cmd+V) |
 | **GIF Picker** | Search and post GIFs from GIPHY (requires free API key) |
 | **Custom Emoji** | Upload your own emoji for family inside jokes — usable from the picker, or typed directly into a message as `:shortcode:` |
