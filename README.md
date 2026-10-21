@@ -49,7 +49,7 @@ Family Chat is a Home Assistant app that provides a self-hosted, real-time messa
 | **Channel Categories** | Group channels under collapsible category headers (Discord-style) |
 | **Message Replies** | Reply to specific messages with quoted context; the quote keeps its snapshot even if the original is later edited or deleted |
 | **Message Editing** | Fix a typo or reword something after sending — your own messages only, with a small "(edited)" label so it's never hidden that something changed |
-| **Formatting** | `**bold**`, `*italic*` or `_italic_`, `` `inline code` ``, ```` ``` ```` code blocks, and lists (lines starting with `- ` or `1. `). Links, @mentions and phone numbers still work inside formatted text |
+| **Formatting** | `**bold**`, `*italic*` or `_italic_`, `` `inline code` ``, ```` ``` ```` code blocks, and lists (lines starting with `- ` or `1. `). Links, @mentions and phone numbers still work inside formatted text. Reply previews, notifications and the pinned list show the text without the marks |
 | **Polls** | Quick family votes like "pizza or tacos?" — 2–10 options, one answer or several, with live counts and who voted for what. Tap your pick again to take the vote back |
 | **Pinned Messages** | Pin important messages to a channel (up to 50); the 📌 panel in the channel header lists them |
 | **Move Messages** | Move a message to a different channel; reactions, poll votes and pins go with it |
@@ -340,7 +340,7 @@ pip install -r family-chat/app/requirements.txt
 python -m unittest discover -s tests -v
 ```
 
-The Home Assistant bridge tests use only the standard library. The link preview, poll and voice message tests need the app's own dependencies and are skipped if they aren't installed.
+The Home Assistant bridge tests use only the standard library. The link preview, poll, voice message, notification and channel reordering tests need the app's own dependencies and are skipped if they aren't installed.
 
 To run the server outside Home Assistant, point it at a scratch folder and, optionally, a real Home Assistant:
 
@@ -378,6 +378,7 @@ Family Chat has a three-tier permission system:
 - Manage everyone's display names
 - Restrict calendar access
 - Designate server owner
+- Reorder channels and categories, and move channels between categories
 - Delete or move any message
 - View the Activity log of message deletions and moves
 - Download or restore a full backup
@@ -387,6 +388,7 @@ Family Chat has a three-tier permission system:
 - Can delete or move any message, like an admin, tied to their Home Assistant login
 - No admin password required day-to-day
 - Can delete channels from Settings panel
+- Can reorder channels (drag and drop) and categories from Settings panel
 
 > **Note**: Currently, all users need Home Assistant admin access to use the app due to Home Assistant's permission model for ingress-based apps. This doesn't give them admin access on the chat server. Once they change the permissions model I will see what I can do to resolve this.
 
@@ -407,8 +409,9 @@ Family Chat takes security seriously:
 - **File Upload Security**: Filename sanitization, type validation, and size limits
 - **Backup Restore Checks**: A backup file is checked for path tricks and for an implausible decompressed size before anything is extracted
 - **XSS Prevention**: All dynamic content is HTML-escaped, including formatted messages; responses send `X-Content-Type-Options: nosniff`
+- **Slow-Input Protection**: Message formatting and link handling take time in proportion to a message's length, so crafted text can't stall the server or anyone's browser
 
-See [SECURITY.md](SECURITY.md) for vulnerability reporting.
+See [SECURITY.md](SECURITY.md) for how to report a vulnerability, and for the full list of security issues fixed so far.
 
 ---
 
@@ -463,6 +466,9 @@ See [CHANGELOG.md](family-chat/CHANGELOG.md) for detailed version history.
 
 **Recent Highlights:**
 
+- **v2.54.0** — Drag a file onto the chat to share it
+- **v2.53.0** — Drag-and-drop channel reordering in Settings, like the admin panel
+- **v2.52.2** — Plain-text message previews, and a fix for slow-to-process crafted messages
 - **v2.52.1** — Tapping a notification opens the chat on the right channel
 - **v2.52.0** — Polls, voice messages, message formatting, per-channel drafts, and a light theme fix
 - **v2.51.1** — Security fixes (DNS-rebinding SSRF, backup decompression bomb, and more)
