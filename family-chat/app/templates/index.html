@@ -90,6 +90,14 @@
 
         <!-- Main Chat Area -->
         <div class="chat-container">
+            <!-- Shown while a file is dragged over the chat; see
+                 initFileDragAndDrop() in script.js. -->
+            <div class="file-drop-overlay hidden" id="fileDropOverlay">
+                <div class="file-drop-box">
+                    <div class="file-drop-icon">📎</div>
+                    <div>Drop to share in <strong>#<span id="fileDropChannel"></span></strong></div>
+                </div>
+            </div>
             <div class="chat-header">
                 <div class="chat-header-left">
                     <button class="header-btn sidebar-toggle-btn" onclick="toggleChannelSidebar()" title="Toggle channel list" id="channelSidebarToggle">

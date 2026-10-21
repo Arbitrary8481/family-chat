@@ -665,6 +665,7 @@ function initializeChat() {
     });
     
     initVoiceRecording();
+    initFileDragAndDrop();
     listenForHomeAssistantRoute();
 
     currentEmojiCategory = 'people';
@@ -2224,6 +2225,60 @@ function handlePasteImage(event) {
     }
 }
 document.addEventListener('paste', handlePasteImage);
+
+// Dragging a file from the computer onto the chat shares it the same way
+// 📎 and pasting do: upload, then the caption/preview dialog. Listens on
+// the whole window so a file dropped anywhere is never opened by the
+// browser itself, which would navigate away from the chat. Drops are
+// ignored while a dialog (Settings, the preview itself, ...) is open, so
+// nothing gets shared from somewhere unexpected.
+function initFileDragAndDrop() {
+    const overlay = document.getElementById('fileDropOverlay');
+    const channelLabel = document.getElementById('fileDropChannel');
+    if (!overlay) return;
+    // dragenter/dragleave fire for every child element crossed, so only
+    // the count tells when the drag has really left the window.
+    let depth = 0;
+
+    const isFileDrag = (e) => !!e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
+    const canAcceptDrop = () => !document.querySelector('.modal:not(.hidden)');
+    const hide = () => {
+        depth = 0;
+        overlay.classList.add('hidden');
+    };
+
+    window.addEventListener('dragenter', (e) => {
+        if (!isFileDrag(e)) return;
+        e.preventDefault();
+        depth += 1;
+        if (canAcceptDrop()) {
+            if (channelLabel) channelLabel.textContent = currentChannel;
+            overlay.classList.remove('hidden');
+        }
+    });
+    window.addEventListener('dragover', (e) => {
+        if (!isFileDrag(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = canAcceptDrop() ? 'copy' : 'none';
+    });
+    window.addEventListener('dragleave', (e) => {
+        if (!isFileDrag(e)) return;
+        depth = Math.max(0, depth - 1);
+        if (depth === 0) hide();
+    });
+    window.addEventListener('drop', (e) => {
+        if (!isFileDrag(e)) return;
+        e.preventDefault();
+        hide();
+        if (!canAcceptDrop()) return;
+        const files = Array.from(e.dataTransfer.files || []);
+        if (files.length === 0) return;
+        if (files.length > 1) {
+            alert(`You can share one file at a time, so only "${files[0].name}" will be shared.`);
+        }
+        uploadFile(files[0]);
+    });
+}
 
 // Avatar crop drag — mouse/touch listeners live on the document (not
 // just the viewport element) for move/end specifically, since a drag
