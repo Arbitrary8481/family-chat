@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.55.1
+
+### Changed
+- **"Where am I?" now shows the map over the chat instead of switching to Home Assistant's Map page.** It opens Home Assistant's location window for that person, which includes a map of where they are, right on top of Family Chat. Closing it puts you straight back in the conversation. On Home Assistant 2026.2 and later the chat isn't reloaded. On older versions the page reloads once with the window open. If the chat is opened outside Home Assistant, the button still opens Home Assistant's map in a new tab.
+
+### Notes
+- Tested against a stand-in for Home Assistant's app page, including the older-version behavior. Not yet tried on a real install, so it's worth checking how the window fits on a phone.
+
 ## 2.55.0
 
 ### Added

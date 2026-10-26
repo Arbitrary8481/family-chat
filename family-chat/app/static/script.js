@@ -4279,28 +4279,29 @@ function positionProfileCard(card, anchor) {
     card.style.top = Math.max(margin, top) + 'px';
 }
 
-// Opens the Home Assistant map with this person's location dialog on
-// top (?more-info-entity-id= is handled by Home Assistant on every page).
-function openPersonOnMap(personEntity) {
-    openHomeAssistantPage(`/map?more-info-entity-id=${encodeURIComponent(personEntity)}`);
-}
-
-// Navigates the Home Assistant window around this app. Home Assistant's
-// app page (2026.2+) takes a navigate message, which avoids reloading it;
-// older versions get the top window's address set directly, which works
-// because the app is served from the same origin as Home Assistant.
-function openHomeAssistantPage(path) {
-    if (inHomeAssistantAppPanel) {
-        window.parent.postMessage({ type: 'home-assistant/navigate', path }, window.location.origin);
+// Opens Home Assistant's location window for this person on top of the
+// page Home Assistant is showing right now, i.e. over the chat. Home
+// Assistant opens it for ?more-info-entity-id= on any page, and changing
+// only the query string doesn't reload the app. The app is served from
+// the same origin as Home Assistant, so the top window's path is readable.
+function openPersonLocation(personEntity) {
+    const query = `?more-info-entity-id=${encodeURIComponent(personEntity)}`;
+    let page = null;
+    try {
+        if (window.top !== window) page = window.top.location.pathname;
+    } catch (e) {}
+    if (!page) {
+        // Not inside Home Assistant (opened directly): its map in a new tab.
+        window.open(`/map${query}`, '_blank', 'noopener');
         return;
     }
-    if (window.top !== window) {
-        try {
-            window.top.location.assign(path);
-            return;
-        } catch (e) {}
+    if (inHomeAssistantAppPanel) {
+        // Home Assistant 2026.2+: no reload at all.
+        window.parent.postMessage({ type: 'home-assistant/navigate', path: page + query }, window.location.origin);
+    } else {
+        // Older versions reload the page, chat included, with the window open.
+        window.top.location.assign(page + query);
     }
-    window.open(path, '_blank', 'noopener');
 }
 
 document.addEventListener('click', (e) => {
@@ -4310,7 +4311,7 @@ document.addEventListener('click', (e) => {
     const where = e.target.closest('.profile-card-where');
     if (where) {
         closeProfileCard();
-        openPersonOnMap(where.dataset.personEntity);
+        openPersonLocation(where.dataset.personEntity);
         return;
     }
     if (e.target.closest('.profile-card-close')) {

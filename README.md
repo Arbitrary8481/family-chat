@@ -96,7 +96,7 @@ Family Chat is a Home Assistant app that provides a self-hosted, real-time messa
 | Feature | Description |
 |---------|-------------|
 | **Display Names** | Set a custom name separate from your Home Assistant username |
-| **Profile Cards** | Optionally share your birthdate, anniversary and phone number from Settings. Click anyone's name in the chat to see what they've shared, with a tap-to-call phone number and, if Home Assistant knows where they are, a "Where am I?" button that opens the Home Assistant map |
+| **Profile Cards** | Optionally share your birthdate, anniversary and phone number from Settings. Click anyone's name in the chat to see what they've shared, with a tap-to-call phone number and, if Home Assistant knows where they are, a "Where am I?" button that shows their location on a map, right over the chat |
 | **Light/Dark Theme** | Choose the app's color scheme with the `theme` option (see [Configuration](#configuration)) |
 | **Custom Chat Name** | Rebrand the chat to match your family name |
 | **Collapsible Sidebars** | Hide the channel list for more space |
@@ -341,7 +341,7 @@ pip install -r family-chat/app/requirements.txt
 python -m unittest discover -s tests -v
 ```
 
-The Home Assistant bridge tests use only the standard library. The link preview, poll, voice message, notification and channel reordering tests need the app's own dependencies and are skipped if they aren't installed.
+The Home Assistant bridge tests use only the standard library. The link preview, poll, voice message, notification, channel reordering and profile tests need the app's own dependencies and are skipped if they aren't installed.
 
 To run the server outside Home Assistant, point it at a scratch folder and, optionally, a real Home Assistant:
 
@@ -429,6 +429,7 @@ See [SECURITY.md](SECURITY.md) for how to report a vulnerability, and for the fu
 - **GIPHY API Key** — for GIF search functionality
 - **Home Assistant Companion App** — for push notifications on mobile devices
 - **HTTPS access to Home Assistant** (for example through Home Assistant Cloud, or your own certificate) — for voice messages. Browsers only allow microphone access on secure connections. In the Companion App, also allow microphone access
+- **A person in Home Assistant linked to each family member's login, with a tracked device** (Settings → People) — for the "Where am I?" button on profile cards
 
 ### Architecture Support
 
@@ -450,6 +451,7 @@ See [SECURITY.md](SECURITY.md) for how to report a vulnerability, and for the fu
 | **Phone still shows the old version after an update** | Clear the Companion App's cache (in the app's settings, or your phone's app settings), then reopen the chat |
 | **Mic button says HTTPS is needed** | Open Home Assistant through an `https://` address. Voice messages can't record over plain `http://` |
 | **Mic button says microphone access is blocked** | Allow microphone access for your browser or the Companion App in your phone's settings |
+| **No "Where am I?" button on a profile card** | In Home Assistant, go to Settings → People, open that person, make sure they're linked to their Home Assistant login, and add a device to track. The button can take up to a minute to appear |
 | **Mobile sidebar issues** | Tap the ✕ button or dimmed backdrop to close |
 
 ### Debug Logs
@@ -468,6 +470,7 @@ See [CHANGELOG.md](family-chat/CHANGELOG.md) for detailed version history.
 
 **Recent Highlights:**
 
+- **v2.55.1** — "Where am I?" shows the map over the chat instead of leaving it
 - **v2.55.0** — Profile cards with birthdate, anniversary, phone number and a "Where am I?" map button
 - **v2.54.0** — Drag a file onto the chat to share it
 - **v2.53.0** — Drag-and-drop channel reordering in Settings, like the admin panel
