@@ -96,7 +96,7 @@ Family Chat is a Home Assistant app that provides a self-hosted, real-time messa
 | Feature | Description |
 |---------|-------------|
 | **Display Names** | Set a custom name separate from your Home Assistant username |
-| **Profile Cards** | Optionally share your birthdate, anniversary and phone number from Settings. Click anyone's name in the chat to see what they've shared, with a tap-to-call phone number and, if Home Assistant knows where they are, a "Where am I?" button that opens the Home Assistant map |
+| **Profile Cards** | Optionally share your birthdate, anniversary and phone number from Settings. Click anyone's name in the chat to see what they've shared, with a tap-to-call phone number and, if Home Assistant knows where they are, a "Where am I?" button that shows their location on a map, right over the chat |
 | **Light/Dark Theme** | Choose the app's color scheme with the `theme` option (see [Configuration](#configuration)) |
 | **Custom Chat Name** | Rebrand the chat to match your family name |
 | **Collapsible Sidebars** | Hide the channel list for more space |
@@ -470,6 +470,7 @@ See [CHANGELOG.md](family-chat/CHANGELOG.md) for detailed version history.
 
 **Recent Highlights:**
 
+- **v2.55.1** — "Where am I?" shows the map over the chat instead of leaving it
 - **v2.55.0** — Profile cards with birthdate, anniversary, phone number and a "Where am I?" map button
 - **v2.54.0** — Drag a file onto the chat to share it
 - **v2.53.0** — Drag-and-drop channel reordering in Settings, like the admin panel
