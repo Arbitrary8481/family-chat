@@ -21,12 +21,17 @@ function getStoredChannel() {
 // so that path picks the channel. The address is then reset to the plain
 // app page; otherwise the same path, re-sent whenever the phone rotates,
 // or a reload, would keep pulling you back to that channel.
+// True once Home Assistant's app page has answered subscribe-properties,
+// which means it also accepts home-assistant/navigate.
+let inHomeAssistantAppPanel = false;
+
 function listenForHomeAssistantRoute() {
     if (window.parent === window) return;
     window.addEventListener('message', (e) => {
         if (e.source !== window.parent || e.origin !== window.location.origin) return;
         const data = e.data;
         if (data && data.type === 'home-assistant/properties' && data.route) {
+            inHomeAssistantAppPanel = true;
             handleHomeAssistantRoute(data.route);
         }
     });
@@ -879,7 +884,8 @@ document.addEventListener('click', (e) => {
     const messageEl = e.target.closest('.message');
     const hitExcludedTarget = e.target.closest(
         '.message-actions, .message-image, .file-attachment, .reaction, ' +
-        '.message-reply-quote, .link-preview-card, a, .poll-option, audio, .voice-message'
+        '.message-reply-quote, .link-preview-card, a, .poll-option, audio, .voice-message, ' +
+        '.message-author, .message-avatar'
     );
 
     if (messageEl && !hitExcludedTarget) {
@@ -2541,6 +2547,7 @@ function switchChannel(slug, onLoaded) {
     // it we've stopped typing there, and every entry in typingUsers
     // belongs to that same old channel's room, which is about to be left.
     clearTypingIndicatorState();
+    closeProfileCard();
     const composer = document.getElementById('messageInput');
     if (composer) saveDraft(currentChannel, composer.value);
     currentChannel = slug;
@@ -3699,6 +3706,7 @@ function openMySettings() {
             if (input) input.value = me.alias || '';
             if (hint) hint.textContent = `(your Home Assistant name is "${me.ha_name}")`;
             setAvatarPreview(me.avatar_url);
+            fillMyProfileDetails(me);
         })
         .catch(() => {});
 
@@ -4145,6 +4153,187 @@ function saveMyAlias() {
             alert("Couldn't save your display name. Please try again.");
         });
 }
+
+// Birthdate, anniversary and phone in Settings → Profile. Shown to
+// everyone on your profile card (see openProfileCard()).
+const PROFILE_DETAIL_INPUTS = { birthdate: 'myBirthdate', anniversary: 'myAnniversary', phone: 'myPhone' };
+
+function fillMyProfileDetails(details) {
+    const today = localDateString(new Date());
+    Object.entries(PROFILE_DETAIL_INPUTS).forEach(([field, id]) => {
+        const input = document.getElementById(id);
+        if (!input) return;
+        input.value = details[field] || '';
+        if (input.type === 'date') input.max = today;
+    });
+    const status = document.getElementById('myProfileDetailsStatus');
+    if (status) status.classList.add('hidden');
+}
+
+function saveMyProfileDetails() {
+    const body = {};
+    Object.entries(PROFILE_DETAIL_INPUTS).forEach(([field, id]) => {
+        const input = document.getElementById(id);
+        body[field] = input ? input.value.trim() : '';
+    });
+    fetch(apiUrl('/api/my-profile'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    })
+        .then(r => r.json().then(data => ({ ok: r.ok, data })))
+        .then(({ ok, data }) => {
+            if (!ok) throw new Error(data.error || "Couldn't save your details.");
+            fillMyProfileDetails(data);
+            const status = document.getElementById('myProfileDetailsStatus');
+            if (status) {
+                status.textContent = 'Saved.';
+                status.classList.remove('hidden');
+            }
+        })
+        .catch(err => alert(err.message || "Couldn't save your details. Please try again."));
+}
+
+// YYYY-MM-DD for a date in the viewer's own time zone (toISOString would
+// use UTC, which is already tomorrow or still yesterday for part of the day).
+function localDateString(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+// ---- Profile card ----
+// Clicking a name (or the avatar beside it) in the chat opens a small
+// card over the chat with whatever that person has shared, and a
+// "Where am I?" button when Home Assistant can locate them.
+let profileCardRequest = 0;
+
+function openProfileCard(userId, anchor) {
+    const card = document.getElementById('profileCard');
+    if (!card || !userId) return;
+    const request = ++profileCardRequest;
+    card.innerHTML = '<div class="profile-card-note">Loading…</div>';
+    card.classList.remove('hidden');
+    positionProfileCard(card, anchor);
+    fetch(apiUrl(`/api/profile/${encodeURIComponent(userId)}`))
+        .then(r => r.json().then(data => ({ ok: r.ok, data })))
+        .then(({ ok, data }) => {
+            if (request !== profileCardRequest) return;
+            if (!ok) throw new Error(data.error);
+            card.innerHTML = buildProfileCardHtml(data);
+            positionProfileCard(card, anchor);
+        })
+        .catch(() => {
+            if (request !== profileCardRequest) return;
+            card.innerHTML = '<div class="profile-card-note">Couldn\'t load this profile.</div>';
+        });
+}
+
+function closeProfileCard() {
+    profileCardRequest++;
+    const card = document.getElementById('profileCard');
+    if (card) card.classList.add('hidden');
+}
+
+function buildProfileCardHtml(profile) {
+    const rows = [];
+    if (profile.birthdate) rows.push(['Birthday', escapeHtml(formatProfileDate(profile.birthdate))]);
+    if (profile.anniversary) rows.push(['Anniversary', escapeHtml(formatProfileDate(profile.anniversary))]);
+    if (profile.phone) {
+        rows.push(['Phone', `<a href="${escapeHtml(phoneMatchToTelHref(profile.phone, null))}" class="phone-link">${escapeHtml(profile.phone)}</a>`]);
+    }
+    const detailsHtml = rows.length
+        ? `<dl class="profile-card-details">${rows.map(([label, value]) => `<dt>${label}</dt><dd>${value}</dd>`).join('')}</dl>`
+        : `<div class="profile-card-note">${escapeHtml(profile.name)} hasn't shared any details yet.</div>`;
+    const whereHtml = profile.person_entity
+        ? `<button type="button" class="btn btn-primary profile-card-where" data-person-entity="${escapeHtml(profile.person_entity)}">Where am I?</button>`
+        : '';
+    return `
+        <button type="button" class="profile-card-close" title="Close" aria-label="Close">×</button>
+        <div class="profile-card-header">
+            <div class="avatar profile-card-avatar">${avatarInnerHtml(profile.avatar_url, profile.name)}</div>
+            <div class="profile-card-name">${escapeHtml(profile.name)}</div>
+        </div>
+        ${detailsHtml}
+        ${whereHtml}
+    `;
+}
+
+// "1985-03-04" -> "March 4, 1985", in the viewer's own language. Built
+// from the parts so a time zone can't shift it to the day before.
+function formatProfileDate(value) {
+    const [year, month, day] = value.split('-').map(Number);
+    if (!year || !month || !day) return value;
+    return new Date(year, month - 1, day).toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+// Next to the clicked name, kept inside the window; above it if there's
+// no room below.
+function positionProfileCard(card, anchor) {
+    const margin = 8;
+    const width = card.offsetWidth;
+    const height = card.offsetHeight;
+    const rect = anchor ? anchor.getBoundingClientRect() : { left: margin, bottom: margin, top: margin };
+    let left = Math.min(rect.left, window.innerWidth - width - margin);
+    let top = rect.bottom + 6;
+    if (top + height > window.innerHeight - margin) top = rect.top - height - 6;
+    card.style.left = Math.max(margin, left) + 'px';
+    card.style.top = Math.max(margin, top) + 'px';
+}
+
+// Opens the Home Assistant map with this person's location dialog on
+// top (?more-info-entity-id= is handled by Home Assistant on every page).
+function openPersonOnMap(personEntity) {
+    openHomeAssistantPage(`/map?more-info-entity-id=${encodeURIComponent(personEntity)}`);
+}
+
+// Navigates the Home Assistant window around this app. Home Assistant's
+// app page (2026.2+) takes a navigate message, which avoids reloading it;
+// older versions get the top window's address set directly, which works
+// because the app is served from the same origin as Home Assistant.
+function openHomeAssistantPage(path) {
+    if (inHomeAssistantAppPanel) {
+        window.parent.postMessage({ type: 'home-assistant/navigate', path }, window.location.origin);
+        return;
+    }
+    if (window.top !== window) {
+        try {
+            window.top.location.assign(path);
+            return;
+        } catch (e) {}
+    }
+    window.open(path, '_blank', 'noopener');
+}
+
+document.addEventListener('click', (e) => {
+    const card = document.getElementById('profileCard');
+    if (!card) return;
+
+    const where = e.target.closest('.profile-card-where');
+    if (where) {
+        closeProfileCard();
+        openPersonOnMap(where.dataset.personEntity);
+        return;
+    }
+    if (e.target.closest('.profile-card-close')) {
+        closeProfileCard();
+        return;
+    }
+    if (card.contains(e.target)) return;
+
+    // The avatar of a grouped follow-up message is hidden, so only a
+    // message showing its header opens a card from the avatar.
+    const trigger = e.target.closest('.message-author, .message:not(.message-grouped) > .message-avatar');
+    const message = trigger && trigger.closest('.message');
+    const userId = message && message.dataset.senderId;
+    if (userId && userId !== 'ha-bot') {
+        openProfileCard(userId, trigger);
+        return;
+    }
+    if (!card.classList.contains('hidden')) closeProfileCard();
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeProfileCard();
+});
 
 // Current avatar as last loaded from /api/me — lets removeMyAvatar() know
 // whether there's actually anything to remove without a round-trip.

@@ -13,6 +13,7 @@ import logging
 import math
 import shutil
 import tempfile
+import time
 import zipfile
 import functools
 import html
@@ -646,6 +647,14 @@ def init_db():
     # One row per person per option they picked on a poll message. Keyed
     # on the stable user_id (not the display name) for the same reason
     # reactions are: an alias has no uniqueness constraint.
+    # Optional personal details each person can share from Settings →
+    # Profile, shown on their profile card. Empty string means not shared.
+    c.execute('''CREATE TABLE IF NOT EXISTS user_profiles
+                 (user_id TEXT PRIMARY KEY,
+                  birthdate TEXT NOT NULL DEFAULT '',
+                  anniversary TEXT NOT NULL DEFAULT '',
+                  phone TEXT NOT NULL DEFAULT '')''')
+
     c.execute('''CREATE TABLE IF NOT EXISTS poll_votes
                  (message_id INTEGER NOT NULL,
                   option_index INTEGER NOT NULL,
@@ -772,6 +781,108 @@ def get_avatar(user_id):
     row = c.fetchone()
     conn.close()
     return row[0] if row else None
+
+PROFILE_FIELDS = ('birthdate', 'anniversary', 'phone')
+_PHONE_PATTERN = re.compile(r'\+?[0-9][0-9 ().-]*')
+
+def get_profile_details(user_id):
+    """{'birthdate', 'anniversary', 'phone'} for a person, each '' if not
+    shared. Dates are YYYY-MM-DD."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT birthdate, anniversary, phone FROM user_profiles WHERE user_id = ?', (user_id,))
+    row = c.fetchone()
+    conn.close()
+    return dict(zip(PROFILE_FIELDS, row)) if row else dict.fromkeys(PROFILE_FIELDS, '')
+
+def validate_profile_details(data):
+    """Returns (details, error) from untrusted input. Each field may be
+    empty to clear it."""
+    details = {}
+    for field in PROFILE_FIELDS:
+        value = data.get(field, '')
+        if value is None:
+            value = ''
+        if not isinstance(value, str):
+            return None, 'Invalid value.'
+        details[field] = value.strip()
+
+    for field, label in (('birthdate', 'Birthdate'), ('anniversary', 'Anniversary date')):
+        value = details[field]
+        if not value:
+            continue
+        try:
+            date = datetime.strptime(value, '%Y-%m-%d').date()
+        except ValueError:
+            return None, f'{label} must be a real date.'
+        if date.year < 1900 or date > datetime.now().date():
+            return None, f'{label} must be a date in the past.'
+
+    phone = details['phone']
+    if phone:
+        digits = sum(ch.isdigit() for ch in phone)
+        if len(phone) > 30 or not _PHONE_PATTERN.fullmatch(phone) or not 3 <= digits <= 20:
+            return None, 'Phone number can only contain digits, spaces, ( ) - . and a leading +.'
+    return details, None
+
+def set_profile_details(user_id, details):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    if any(details.values()):
+        c.execute('''INSERT INTO user_profiles (user_id, birthdate, anniversary, phone)
+                     VALUES (?, ?, ?, ?)
+                     ON CONFLICT(user_id) DO UPDATE SET
+                        birthdate = excluded.birthdate,
+                        anniversary = excluded.anniversary,
+                        phone = excluded.phone''',
+                  (user_id, details['birthdate'], details['anniversary'], details['phone']))
+    else:
+        c.execute('DELETE FROM user_profiles WHERE user_id = ?', (user_id,))
+    conn.commit()
+    conn.close()
+
+def get_display_name(user_id):
+    """The name shown for a person (alias, else Home Assistant display
+    name, else username), or None if they've never opened the chat."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''SELECT h.display_name, h.username, ua.alias
+                 FROM ha_users h
+                 LEFT JOIN user_aliases ua ON ua.user_id = h.user_id
+                 WHERE h.user_id = ?''', (user_id,))
+    row = c.fetchone()
+    conn.close()
+    if not row:
+        return None
+    display_name, username, alias = row
+    return (alias or '').strip() or (display_name or '').strip() or (username or '').strip() or None
+
+# Home Assistant user id -> person.* entity, refreshed at most once a
+# minute: opening a profile card shouldn't fetch every entity's state.
+_PERSON_CACHE_SECONDS = 60
+_person_entities_cache = {'fetched_at': None, 'by_user': {}}
+
+def find_person_entity(user_id):
+    """The Home Assistant person entity linked to this Home Assistant
+    user, if it has something to locate them with (a tracked device or a
+    GPS position); else None. A person entity names its user in its
+    user_id attribute."""
+    now = time.monotonic()
+    fetched_at = _person_entities_cache['fetched_at']
+    if fetched_at is None or now - fetched_at > _PERSON_CACHE_SECONDS:
+        states, error = ha_api_request('GET', '/states')
+        if error:
+            return None
+        by_user = {}
+        for state in states or []:
+            entity_id = state.get('entity_id', '')
+            attributes = state.get('attributes') or {}
+            linked_user = attributes.get('user_id')
+            if (entity_id.startswith('person.') and linked_user
+                    and (attributes.get('device_trackers') or attributes.get('latitude') is not None)):
+                by_user[linked_user] = entity_id
+        _person_entities_cache.update(fetched_at=now, by_user=by_user)
+    return _person_entities_cache['by_user'].get(user_id)
 
 def _resolve_upload_path(file_url):
     """Resolves a public /uploads/... URL to the on-disk path it names,
@@ -1887,6 +1998,37 @@ def api_me():
         'ha_name': ha_name,
         'alias': get_alias(ha_user_id) or '',
         'avatar_url': get_avatar(ha_user_id) or '',
+        **get_profile_details(ha_user_id),
+    })
+
+@app.route('/api/my-profile', methods=['POST'])
+def api_set_my_profile():
+    # Like /api/my-alias: always the requester's own profile, from the
+    # ingress headers, never an id from the request body.
+    ha_user_id = request.headers.get('X-Remote-User-Id')
+    if not ha_user_id:
+        return jsonify({'error': 'Not accessed through Home Assistant'}), 403
+    details, error = validate_profile_details(request.get_json(silent=True) or {})
+    if error:
+        return jsonify({'error': error}), 400
+    set_profile_details(ha_user_id, details)
+    return jsonify({'success': True, **details})
+
+@app.route('/api/profile/<user_id>')
+def api_profile(user_id):
+    # What clicking someone's name shows: their shared details, and the
+    # Home Assistant person entity to show on the map, if any.
+    if not request.headers.get('X-Remote-User-Id'):
+        return jsonify({'error': 'Not accessed through Home Assistant'}), 403
+    name = get_display_name(user_id)
+    if not name:
+        return jsonify({'error': 'Unknown person.'}), 404
+    return jsonify({
+        'user_id': user_id,
+        'name': name,
+        'avatar_url': get_avatar(user_id) or '',
+        **get_profile_details(user_id),
+        'person_entity': find_person_entity(user_id),
     })
 
 @app.route('/api/my-alias', methods=['POST'])

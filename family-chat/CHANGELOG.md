@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.55.0
+
+### Added
+- **Profile details.** Settings → Profile has three new, optional fields: birthdate, anniversary date and phone number. Clear a field and save to stop sharing it. Dates can't be in the future, and a phone number can only contain digits, spaces, `( ) - .` and a leading `+`.
+- **Profile cards.** Clicking someone's name in the chat (or the avatar next to it) opens a card over the chat with their photo, name and whatever they've shared. The phone number is a tap-to-call link. If they haven't shared anything, the card says so. It closes with ×, Escape, a click elsewhere, or switching channels.
+- **"Where am I?"** If a person in Home Assistant is linked to someone's Home Assistant login and has a tracked device or a GPS position, their card has a "Where am I?" button. It opens the Home Assistant map with that person's location window on top. Home Assistant's own access rules apply there, as on any other page.
+
+### Notes
+- Anything shared in these fields is visible to everyone in the chat, which the Settings page says next to the fields.
+- On Home Assistant 2026.2 and later, the map opens inside the Home Assistant window without reloading it. On older versions, the whole Home Assistant page goes to the map instead. Only the newer path was tested against a stand-in for Home Assistant's app page; the older one wasn't tested on a real install.
+- Who is linked to which person is looked up from Home Assistant at most once a minute, so a newly linked device can take up to a minute to show its button.
+- 12 new automated tests cover the field checks, saving only ever changing your own profile, clearing, the card's data and the person lookup. All 79 tests pass.
+
 ## 2.54.0
 
 ### Added

@@ -428,6 +428,20 @@
                                 Leave it blank and save to go back to your Home Assistant name.
                             </p>
                         </div>
+                        <div class="settings-section">
+                            <label for="myBirthdate" class="form-label">Birthdate</label>
+                            <input type="date" id="myBirthdate" class="settings-select">
+                            <label for="myAnniversary" class="form-label">Anniversary date</label>
+                            <input type="date" id="myAnniversary" class="settings-select">
+                            <label for="myPhone" class="form-label">Phone number</label>
+                            <input type="tel" id="myPhone" class="settings-select" maxlength="30" placeholder="e.g. 555-123-4567" autocomplete="tel">
+                            <button class="btn btn-primary" onclick="saveMyProfileDetails()" style="margin-top: 12px;">Save</button>
+                            <p id="myProfileDetailsStatus" class="settings-save-status hidden"></p>
+                            <p style="font-size: 12px; color: var(--text-muted); margin-top: 12px;">
+                                All optional. Anything you add here is shown to everyone in the chat when they click your name.
+                                Clear a field and save to stop sharing it.
+                            </p>
+                        </div>
                     </div>
 
                     <!-- Notifications -->
@@ -634,6 +648,10 @@
             <div id="pinnedList" class="search-results"></div>
         </div>
     </div>
+
+    <!-- Profile card: opened by clicking a name in the chat, filled in by
+         openProfileCard() in script.js. -->
+    <div class="profile-card hidden" id="profileCard" role="dialog" aria-label="Profile"></div>
 
     <!-- Identity Gate: shown only if Home Assistant auto sign-in hasn't
          resolved a name yet. There is no manual picker anymore — identity

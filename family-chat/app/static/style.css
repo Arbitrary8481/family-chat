@@ -574,6 +574,96 @@ body {
     text-decoration: underline;
 }
 
+.message:not(.message-grouped) > .message-avatar {
+    cursor: pointer;
+}
+
+/* Opened by clicking a name; positioned next to it by
+   positionProfileCard() in script.js. Below the modals (z-index 1000). */
+.profile-card {
+    position: fixed;
+    z-index: 900;
+    width: 280px;
+    max-width: calc(100vw - 16px);
+    padding: 16px;
+    background: var(--bg-floating);
+    color: var(--text-normal);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.profile-card-close {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.profile-card-close:hover {
+    color: var(--text-normal);
+}
+
+.profile-card-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding-right: 20px;
+}
+
+.profile-card-avatar {
+    width: 48px;
+    height: 48px;
+    flex-shrink: 0;
+}
+
+.profile-card-name {
+    font-size: 17px;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.profile-card-details {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 6px 12px;
+    margin: 0;
+    font-size: 14px;
+}
+
+.profile-card-details dt {
+    color: var(--text-muted);
+}
+
+.profile-card-details dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.profile-card-details a {
+    color: var(--text-link);
+    text-decoration: none;
+}
+
+.profile-card-details a:hover {
+    text-decoration: underline;
+}
+
+.profile-card-note {
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+.profile-card-where {
+    width: 100%;
+    margin-top: 14px;
+}
+
 .message-timestamp {
     font-size: 12px;
     color: var(--text-muted);
