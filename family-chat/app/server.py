@@ -3289,22 +3289,33 @@ def get_own_slug():
         logger.warning('Could not determine this app\'s own slug (notification deep links will be skipped): %s', e)
         return None
 
-_uses_app_panel_cache = None
+# Home Assistant Core is updated without restarting this app, so the
+# version is re-read after this long rather than cached for good.
+HA_VERSION_TTL_SECONDS = 3600
+_ha_version_cache = None  # ((year, month), monotonic time read)
+
+def get_ha_version():
+    """(year, month) of the running Home Assistant, e.g. (2026, 11), or
+    None if it can't be read. Only successful reads are cached."""
+    global _ha_version_cache
+    if (_ha_version_cache is not None
+            and time.monotonic() - _ha_version_cache[1] < HA_VERSION_TTL_SECONDS):
+        return _ha_version_cache[0]
+    config, _ = ha_api_request('GET', '/config')
+    version = config.get('version') if isinstance(config, dict) else None
+    match = re.match(r'(\d+)\.(\d+)', version if isinstance(version, str) else '')
+    if not match:
+        return None
+    _ha_version_cache = ((int(match.group(1)), int(match.group(2))), time.monotonic())
+    return _ha_version_cache[0]
 
 def ha_uses_app_panel():
     """Whether Home Assistant opens apps at /app/<slug> (2026.2 and later,
     when the Supervisor panel and its /hassio/ingress/<slug> route were
     removed) rather than /hassio/ingress/<slug>. Assumes the newer layout
-    if the version can't be read. Cached once known."""
-    global _uses_app_panel_cache
-    if _uses_app_panel_cache is not None:
-        return _uses_app_panel_cache
-    config, _ = ha_api_request('GET', '/config')
-    match = re.match(r'(\d+)\.(\d+)', str((config or {}).get('version', '')))
-    if not match:
-        return True
-    _uses_app_panel_cache = (int(match.group(1)), int(match.group(2))) >= (2026, 2)
-    return _uses_app_panel_cache
+    if the version can't be read."""
+    version = get_ha_version()
+    return version is None or version >= (2026, 2)
 
 def notification_link(channel=None):
     """The Home Assistant page a tapped notification should open, or None
@@ -3755,14 +3766,83 @@ def get_calendar_entities():
     data, error = ha_api_request('GET', '/states')
     if error:
         return None, error
+    registry_names = get_calendar_registry_names()
     calendars = []
     for state in data or []:
         entity_id = state.get('entity_id', '')
         if entity_id.startswith('calendar.'):
-            name = (state.get('attributes') or {}).get('friendly_name') or entity_id
+            name = (
+                registry_names.get(entity_id)
+                or (state.get('attributes') or {}).get('friendly_name')
+                or entity_id
+            )
             calendars.append({'entity_id': entity_id, 'name': name})
     calendars.sort(key=lambda c: c['name'].lower())
     return calendars, None
+
+# Home Assistant 2026.11 composes entity names as "<device> <entity>"
+# and plans to deprecate the friendly_name attribute, pointing templates
+# at entity_name() and device_name() instead. The names are rendered
+# through /api/template, but only on 2026.11 and later: entity_name()
+# exists from 2026.4, and using it earlier would rename some calendars
+# before Home Assistant's own dashboards do. Anything else (an older or
+# unknown version, a failed render) keeps friendly_name exactly as before.
+CALENDAR_NAMING_MIN_VERSION = (2026, 11)
+CALENDAR_NAMES_TEMPLATE = (
+    '{%- set ns = namespace(out=[]) -%}'
+    '{%- for s in states.calendar -%}'
+    '{%- set ns.out = ns.out + [{"entity_id": s.entity_id,'
+    ' "entity": entity_name(s.entity_id),'
+    ' "device": device_name(s.entity_id)}] -%}'
+    '{%- endfor -%}'
+    '{{ ns.out | to_json }}'
+)
+
+# After a failed render, wait this long before trying again, so a
+# problem doesn't log a warning every time someone opens a calendar.
+CALENDAR_NAMES_RETRY_SECONDS = 3600
+_calendar_names_failed_at = None
+
+def compose_entity_display_name(entity_name, device_name):
+    """Mirror how Home Assistant 2026.11 shows an entity: the device name
+    followed by the entity's own name. Returns None when there is
+    nothing to go on, so the caller can fall back to friendly_name."""
+    entity_name = (entity_name or '').strip()
+    device_name = (device_name or '').strip()
+    if not entity_name:
+        return device_name or None
+    if not device_name or entity_name == device_name:
+        return entity_name
+    # A name someone set by hand may already start with the device name.
+    if entity_name.lower().startswith(device_name.lower() + ' '):
+        return entity_name
+    return f'{device_name} {entity_name}'
+
+def get_calendar_registry_names():
+    """{entity_id: display name} for every calendar Home Assistant can
+    name the new way. Empty when that isn't possible, which callers
+    treat as "use friendly_name"."""
+    global _calendar_names_failed_at
+    version = get_ha_version()
+    if version is None or version < CALENDAR_NAMING_MIN_VERSION:
+        return {}
+    if (_calendar_names_failed_at is not None
+            and time.monotonic() - _calendar_names_failed_at < CALENDAR_NAMES_RETRY_SECONDS):
+        return {}
+    data, error = ha_api_request('POST', '/template', {'template': CALENDAR_NAMES_TEMPLATE})
+    if error or not isinstance(data, list):
+        _calendar_names_failed_at = time.monotonic()
+        return {}
+    _calendar_names_failed_at = None
+    names = {}
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        entity_id = item.get('entity_id')
+        name = compose_entity_display_name(item.get('entity'), item.get('device'))
+        if isinstance(entity_id, str) and name:
+            names[entity_id] = name
+    return names
 
 def get_allowed_calendar_ids():
     """None means no restriction has ever been configured — every real
