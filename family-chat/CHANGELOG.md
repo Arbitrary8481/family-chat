@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.56.1
+
+### Changed
+- **Calendar names follow Home Assistant 2026.11's new entity naming.** Home Assistant 2026.11 names an entity by its device name followed by the entity's own name, and plans to retire the `friendly_name` attribute that Family Chat used for calendar names. On 2026.11 and later, calendar pickers, the Upcoming panel and the admin Calendars tab get names from Home Assistant's `entity_name()` and `device_name()`, so they match what Home Assistant's own dashboards show. A calendar that is the main entity of its device shows just the device name.
+
+### Notes
+- Nothing changes before Home Assistant 2026.11. Earlier versions, or a version Family Chat can't read, keep the `friendly_name` names exactly as before. The version is checked again every hour, so the new names appear after you update Home Assistant without restarting Family Chat.
+- Some calendar names may change on 2026.11 even if you don't rename anything, the same way they change on Home Assistant's own dashboards.
+- Saved calendar settings use entity IDs, which don't change.
+- Notification links use the same hourly version check. Before, the version was read once, so an update to 2026.2 or later needed a Family Chat restart to switch links to the new app page.
+
 ## 2.56.0
 
 ### Security

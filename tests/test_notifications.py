@@ -25,14 +25,14 @@ except ImportError:  # pragma: no cover - depends on the environment
 @unittest.skipIf(server is None, "the app's dependencies (Flask etc.) are not installed")
 class NotificationLinkTests(unittest.TestCase):
     def setUp(self):
-        server._uses_app_panel_cache = None
-        self.addCleanup(setattr, server, "_uses_app_panel_cache", None)
+        server._ha_version_cache = None
+        self.addCleanup(setattr, server, "_ha_version_cache", None)
         patcher = mock.patch.object(server, "get_own_slug", return_value="c2f85679_family_chat")
         patcher.start()
         self.addCleanup(patcher.stop)
 
     def link(self, version, channel="random"):
-        server._uses_app_panel_cache = None
+        server._ha_version_cache = None
         config = ({"version": version}, None) if version else (None, "unreachable")
         with mock.patch.object(server, "ha_api_request", return_value=config):
             return server.notification_link(channel)
