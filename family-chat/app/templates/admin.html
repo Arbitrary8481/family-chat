@@ -375,11 +375,15 @@
             <h1>🔒 Admin Login</h1>
             <p class="subtitle">Enter the admin password to manage Family Chat settings.</p>
             {% if error %}<div class="message error">{{ error }}</div>{% endif %}
+            {% if admin_password_unset %}
+            <div class="message error">Admin login is turned off until an admin password is set. In Home Assistant, open this app's Configuration tab, set admin_password to something other than "changeme", save, and restart the app.</div>
+            {% else %}
             <form method="post" action="./admin/login">
                 <label for="password">Password</label>
                 <input type="password" id="password" name="password" autofocus required>
                 <button type="submit">Log In</button>
             </form>
+            {% endif %}
         {% else %}
         <div class="panel-inner">
             <div class="logout-row">

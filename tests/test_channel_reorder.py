@@ -10,6 +10,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 os.environ.setdefault("FAMILY_CHAT_DATA_DIR", tempfile.mkdtemp(prefix="family-chat-tests-"))
@@ -51,11 +52,13 @@ class ChannelReorderTests(unittest.TestCase):
 
     def post(self, user_id, channels, admin=False):
         client = server.app.test_client()
-        if admin:
-            with client.session_transaction() as sess:
-                sess["is_admin"] = True
-        return client.post("/api/channels/reorder", json={"channels": channels},
-                           headers={"X-Remote-User-Id": user_id, "X-Remote-User-Name": "Someone"})
+        with mock.patch.object(server, "ADMIN_PASSWORD_UNSET", False):
+            if admin:
+                with client.session_transaction() as sess:
+                    sess["is_admin"] = True
+                    sess["admin_key"] = server._admin_session_key()
+            return client.post("/api/channels/reorder", json={"channels": channels},
+                               headers={"X-Remote-User-Id": user_id, "X-Remote-User-Name": "Someone"})
 
     def moved_last_channel_to_first_category(self):
         order = {k: list(v) for k, v in self.original.items()}

@@ -10,9 +10,9 @@ Fixes are only made to the latest version. Keep the app updated from the Home As
 
 ## How Family Chat is protected
 
-- **Reachable only through Home Assistant.** The app has no port of its own. Every request comes through Home Assistant's ingress proxy, which only lets in people who are logged into Home Assistant.
+- **Reachable only through Home Assistant.** The app has no port of its own. Every request comes through Home Assistant's ingress proxy, which only lets in people who are logged into Home Assistant. Connections from anywhere else, including other apps on Home Assistant's internal network, are refused.
 - **Identity comes from Home Assistant, not the browser.** Who sent a message, reaction, vote or upload is taken from the login Home Assistant passes along, never from anything the browser sends.
-- **Admin access is password-protected.** The admin panel locks for 5 minutes after 10 wrong passwords. The server owner gets the same moderation powers through their Home Assistant login instead.
+- **Admin access is password-protected.** Admin login stays off until a password other than the default is set. The admin panel locks for 5 minutes after 10 wrong passwords, and admin sessions end whenever the app restarts, including after a password change. The server owner gets the same moderation powers through their Home Assistant login instead.
 - **The container is locked down** by a custom AppArmor profile that only allows the files and network access the app needs.
 - **Everything shown on the page is escaped**, including formatted messages, polls, file names and link previews.
 - **Everything sent to the server is checked**, including messages, polls, votes, uploads and voice messages sent directly to it, bypassing the app.
@@ -23,6 +23,22 @@ Fixes are only made to the latest version. Keep the app updated from the Home As
 ## Fixed security issues
 
 Newest first. Each entry was fixed in the version shown.
+
+### 2.56.0
+A full security review of the app.
+- **Other apps on Home Assistant's internal network could pose as any family member.** The app trusted the login details Home Assistant's ingress proxy adds to each request, but it accepted connections from any address. Any other app container on the same internal network could connect directly and send its own login details, including the server owner's. Only Home Assistant's ingress proxy (`172.30.32.2`) can connect now, as Home Assistant's developer docs require.
+- **Deleting a message could delete someone else's file.** A message sent directly to the server can point at any file already stored, such as another person's photo, avatar or custom emoji. Deleting that message deleted the file with it. A file is now kept while anything else still uses it.
+- **The default admin password worked.** `changeme` is printed in the app's own configuration and README, so any family member could log in as admin, download every message as a backup, or replace the database. Admin login now stays off until a real password is set. An empty password is treated the same way.
+- **Admin sessions survived a password change.** Admin sessions now end whenever the app restarts, which a password change requires.
+- **GIF messages could load an image from any website.** A message sent directly to the server could use any address as a GIF, and that website would see the address of everyone who opened the channel. GIFs must now come from GIPHY.
+- **Reactions had no length limit.** A reaction sent directly to the server could store a huge string on any message. Reactions are now limited to 64 characters.
+- **Uploads could overwrite each other.** Two files with the same name uploaded in the same second got the same stored name, so one replaced the other. Each upload now gets a name nothing else uses.
+
+Reviewed and left as they are:
+- Every route, socket event, template and page script was checked. Everything shown on the page is still escaped, uploads are still limited to safe file types, and SQL queries are all parameterized.
+- No known vulnerabilities in the Python packages the app uses (checked with `pip-audit`).
+- The app's container is built on Alpine 3.19, which no longer gets security updates. Moving to a newer base image needs testing on a real install, so it will be a separate update.
+- Any family member can send push notifications through any `notify.*` service Home Assistant has, including someone else's phone. This is by design, since the device list comes from Home Assistant. Restricting it would need a way to link phones to people.
 
 ### 2.53.0
 - **Channel reordering accepted a list that named the same channel twice.** Only the server owner or an admin can reorder, so this was low risk. Such a list is now rejected.
