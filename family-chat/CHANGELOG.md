@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.56.0
+
+### Security
+Fixes from a full security review. Details are in SECURITY.md.
+- **Only Home Assistant can connect to the app now.** Other apps on Home Assistant's internal network could connect to Family Chat directly and claim to be any family member, including the server owner. Every connection that doesn't come from Home Assistant's ingress proxy is now refused, as Home Assistant's developer docs require.
+- **Deleting a message no longer deletes a file someone else is still using.** A message could point at another person's photo, avatar or custom emoji, and deleting that message deleted the file too.
+- **Admin login is off until an admin password is set.** The default `changeme` (or an empty password) no longer logs anyone in. The admin page says how to set a password. Changing the password now also logs out everyone already logged in as admin.
+- **GIF messages must come from GIPHY.** A hand-crafted message could show an image from any website, which would learn the address of everyone who viewed it.
+- **Reactions are limited to 64 characters**, so a hand-crafted reaction can't store a huge string.
+- **Two uploads with the same file name in the same second no longer overwrite each other.** This can happen when two people paste screenshots at the same moment.
+
+### Upgrade notes
+- If the admin password is still `changeme`, set a new one in the app's Configuration tab and restart the app to use the admin panel. The server owner's moderation tools don't need it.
+- Anyone logged into the admin panel will need to log in again once.
+
 ## 2.55.1
 
 ### Changed

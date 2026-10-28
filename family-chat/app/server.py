@@ -16,6 +16,8 @@ import tempfile
 import time
 import zipfile
 import functools
+import hashlib
+import hmac
 import html
 import os
 import re
@@ -63,6 +65,50 @@ app = Flask(__name__, template_folder='templates', static_folder='static')
 # logger=True surfaces Socket.IO's own connect/disconnect/event activity in
 # the log too, which is useful context alongside our own error logging below.
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet', logger=True)
+
+# Home Assistant's ingress proxy (the Supervisor) always connects from
+# 172.30.32.2, and Home Assistant's app developer docs say an ingress app
+# must refuse every other address. Without this, any other app container
+# on Home Assistant's internal network could reach port 8099 directly
+# and send its own X-Remote-User-* headers, posing as any family member,
+# including the owner. The Supervisor replaces those headers on every
+# request it forwards, so they can only be trusted from that address.
+# Loopback is allowed too: only code inside this container can use it.
+# INGRESS_ALLOWED_IPS (comma-separated) overrides the list, only for
+# running the app outside Home Assistant during development.
+INGRESS_ALLOWED_IPS = frozenset(
+    ip.strip() for ip in os.environ.get(
+        'INGRESS_ALLOWED_IPS', '172.30.32.2,127.0.0.1,::1').split(',') if ip.strip())
+_refused_addresses = set()
+
+def is_allowed_client(remote_addr):
+    try:
+        ip = ipaddress.ip_address(remote_addr or '')
+    except ValueError:
+        return False
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    return str(ip) in INGRESS_ALLOWED_IPS
+
+class IngressOnlyMiddleware:
+    """Wraps the whole WSGI app, Socket.IO included, so nothing is served
+    to a connection that didn't come through Home Assistant's ingress."""
+
+    def __init__(self, wsgi_app):
+        self.wsgi_app = wsgi_app
+
+    def __call__(self, environ, start_response):
+        remote_addr = environ.get('REMOTE_ADDR')
+        if is_allowed_client(remote_addr):
+            return self.wsgi_app(environ, start_response)
+        if remote_addr not in _refused_addresses and len(_refused_addresses) < 100:
+            _refused_addresses.add(remote_addr)
+            logger.warning('Refused a connection from %s: Family Chat only accepts '
+                           'connections through Home Assistant ingress.', remote_addr)
+        start_response('403 Forbidden', [('Content-Type', 'text/plain; charset=utf-8')])
+        return [b'Family Chat only accepts connections through Home Assistant.\n']
+
+app.wsgi_app = IngressOnlyMiddleware(app.wsgi_app)
 
 # Home Assistant writes app options to /data/options.json regardless of
 # base image. This app never read it (run.sh just hardcoded env vars
@@ -232,9 +278,14 @@ app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE + (1 * 1024 * 1024)
 
 ADMIN_PASSWORD = get_option('admin_password', 'ADMIN_PASSWORD', 'changeme')
 ADMIN_PASSWORD_HASH = generate_password_hash(ADMIN_PASSWORD)
-if ADMIN_PASSWORD == 'changeme':
-    logger.warning('admin_password is still set to the default "changeme". '
-                    'Set it in the app configuration.')
+# "changeme" is printed in this app's own config and README, so anyone in
+# the family could otherwise log in as admin, download every message in
+# a backup, or replace the database. Admin login stays off until a real
+# password is set. The server owner's moderation tools don't need it.
+ADMIN_PASSWORD_UNSET = (ADMIN_PASSWORD or '').strip() in ('', 'changeme')
+if ADMIN_PASSWORD_UNSET:
+    logger.warning('admin_password is not set (still "changeme" or empty), so admin login '
+                    'is turned off. Set it in the app configuration and restart the app.')
 
 # Very small in-memory brute-force guard for the admin login form —
 # previously unlimited, meaning an automated script could try passwords
@@ -693,7 +744,7 @@ def is_owner(user_id):
     """True for the designated owner only. Deliberately does NOT check
     the admin session here — admin (password) and owner (identity) are
     two independent ways to qualify for the same privileges; callers
-    combine them explicitly: `session.get('is_admin') or is_owner(requester_id)`."""
+    combine them explicitly: `is_admin_session() or is_owner(requester_id)`."""
     owner_id = get_owner_user_id()
     return bool(user_id) and bool(owner_id) and user_id == owner_id
 
@@ -895,13 +946,49 @@ def _resolve_upload_path(file_url):
         return candidate
     return None
 
+def unique_upload_path(stem, ext):
+    """A path in UPLOAD_FOLDER that no file uses yet. Names carry a
+    timestamp in seconds, so two uploads of the same file name in the same
+    second (two people pasting a screenshot, both named image.png) would
+    otherwise overwrite each other. Reserved by creating the file, so two
+    uploads at once can't both get the same name."""
+    for attempt in range(1000):
+        path = UPLOAD_FOLDER / (f'{stem}{ext}' if attempt == 0 else f'{stem}_{attempt}{ext}')
+        try:
+            path.touch(exist_ok=False)
+            return path
+        except FileExistsError:
+            continue
+    path = UPLOAD_FOLDER / f'{stem}_{secrets.token_hex(8)}{ext}'
+    path.touch()
+    return path
+
+def upload_still_used(file_url):
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        c = conn.cursor()
+        for query in ('SELECT 1 FROM messages WHERE file_url = ? LIMIT 1',
+                      'SELECT 1 FROM user_avatars WHERE avatar_url = ? LIMIT 1',
+                      'SELECT 1 FROM custom_emojis WHERE file_path = ? LIMIT 1'):
+            c.execute(query, (file_url,))
+            if c.fetchone():
+                return True
+        return False
+    finally:
+        conn.close()
+
 def remove_upload(file_url):
     """Deletes a file this app previously saved under UPLOAD_FOLDER, given
     its public /uploads/... URL. No-ops for anything else (e.g. an
     external GIPHY URL) — and resolves the path to confirm it can't have
-    climbed outside the upload folder before deleting anything from disk."""
+    climbed outside the upload folder before deleting anything from disk.
+    Call it after the row that used the file is gone: a file that any
+    message, avatar or custom emoji still uses is kept. A message can
+    point at any file already on the server, so without that check,
+    someone could post a message pointing at another person's photo,
+    avatar or emoji, delete their own message, and take the file with it."""
     candidate = _resolve_upload_path(file_url)
-    if candidate and candidate.exists():
+    if candidate and candidate.exists() and not upload_still_used(file_url):
         try:
             candidate.unlink()
         except OSError as e:
@@ -1784,10 +1871,24 @@ def resolve_ha_identity():
     chat_name = (display_name or username or 'HA User')[:30]
     return ha_user_id, chat_name
 
+def _admin_session_key():
+    """Ties an admin session to the current admin password, so changing
+    the password logs out every existing admin session. Derived with the
+    app's secret key, which never leaves the server, so the value stored
+    in the (readable, signed) session cookie reveals nothing about the
+    password."""
+    return hmac.new(app.config['SECRET_KEY'].encode(), ADMIN_PASSWORD.encode(),
+                    hashlib.sha256).hexdigest()
+
+def is_admin_session():
+    if ADMIN_PASSWORD_UNSET or not session.get('is_admin'):
+        return False
+    return hmac.compare_digest(str(session.get('admin_key', '')), _admin_session_key())
+
 def require_admin(view):
     @functools.wraps(view)
     def wrapped(*args, **kwargs):
-        if not session.get('is_admin'):
+        if not is_admin_session():
             return ingress_redirect(url_for('admin_panel'))
         return view(*args, **kwargs)
     return wrapped
@@ -1838,7 +1939,7 @@ def index():
                           auto_user=auto_user,
                           auto_user_id=auto_user_id,
                           auto_avatar=get_avatar(auto_user_id) if auto_user_id else None,
-                          is_admin=bool(session.get('is_admin')),
+                          is_admin=is_admin_session(),
                           is_owner=is_owner(auto_user_id),
                           server_name=server_identity['name'],
                           server_icon=server_identity['icon'],
@@ -1876,7 +1977,7 @@ def api_delete_channel():
     # session — anyone else still has to go through /admin (i.e.
     # doesn't have this capability at all without the admin password).
     ha_user_id = request.headers.get('X-Remote-User-Id')
-    if not (bool(session.get('is_admin')) or is_owner(ha_user_id)):
+    if not (is_admin_session() or is_owner(ha_user_id)):
         return jsonify({'error': 'Only the server owner or an admin can delete channels.'}), 403
     data = request.get_json(silent=True) or {}
     ok, error = delete_channel(data.get('slug', ''))
@@ -1890,7 +1991,7 @@ def api_reorder_channels():
     # what's already there. Takes the complete new order from a drag, see
     # reorder_channels().
     ha_user_id = request.headers.get('X-Remote-User-Id')
-    if not (bool(session.get('is_admin')) or is_owner(ha_user_id)):
+    if not (is_admin_session() or is_owner(ha_user_id)):
         return jsonify({'error': 'Only the server owner or an admin can reorder channels.'}), 403
     data = request.get_json(silent=True) or {}
     channels_by_category = data.get('channels')
@@ -1904,7 +2005,7 @@ def api_reorder_channels():
 @app.route('/api/categories/move', methods=['POST'])
 def api_move_category():
     ha_user_id = request.headers.get('X-Remote-User-Id')
-    if not (bool(session.get('is_admin')) or is_owner(ha_user_id)):
+    if not (is_admin_session() or is_owner(ha_user_id)):
         return jsonify({'error': 'Only the server owner or an admin can reorder categories.'}), 403
     data = request.get_json(silent=True) or {}
     ok, error = move_category(data.get('category_id', ''), data.get('direction', ''))
@@ -2080,8 +2181,9 @@ def api_set_my_avatar():
     # everywhere it's shown, rather than getting cached under an
     # already-seen filename.
     safe_id = secure_filename(ha_user_id) or 'user'
-    filename = f"avatar_{safe_id}_{int(datetime.now().timestamp())}.{ext}"
-    file.save(UPLOAD_FOLDER / filename)
+    avatar_path = unique_upload_path(f"avatar_{safe_id}_{int(datetime.now().timestamp())}", f'.{ext}')
+    filename = avatar_path.name
+    file.save(avatar_path)
     avatar_url = f'/uploads/{filename}'
     set_avatar(ha_user_id, avatar_url)
     return jsonify({'success': True, 'avatar_url': avatar_url})
@@ -2096,8 +2198,9 @@ def api_delete_my_avatar():
 
 @app.route('/admin')
 def admin_panel():
-    if not session.get('is_admin'):
-        return render_template('admin.html', logged_in=False, error=request.args.get('error'))
+    if not is_admin_session():
+        return render_template('admin.html', logged_in=False, error=request.args.get('error'),
+                               admin_password_unset=ADMIN_PASSWORD_UNSET)
 
     all_calendars, calendar_error = get_calendar_entities()
     allowed_ids = get_allowed_calendar_ids()
@@ -2177,6 +2280,8 @@ def admin_set_owner():
 
 @app.route('/admin/login', methods=['POST'])
 def admin_login():
+    if ADMIN_PASSWORD_UNSET:
+        return ingress_redirect(url_for('admin_panel'))
     if _admin_login_rate_limited():
         logger.warning('Admin login blocked — too many recent failed attempts.')
         return ingress_redirect(url_for('admin_panel', error='Too many failed attempts. Try again in a few minutes.'))
@@ -2186,6 +2291,7 @@ def admin_login():
     if check_password_hash(ADMIN_PASSWORD_HASH, password):
         _admin_login_failures.clear()
         session['is_admin'] = True
+        session['admin_key'] = _admin_session_key()
         return ingress_redirect(url_for('admin_panel'))
 
     _admin_login_failures.append(datetime.now().timestamp())
@@ -2196,6 +2302,7 @@ def admin_login():
 @app.route('/admin/logout', methods=['POST'])
 def admin_logout():
     session.pop('is_admin', None)
+    session.pop('admin_key', None)
     return ingress_redirect(url_for('index'))
 
 @app.route('/admin/channels/delete', methods=['POST'])
@@ -2501,9 +2608,8 @@ def upload_file():
         filename = secure_filename(file.filename)
         # Add timestamp to prevent collisions
         name, ext = os.path.splitext(filename)
-        filename = f"{name}_{int(datetime.now().timestamp())}{ext}"
-        
-        file_path = UPLOAD_FOLDER / filename
+        file_path = unique_upload_path(f"{name}_{int(datetime.now().timestamp())}", ext)
+        filename = file_path.name
         file.save(file_path)
         
         # Get file info
@@ -2549,8 +2655,8 @@ def upload_emoji():
     # correctly uses secure_filename(). This closes it properly instead
     # of depending on that OS behavior remaining true.
     safe_name = secure_filename(name) or 'emoji'
-    filename = f"emoji_{safe_name}_{int(datetime.now().timestamp())}.{ext}"
-    file_path = UPLOAD_FOLDER / filename
+    file_path = unique_upload_path(f"emoji_{safe_name}_{int(datetime.now().timestamp())}", f'.{ext}')
+    filename = file_path.name
     file.save(file_path)
     
     if save_custom_emoji(f':{name}:', f'/uploads/{filename}', created_by):
@@ -4053,6 +4159,21 @@ def publish_message(sender, sender_id, content, channel, msg_type='text',
 # never through this event.
 ALLOWED_MESSAGE_TYPES = {'text', 'image', 'video', 'gif', 'file', 'voice'}
 
+def is_giphy_url(url):
+    """GIFs come from the GIPHY picker, so only GIPHY's own addresses are
+    accepted. Any other address would be loaded by everyone who views the
+    channel, which would let a hand-crafted message show any outside
+    image and log the address of everyone who sees it."""
+    if not isinstance(url, str):
+        return False
+    try:
+        parts = urllib.parse.urlsplit(url)
+    except ValueError:
+        return False
+    host = (parts.hostname or '').lower()
+    return (parts.scheme == 'https' and not parts.username and not parts.password
+            and (host == 'giphy.com' or host.endswith('.giphy.com')))
+
 def validate_outgoing_file(msg_type, file_info):
     """A send_message socket payload is otherwise-untrusted client
     input. Before this existed, msg_type/file_info were stored and
@@ -4082,7 +4203,7 @@ def validate_outgoing_file(msg_type, file_info):
         return None
     url = file_info.get('url') if isinstance(file_info, dict) else None
     if msg_type == 'gif':
-        if not isinstance(url, str) or not url.startswith(('http://', 'https://')):
+        if not is_giphy_url(url):
             return 'Invalid GIF.'
         return None
     resolved = _resolve_upload_path(url) if isinstance(url, str) else None
@@ -4177,6 +4298,8 @@ def handle_stop_typing(data):
         return
     emit('stop_typing', {'sender_id': sender_id}, room=channel, include_self=False)
 
+MAX_REACTION_LENGTH = 64
+
 @socketio.on('add_reaction')
 @log_socket_errors
 def handle_reaction(data):
@@ -4185,6 +4308,10 @@ def handle_reaction(data):
     requester_id, requester_name = resolve_ha_identity()
 
     if not (message_id and emoji and requester_id):
+        return
+    # A real reaction is one emoji or a :custom_emoji: name. Without a cap,
+    # a hand-crafted event could store a huge string on every message.
+    if not isinstance(emoji, str) or len(emoji) > MAX_REACTION_LENGTH:
         return
 
     conn = sqlite3.connect(DB_PATH)
@@ -4339,10 +4466,10 @@ def handle_poll_vote(data):
 def handle_delete_message(data):
     message_id = data.get('message_id')
     requester_id, requester_name = resolve_ha_identity()
-    is_admin_session = bool(session.get('is_admin'))
+    admin_session = is_admin_session()
     owner_flag = is_owner(requester_id)
-    can_manage = is_admin_session or owner_flag
-    privileged_role = 'admin' if is_admin_session else ('owner' if owner_flag else None)
+    can_manage = admin_session or owner_flag
+    privileged_role = 'admin' if admin_session else ('owner' if owner_flag else None)
 
     if not message_id:
         return
@@ -4415,10 +4542,10 @@ def handle_move_message(data):
     message_id = data.get('message_id')
     new_channel = (data.get('channel') or '').strip()
     requester_id, requester_name = resolve_ha_identity()
-    is_admin_session = bool(session.get('is_admin'))
+    admin_session = is_admin_session()
     owner_flag = is_owner(requester_id)
-    can_manage = is_admin_session or owner_flag
-    privileged_role = 'admin' if is_admin_session else ('owner' if owner_flag else None)
+    can_manage = admin_session or owner_flag
+    privileged_role = 'admin' if admin_session else ('owner' if owner_flag else None)
 
     if not message_id or not new_channel:
         return

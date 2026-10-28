@@ -196,7 +196,7 @@ Configure via the **Configuration** tab in the app's settings:
 | `giphy_api_key` | password | `""` | Optional: Enables GIF picker |
 | `allowed_file_types` | list | `[image/*, video/*, audio/*, application/pdf, text/*]` | Permitted MIME types |
 
-> **Note**: Change the default `admin_password` immediately — `changeme` is not secure!
+> **Note**: The admin panel stays locked until you change `admin_password` from the default `changeme` (an empty password doesn't count either). The server owner's moderation tools work without it.
 
 Everything else — the chat's display name, channels, the server owner, and individual display names — is configured from within the app itself (the admin panel, or each person's own Settings), not from this options screen.
 
