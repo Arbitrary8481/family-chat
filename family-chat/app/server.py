@@ -16,7 +16,6 @@ import tempfile
 import time
 import zipfile
 import functools
-import hashlib
 import hmac
 import html
 import os
@@ -1871,14 +1870,15 @@ def resolve_ha_identity():
     chat_name = (display_name or username or 'HA User')[:30]
     return ha_user_id, chat_name
 
+# A new random value every time the app starts, stored in each admin
+# session at login. The admin password can only be changed in the app's
+# configuration, which takes a restart to apply, so changing it always
+# logs out every existing admin session. Nothing here is derived from the
+# password itself. The cost is that admins log in again after a restart.
+_ADMIN_SESSION_TOKEN = secrets.token_hex(32)
+
 def _admin_session_key():
-    """Ties an admin session to the current admin password, so changing
-    the password logs out every existing admin session. Derived with the
-    app's secret key, which never leaves the server, so the value stored
-    in the (readable, signed) session cookie reveals nothing about the
-    password."""
-    return hmac.new(app.config['SECRET_KEY'].encode(), ADMIN_PASSWORD.encode(),
-                    hashlib.sha256).hexdigest()
+    return _ADMIN_SESSION_TOKEN
 
 def is_admin_session():
     if ADMIN_PASSWORD_UNSET or not session.get('is_admin'):

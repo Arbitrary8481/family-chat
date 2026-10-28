@@ -135,15 +135,23 @@ class AdminPasswordTests(unittest.TestCase):
             self.login(client, "s3cret-pass")
             self.assertTrue(self.is_admin(client))
 
-    def test_changing_the_password_ends_admin_sessions(self):
+    def test_a_restart_ends_admin_sessions(self):
+        # Changing the password only takes effect after a restart, which
+        # picks a new session token.
         with mock.patch.object(server, "ADMIN_PASSWORD", "old-pass"), \
                 mock.patch.object(server, "ADMIN_PASSWORD_HASH", server.generate_password_hash("old-pass")), \
                 mock.patch.object(server, "ADMIN_PASSWORD_UNSET", False):
             client = server.app.test_client()
             self.login(client, "old-pass")
             self.assertTrue(self.is_admin(client))
-            with mock.patch.object(server, "ADMIN_PASSWORD", "new-pass"):
+            with mock.patch.object(server, "_ADMIN_SESSION_TOKEN", "token-after-restart"):
                 self.assertFalse(self.is_admin(client))
+
+    def test_session_key_is_not_derived_from_the_password(self):
+        with mock.patch.object(server, "ADMIN_PASSWORD", "one"):
+            first = server._admin_session_key()
+        with mock.patch.object(server, "ADMIN_PASSWORD", "two"):
+            self.assertEqual(server._admin_session_key(), first)
 
     def test_old_style_session_without_key_is_not_admin(self):
         with mock.patch.object(server, "ADMIN_PASSWORD_UNSET", False):
