@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.56.2
+
+### Fixed
+- **Adding a reaction to the last message no longer hides it behind the message box.** The reaction row made the message taller without scrolling the chat, so it ended up underneath the box you type in. If you're at the bottom of the chat, it now stays at the bottom when a message changes size from a reaction, a poll vote, an edit, or being pinned. If you've scrolled up to read older messages, your place is kept.
+
 ## 2.56.1
 
 ### Changed

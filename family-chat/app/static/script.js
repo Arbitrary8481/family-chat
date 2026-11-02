@@ -360,11 +360,11 @@ function initializeChat() {
     });
     
     socket.on('reaction_updated', function(data) {
-        updateReaction(data.message_id, data.emoji, data.user, data.added);
+        keepBottomInView(() => updateReaction(data.message_id, data.emoji, data.user, data.added));
     });
 
     socket.on('poll_updated', function(data) {
-        updatePollVotes(data.message_id, data.votes);
+        keepBottomInView(() => updatePollVotes(data.message_id, data.votes));
     });
 
     socket.on('message_deleted', function(data) {
@@ -411,10 +411,10 @@ function initializeChat() {
     // client updating itself optimistically and everyone else waiting
     // for this event.
     socket.on('message_pinned', function(data) {
-        setMessagePinnedState(data.message_id, true);
+        keepBottomInView(() => setMessagePinnedState(data.message_id, true));
     });
     socket.on('message_unpinned', function(data) {
-        setMessagePinnedState(data.message_id, false);
+        keepBottomInView(() => setMessagePinnedState(data.message_id, false));
     });
 
     // The server only ever broadcasts these to whichever channel room
@@ -435,6 +435,10 @@ function initializeChat() {
     // view whether this particular client was sitting on the composer
     // view, mid-edit itself, or hadn't touched this message at all.
     socket.on('message_edited', function(data) {
+        keepBottomInView(() => applyMessageEdit(data));
+    });
+
+    function applyMessageEdit(data) {
         const messageDiv = document.querySelector(`.message[data-id="${data.message_id}"]`);
         if (!messageDiv) return;
         messageDiv.dataset.rawContent = data.content;
@@ -467,7 +471,7 @@ function initializeChat() {
             label.textContent = '(edited)';
             header.appendChild(label);
         }
-    });
+    }
 
     // Arrives some time after the message itself already did — see
     // queue_link_preview() server-side, which runs as a background
@@ -1705,6 +1709,19 @@ document.addEventListener('click', (e) => {
     const emoji = pill.dataset.emoji;
     if (messageId && emoji) toggleReaction(Number(messageId), emoji);
 });
+
+// For a live change that can make a message already on screen taller
+// (a reaction, a poll vote, an edit). If the view was at the bottom
+// before the change, it scrolls down again afterwards, so the last
+// message's new reaction row or longer text doesn't end up hidden
+// behind the message box. Someone scrolled up reading history stays
+// where they are.
+function keepBottomInView(change) {
+    const container = document.getElementById('messagesContainer');
+    const wasNearBottom = isNearBottom(container);
+    change();
+    if (wasNearBottom) scrollToBottom();
+}
 
 function scrollToBottom() {
     const container = document.getElementById('messagesContainer');
