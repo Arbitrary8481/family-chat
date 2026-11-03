@@ -24,6 +24,9 @@ Fixes are only made to the latest version. Keep the app updated from the Home As
 
 Newest first. Each entry was fixed in the version shown.
 
+### 2.56.3
+- **A linked web page could freeze the chat for everyone (ReDoS).** The patterns that read a page's title and Open Graph tags took time that grew with the square of the page's size on crafted input. Anyone could post a link to a page built for this: a 64 KB page held the server for over six seconds, and since the server handles every connection on one thread, the chat stopped responding for everyone in the meantime. The tags are now read by a scanner that only moves forward through the page, so a hostile 1 MB page takes about a tenth of a second.
+
 ### 2.56.0
 A full security review of the app.
 - **Other apps on Home Assistant's internal network could pose as any family member.** The app trusted the login details Home Assistant's ingress proxy adds to each request, but it accepted connections from any address. Any other app container on the same internal network could connect directly and send its own login details, including the server owner's. Only Home Assistant's ingress proxy (`172.30.32.2`) can connect now, as Home Assistant's developer docs require.

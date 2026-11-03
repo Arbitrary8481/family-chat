@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.56.3
+
+### Fixed
+- **YouTube channel and live links get a preview.** Previews for YouTube links came only from YouTube's oEmbed service, which only works for video links. A channel link or a channel's live link (like the "just went live" posts from Home Assistant) always failed. Family Chat now reads the YouTube page itself when oEmbed can't help. If the channel is live, the preview shows the stream's title and thumbnail, and the card still opens the link that was posted. If not, it shows the channel's name and picture.
+- **A failed preview no longer says "Request timed out".** It said that for every failure, including a site refusing the request or a page with nothing to preview. It now says "No preview available".
+
+### Security
+- **A linked web page could freeze the chat for everyone.** Reading a page's preview tags took time that grew with the square of the page's size on crafted pages. A hostile 64 KB page held the server for over six seconds, and the server handles everyone's connections on one thread. Preview tags are now read with a scanner whose time grows only in step with the page's size: a hostile 1 MB page takes about a tenth of a second.
+
 ## 2.56.2
 
 ### Fixed

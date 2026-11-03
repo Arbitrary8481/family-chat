@@ -2957,31 +2957,53 @@ def fetch_youtube_oembed(url):
         'site_name': 'YouTube',
     }
 
-_OG_TAG_PATTERN = re.compile(
-    r'<meta[^>]+property=["\']og:(title|description|image|site_name)["\'][^>]+content=["\']([^"\']*)["\']',
-    re.IGNORECASE
-)
-# Some sites order the attributes the other way around (content before
-# property) — covered by a second pass with the two swapped, rather
-# than one significantly more complex regex trying to handle both.
-_OG_TAG_PATTERN_REVERSED = re.compile(
-    r'<meta[^>]+content=["\']([^"\']*)["\'][^>]+property=["\']og:(title|description|image|site_name)["\']',
-    re.IGNORECASE
-)
-# Fallback for pages with no Open Graph tags at all — the plain <title>
-# and <meta name="description"> every page has anyway. Plainer than a
-# real og:title/og:description (no image, no site name beyond the
-# hostname), but still a real preview instead of the generic failed
-# card for sites that never added OG markup.
-_TITLE_TAG_PATTERN = re.compile(r'<title[^>]*>(.*?)</title>', re.IGNORECASE | re.DOTALL)
-_META_DESCRIPTION_PATTERN = re.compile(
-    r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']*)["\']',
-    re.IGNORECASE
-)
-_META_DESCRIPTION_PATTERN_REVERSED = re.compile(
-    r'<meta[^>]+content=["\']([^"\']*)["\'][^>]+name=["\']description["\']',
-    re.IGNORECASE
-)
+# Preview data is read with a small hand-written scanner rather than
+# regular expressions over the whole page. The page comes from whatever
+# site someone linked, and the patterns used before took time that grew
+# with the square of the page size on crafted input: a 64 KB page could
+# hold the server, which runs everything on one thread, for over six
+# seconds. The scanner only moves forward through the page, so its cost
+# grows in step with the page's size.
+_HEAD_TAG_START = re.compile(r'<(meta|link|title)(?=[\s/>])', re.IGNORECASE)
+_TITLE_END = re.compile(r'</title\s*>', re.IGNORECASE)
+# An attribute name must start right after whitespace, a quote or a
+# slash, so a long run of name characters is only ever tried once.
+_TAG_ATTRIBUTE = re.compile(
+    r'(?<![^\s"\'/])([^\s"\'<>/=]+)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s"\'=<>`]+))')
+_MAX_TAG_LENGTH = 2048
+_MAX_HEAD_TAGS = 2000
+
+def _scan_head_tags(html_source):
+    """(meta attribute dicts, link attribute dicts, title text or None) for
+    the page's <meta>, <link> and first <title> tags. Attribute names are
+    lowercased and values HTML-unescaped."""
+    metas, links, title = [], [], None
+    pos = 0
+    for _ in range(_MAX_HEAD_TAGS):
+        match = _HEAD_TAG_START.search(html_source, pos)
+        if not match:
+            break
+        tag_end = html_source.find('>', match.end())
+        if tag_end == -1:
+            break
+        tag_name = match.group(1).lower()
+        tag_text = html_source[match.end():tag_end]
+        pos = tag_end + 1
+        if tag_name == 'title':
+            close = _TITLE_END.search(html_source, pos)
+            if not close:
+                break
+            if title is None:
+                title = re.sub(r'\s+', ' ', html.unescape(html_source[pos:close.start()][:1000])).strip()
+            pos = close.end()
+            continue
+        if len(tag_text) > _MAX_TAG_LENGTH:
+            continue
+        attrs = {}
+        for name, double, single, bare in _TAG_ATTRIBUTE.findall(tag_text):
+            attrs.setdefault(name.lower(), html.unescape(double or single or bare))
+        (metas if tag_name == 'meta' else links).append(attrs)
+    return metas, links, title
 
 # Identities the preview fetcher tries, in order. The first is a realistic
 # browser: a self-identifying bot string used to be flatly rejected by a number
@@ -2998,12 +3020,16 @@ _PREVIEW_USER_AGENTS = (
     'Mozilla/5.0 (compatible; FamilyChatLinkPreview/1.0)',
 )
 
-def _fetch_page_head(url, user_agent):
+def _fetch_page_head(url, user_agent, max_bytes=65536, stop_markers=(b'</head>',), read_past_marker=0):
     """The first chunk of the page as text, or None if it couldn't be fetched
     or isn't HTML. A page's <head> is always near the very start of the
     document, so reading only the first 64 KB avoids downloading an entire
     (possibly huge) page just to find a few meta tags, and bounds how long a
-    slow or oversized response can tie up this background task."""
+    slow or oversized response can tie up this background task. Reading
+    stops early once any of stop_markers (lowercase; </head> by default)
+    has been seen, plus read_past_marker more bytes, so a larger max_bytes
+    only costs more on pages that need it. YouTube is the exception that
+    needs both: what its previews need sits in the page body, 800 KB in."""
     try:
         req = urllib.request.Request(url, headers={
             'User-Agent': user_agent,
@@ -3016,7 +3042,29 @@ def _fetch_page_head(url, user_agent):
         with _SAFE_URL_OPENER.open(req, timeout=6) as resp:
             if 'text/html' not in resp.headers.get('Content-Type', ''):
                 return None
-            return resp.read(65536).decode('utf-8', errors='replace')
+            chunks = []
+            total = 0
+            # The timeout above is per read, so a slow site could otherwise
+            # drip a large page out for a long time.
+            deadline = time.monotonic() + 15
+            stop_at = None
+            while total < max_bytes and time.monotonic() < deadline:
+                limit = max_bytes if stop_at is None else min(max_bytes, stop_at)
+                if total >= limit:
+                    break
+                chunk = resp.read(min(65536, limit - total))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                total += len(chunk)
+                if stop_at is None:
+                    # Checked across the chunk boundary too, in case a
+                    # marker is split between two reads.
+                    overlap = max(len(m) for m in stop_markers) - 1
+                    tail = ((chunks[-2][-overlap:] if len(chunks) > 1 else b'') + chunk).lower()
+                    if any(m in tail for m in stop_markers):
+                        stop_at = total + read_past_marker
+            return b''.join(chunks).decode('utf-8', errors='replace')
     except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError) as e:
         logger.warning('Open Graph fetch failed for %s: %s', url, e)
         return None
@@ -3024,42 +3072,33 @@ def _fetch_page_head(url, user_agent):
 def _extract_preview(url, html_source):
     """(preview or None, has_open_graph_title). Open Graph tags win; a page
     with none falls back to its plain <title> and <meta name="description">."""
+    metas, _links, page_title = _scan_head_tags(html_source)
     tags = {}
-    for pattern, groups_order in ((_OG_TAG_PATTERN, ('key', 'value')), (_OG_TAG_PATTERN_REVERSED, ('value', 'key'))):
-        for match in pattern.finditer(html_source):
-            groups = dict(zip(groups_order, match.groups()))
-            if groups['key'] not in tags:
-                tags[groups['key']] = groups['value']
+    meta_description = None
+    for attrs in metas:
+        prop = attrs.get('property', '').lower()
+        if prop.startswith('og:') and prop[3:] in ('title', 'description', 'image', 'site_name') and 'content' in attrs:
+            tags.setdefault(prop[3:], attrs['content'])
+        elif attrs.get('name', '').lower() == 'description' and meta_description is None:
+            meta_description = attrs.get('content')
 
-    # Values inside a tag's attributes arrive HTML-escaped ("&amp;", "&#064;",
-    # "&#x2022;"). Decode them: left as-is, a description would show those
-    # entities literally, and an og:image URL would keep "&amp;" in its query
-    # string, which breaks signed image links like Facebook's and Instagram's.
-    # Safe because the client escapes every value again before displaying it.
-    for key in ('title', 'description', 'image', 'site_name'):
-        if key in tags:
-            tags[key] = re.sub(r'\s+', ' ', html.unescape(tags[key])).strip()
+    # Values are already HTML-unescaped by the scanner ("&amp;", "&#064;"),
+    # so a description doesn't show entities literally and an og:image URL
+    # doesn't keep "&amp;" in its query string, which breaks signed image
+    # links like Facebook's and Instagram's. Safe because the client escapes
+    # every value again before displaying it.
+    for key in list(tags):
+        tags[key] = re.sub(r'\s+', ' ', tags[key]).strip()
 
     title = tags.get('title')
     description = tags.get('description')
     has_open_graph = bool(title)
 
     if not title:
-        # No og:title — fall back to the plain <title> tag every page
-        # has. Title tags are plain text (not pre-escaped attribute
-        # content like the meta tags above), so entities such as
-        # &amp; need unescaping here.
-        title_match = _TITLE_TAG_PATTERN.search(html_source)
-        if title_match:
-            title = html.unescape(title_match.group(1)).strip()
-            title = re.sub(r'\s+', ' ', title)
-
-    if not description:
-        for pattern in (_META_DESCRIPTION_PATTERN, _META_DESCRIPTION_PATTERN_REVERSED):
-            match = pattern.search(html_source)
-            if match:
-                description = re.sub(r'\s+', ' ', html.unescape(match.group(1))).strip()
-                break
+        # No og:title -- fall back to the plain <title> tag every page has.
+        title = page_title
+    if not description and meta_description:
+        description = re.sub(r'\s+', ' ', meta_description).strip()
 
     if not title:
         return None, False
@@ -3100,6 +3139,66 @@ def fetch_open_graph_preview(url):
             best = preview
     return best
 
+# YouTube's oEmbed only knows video links. A channel page, a channel's
+# /live page (/channel/<id>/live, /@name/live) or a handle page gets a 404
+# there (checked against YouTube in November 2026), so those are read
+# from the page itself instead. What YouTube sends, about 800 KB in:
+#   - a channel that isn't live: its channel page, with Open Graph tags
+#     for the channel's name, description and picture;
+#   - a channel that is live (or has a stream scheduled): the stream's
+#     watch page, with no Open Graph tags at all, but with the like
+#     button's data naming the video on screen. That video's ID goes back
+#     to oEmbed for its title and thumbnail. (The page also preloads
+#     related videos for autoplay, so the first video ID on the page isn't
+#     necessarily the stream.)
+YOUTUBE_PAGE_MAX_BYTES = 1536 * 1024
+YOUTUBE_STOP_MARKERS = (b'property="og:image"', b'"likeendpoint":{"status":"like","target":{"videoid":"')
+YOUTUBE_READ_PAST_MARKER = 16 * 1024
+_YOUTUBE_LIKED_VIDEO = re.compile(r'"likeEndpoint":\{"status":"LIKE","target":\{"videoId":"([A-Za-z0-9_-]{11})"')
+
+def _youtube_canonical_video_url(html_source):
+    _metas, links, _title = _scan_head_tags(html_source)
+    for attrs in links:
+        if 'canonical' not in attrs.get('rel', '').lower().split():
+            continue
+        canonical = attrs.get('href', '').strip()
+        try:
+            parts = urllib.parse.urlsplit(canonical)
+        except ValueError:
+            return None
+        if parts.scheme != 'https' or not is_youtube_url(canonical):
+            return None
+        if parts.path == '/watch' and urllib.parse.parse_qs(parts.query).get('v'):
+            return canonical
+        return None
+    return None
+
+def fetch_youtube_preview(url):
+    preview = fetch_youtube_oembed(url)
+    if preview:
+        return preview
+    html_source = _fetch_page_head(url, _PREVIEW_USER_AGENTS[0], max_bytes=YOUTUBE_PAGE_MAX_BYTES,
+                                   stop_markers=YOUTUBE_STOP_MARKERS,
+                                   read_past_marker=YOUTUBE_READ_PAST_MARKER)
+    if html_source is None:
+        return None
+    liked = _YOUTUBE_LIKED_VIDEO.search(html_source)
+    video_url = (f'https://www.youtube.com/watch?v={liked.group(1)}' if liked
+                 else _youtube_canonical_video_url(html_source))
+    if video_url and video_url != url:
+        preview = fetch_youtube_oembed(video_url)
+        if preview:
+            # Keep the link people actually posted: a channel's /live link
+            # keeps working after this stream ends, the stream's own may not.
+            preview['url'] = url
+            return preview
+    preview, _ = _extract_preview(url, html_source)
+    # A live page without its like data only has an empty " - YouTube" title.
+    if not preview or preview['title'].strip() in ('- YouTube', 'YouTube'):
+        return None
+    preview['site_name'] = 'YouTube'
+    return preview
+
 def queue_link_preview(message_id, channel, content):
     """Runs in a background task (see socketio.start_background_task in
     handle_message()) — fetching a preview happens *after* the message
@@ -3117,7 +3216,7 @@ def queue_link_preview(message_id, channel, content):
     if not is_safe_external_url(url):
         preview = None
     else:
-        preview = fetch_youtube_oembed(url) if is_youtube_url(url) else fetch_open_graph_preview(url)
+        preview = fetch_youtube_preview(url) if is_youtube_url(url) else fetch_open_graph_preview(url)
 
     if not preview:
         # A real link was found and an attempt was genuinely made —
