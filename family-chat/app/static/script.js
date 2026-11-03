@@ -3263,10 +3263,12 @@ function buildLinkPreviewHtml(preview) {
         // silently skipped it. Still a real link to the original page —
         // a failed preview fetch (blocked, timed out, etc.) doesn't
         // mean the page itself is unreachable for an actual browser.
+        // The label doesn't guess why: a timeout, a site refusing the
+        // request and a page with nothing to show all end up here.
         return `
             <a href="${safeHref}" target="_blank" rel="noopener noreferrer nofollow" class="link-preview-card link-preview-failed" onclick="event.stopPropagation()">
                 <div class="link-preview-body">
-                    <div class="link-preview-title">⏱️ Request timed out</div>
+                    <div class="link-preview-title">🔗 No preview available</div>
                 </div>
             </a>
         `;
