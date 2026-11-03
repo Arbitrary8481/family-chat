@@ -3020,15 +3020,16 @@ _PREVIEW_USER_AGENTS = (
     'Mozilla/5.0 (compatible; FamilyChatLinkPreview/1.0)',
 )
 
-def _fetch_page_head(url, user_agent, max_bytes=65536):
+def _fetch_page_head(url, user_agent, max_bytes=65536, stop_markers=(b'</head>',), read_past_marker=0):
     """The first chunk of the page as text, or None if it couldn't be fetched
     or isn't HTML. A page's <head> is always near the very start of the
     document, so reading only the first 64 KB avoids downloading an entire
     (possibly huge) page just to find a few meta tags, and bounds how long a
     slow or oversized response can tie up this background task. Reading
-    stops early at </head>, so a larger max_bytes (YouTube's pages put
-    hundreds of KB of script before their meta tags) only costs more on
-    pages that need it."""
+    stops early once any of stop_markers (lowercase; </head> by default)
+    has been seen, plus read_past_marker more bytes, so a larger max_bytes
+    only costs more on pages that need it. YouTube is the exception that
+    needs both: what its previews need sits in the page body, 800 KB in."""
     try:
         req = urllib.request.Request(url, headers={
             'User-Agent': user_agent,
@@ -3046,17 +3047,23 @@ def _fetch_page_head(url, user_agent, max_bytes=65536):
             # The timeout above is per read, so a slow site could otherwise
             # drip a large page out for a long time.
             deadline = time.monotonic() + 15
+            stop_at = None
             while total < max_bytes and time.monotonic() < deadline:
-                chunk = resp.read(min(65536, max_bytes - total))
+                limit = max_bytes if stop_at is None else min(max_bytes, stop_at)
+                if total >= limit:
+                    break
+                chunk = resp.read(min(65536, limit - total))
                 if not chunk:
                     break
                 chunks.append(chunk)
                 total += len(chunk)
-                # Checked across the chunk boundary too, in case </head>
-                # is split between two reads.
-                tail = (chunks[-2][-6:] if len(chunks) > 1 else b'') + chunk
-                if b'</head>' in tail.lower():
-                    break
+                if stop_at is None:
+                    # Checked across the chunk boundary too, in case a
+                    # marker is split between two reads.
+                    overlap = max(len(m) for m in stop_markers) - 1
+                    tail = ((chunks[-2][-overlap:] if len(chunks) > 1 else b'') + chunk).lower()
+                    if any(m in tail for m in stop_markers):
+                        stop_at = total + read_past_marker
             return b''.join(chunks).decode('utf-8', errors='replace')
     except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError) as e:
         logger.warning('Open Graph fetch failed for %s: %s', url, e)
@@ -3134,11 +3141,20 @@ def fetch_open_graph_preview(url):
 
 # YouTube's oEmbed only knows video links. A channel page, a channel's
 # /live page (/channel/<id>/live, /@name/live) or a handle page gets a 404
-# there, so those are read from the page itself instead. A live page's
-# canonical link points at the stream's own watch URL, which oEmbed does
-# know; any other page still has the channel's name and picture in its
-# Open Graph tags.
-YOUTUBE_PAGE_MAX_BYTES = 1024 * 1024
+# there (checked against YouTube in November 2026), so those are read
+# from the page itself instead. What YouTube sends, about 800 KB in:
+#   - a channel that isn't live: its channel page, with Open Graph tags
+#     for the channel's name, description and picture;
+#   - a channel that is live (or has a stream scheduled): the stream's
+#     watch page, with no Open Graph tags at all, but with the like
+#     button's data naming the video on screen. That video's ID goes back
+#     to oEmbed for its title and thumbnail. (The page also preloads
+#     related videos for autoplay, so the first video ID on the page isn't
+#     necessarily the stream.)
+YOUTUBE_PAGE_MAX_BYTES = 1536 * 1024
+YOUTUBE_STOP_MARKERS = (b'property="og:image"', b'"likeendpoint":{"status":"like","target":{"videoid":"')
+YOUTUBE_READ_PAST_MARKER = 16 * 1024
+_YOUTUBE_LIKED_VIDEO = re.compile(r'"likeEndpoint":\{"status":"LIKE","target":\{"videoId":"([A-Za-z0-9_-]{11})"')
 
 def _youtube_canonical_video_url(html_source):
     _metas, links, _title = _scan_head_tags(html_source)
@@ -3161,10 +3177,14 @@ def fetch_youtube_preview(url):
     preview = fetch_youtube_oembed(url)
     if preview:
         return preview
-    html_source = _fetch_page_head(url, _PREVIEW_USER_AGENTS[0], max_bytes=YOUTUBE_PAGE_MAX_BYTES)
+    html_source = _fetch_page_head(url, _PREVIEW_USER_AGENTS[0], max_bytes=YOUTUBE_PAGE_MAX_BYTES,
+                                   stop_markers=YOUTUBE_STOP_MARKERS,
+                                   read_past_marker=YOUTUBE_READ_PAST_MARKER)
     if html_source is None:
         return None
-    video_url = _youtube_canonical_video_url(html_source)
+    liked = _YOUTUBE_LIKED_VIDEO.search(html_source)
+    video_url = (f'https://www.youtube.com/watch?v={liked.group(1)}' if liked
+                 else _youtube_canonical_video_url(html_source))
     if video_url and video_url != url:
         preview = fetch_youtube_oembed(video_url)
         if preview:
@@ -3173,8 +3193,10 @@ def fetch_youtube_preview(url):
             preview['url'] = url
             return preview
     preview, _ = _extract_preview(url, html_source)
-    if preview:
-        preview['site_name'] = 'YouTube'
+    # A live page without its like data only has an empty " - YouTube" title.
+    if not preview or preview['title'].strip() in ('- YouTube', 'YouTube'):
+        return None
+    preview['site_name'] = 'YouTube'
     return preview
 
 def queue_link_preview(message_id, channel, content):
