@@ -61,7 +61,7 @@ Family Chat is a Home Assistant app that provides a self-hosted, real-time messa
 | **Tap-to-Call** | Phone numbers in a message become links that open your phone's dialer |
 | **Unread Indicators** | Bold channel names show new activity; red badges show @mentions |
 | **Search** | Search across all channels for message history |
-| **Link Previews** | Automatic preview cards for shared URLs (with SSRF protection) — a thumbnail and description for most sites including Facebook and Instagram, an embedded player for YouTube. A failed or blocked preview shows a small, honest fallback card rather than nothing at all |
+| **Link Previews** | Automatic preview cards for shared URLs (with SSRF protection) — a thumbnail and description for most sites including Facebook and Instagram. YouTube links show the video's title and thumbnail, including channel and live links: a live channel shows the stream that's on now, and one that isn't live shows the channel's name and picture. A link that can't be previewed shows a small "No preview available" card rather than nothing at all |
 | **Message History** | Infinite scroll to load older messages (cursor-based pagination) |
 
 ### Media & Files
@@ -79,15 +79,18 @@ Family Chat is a Home Assistant app that provides a self-hosted, real-time messa
 ### Calendar Integration
 | Feature | Description |
 |---------|-------------|
-| **Home Assistant Calendar** | View upcoming events from all your HA calendars. The server admin can choose which calendars can be used for this. |
-| **Add Events** | Create calendar events directly from chat discussions |
+| **Home Assistant Calendar** | The Upcoming panel shows the next events from all your HA calendars, soonest first. A calendar group (new in Home Assistant 2026.11) is skipped there, since its events already show under their own calendars |
+| **Add Events** | Create calendar events directly from chat discussions. Only calendars that accept new events are offered, so holiday calendars, subscribed feeds and calendar groups are left out |
 | **Event Details** | Click any event to see full details (date, time, location, description) |
+| **Calendar Names** | On Home Assistant 2026.11 and later, calendars are named the way Home Assistant's own dashboards name them: the device name followed by the calendar's own name. Earlier versions keep the old names |
 | **Admin Controls** | Restrict which calendars can receive new events |
 
 ### Notifications
 | Feature | Description |
 |---------|-------------|
 | **Push Notifications** | Get notified on your phone via Home Assistant Companion App. Tapping one opens the chat on the channel the message was posted in |
+| **Other Notification Targets** | Any `notify` service works, and so do notify entities, such as Telegram bot chats and Discord channels. These are listed by name under "Notification entities" in Settings. Tapping one of these doesn't open the chat |
+| **Missing Device Warning** | If your chosen device disappears from Home Assistant (a removed phone, or a legacy Telegram notify service, which Home Assistant 2026.11 removed), Settings says so instead of quietly showing "Choose a device…" |
 | **Per-Channel Subscriptions** | Choose which channels notify you |
 | **@Mention Alerts** | Always notified when mentioned, regardless of subscription |
 | **Post from Home Assistant** | Any automation can post a message into any channel (see [Home Assistant Automations](#home-assistant-automations)); it's labelled `BOT` and notifies people by their own preferences |
@@ -104,12 +107,12 @@ Family Chat is a Home Assistant app that provides a self-hosted, real-time messa
 ### Administration
 | Feature | Description |
 |---------|-------------|
-| **Admin Panel** | Password-protected panel for server management |
+| **Admin Panel** | Password-protected panel for server management. It stays locked until `admin_password` is changed from the default, and admins are logged out whenever the app restarts |
 | **Channel Management** | Add, delete, and reorder channels and categories. Drag a channel by its ⠿ handle to reorder it or move it into another category (works with touch too), in the admin panel or the server owner's own Settings |
 | **Activity Log** | A record of every message deletion and move: what the message said, who sent it, and who removed or moved it |
 | **User Management** | Set display names for family members |
 | **Server Owner** | Designate an owner with elevated privileges |
-| **Calendar Restrictions** | Control which calendars can receive events |
+| **Calendar Restrictions** | Control which calendars can receive events. Read-only calendars and calendar groups are shown greyed out, since they can't take new events |
 | **Backup & Restore** | Download a single file containing every message and every uploaded file, and restore from it later — independent of Home Assistant's own backup system, and a safety net worth having before doing anything risky to the underlying Home Assistant instance. The Backup tab shows the estimated backup size and free disk space |
 
 ---
@@ -233,7 +236,7 @@ In an automation's actions, add **Fire event** (the "Other actions" list in the 
 | `sender` | no | The name shown on the message, up to 40 characters. Default `Home Assistant`. |
 | `request_id` | no | Any value; echoed back in the result event so an automation can match a result to its post. |
 
-You can `@mention` a family member in the message (`"@Jon the freezer is open"`); like any @mention, it notifies them regardless of their channel subscriptions.
+You can `@mention` a family member in the message (`"@Mom the freezer is open"`); like any @mention, it notifies them regardless of their channel subscriptions.
 
 ### A ready-made script (optional)
 
@@ -341,7 +344,7 @@ pip install -r family-chat/app/requirements.txt
 python -m unittest discover -s tests -v
 ```
 
-The Home Assistant bridge tests use only the standard library. The link preview, poll, voice message, notification, channel reordering and profile tests need the app's own dependencies and are skipped if they aren't installed.
+The Home Assistant bridge tests use only the standard library. The link preview, YouTube preview, poll, voice message, notification, calendar, channel reordering, profile and security tests need the app's own dependencies and are skipped if they aren't installed.
 
 To run the server outside Home Assistant, point it at a scratch folder and, optionally, a real Home Assistant:
 
@@ -352,6 +355,8 @@ HA_API_BASE=http://homeassistant.local:8123/api \
 HA_WS_URL=ws://homeassistant.local:8123/api/websocket \
 python family-chat/app/server.py
 ```
+
+The server only accepts connections from Home Assistant's ingress proxy and from the same machine (`127.0.0.1`), so open it at `http://127.0.0.1:8099`. To reach it from another machine while developing, list that machine's address in `INGRESS_ALLOWED_IPS` (comma-separated). Without Home Assistant in front of it, nothing sets the `X-Remote-User-*` headers that say who you are, so send them yourself, for example with a browser extension.
 
 ---
 
@@ -374,7 +379,7 @@ Family Chat has a three-tier permission system:
 
 ### Admin
 
-- Access admin panel (`/admin`) with password
+- Access admin panel (`/admin`) with password (admin login stays off until a password other than the default is set)
 - Delete any channel
 - Rename the chat
 - Manage everyone's display names
@@ -405,13 +410,15 @@ Family Chat takes security seriously:
 - **Custom AppArmor Profile**: Container is restricted to only necessary filesystem and network access
 - **SSRF Protection**: Link previews only connect to public addresses. Every redirect is re-checked, and the connection is pinned to the address that was checked, so a hostname can't switch to an internal address mid-request (DNS rebinding)
 - **Input Validation**: All user inputs are sanitized and validated server-side, including poll contents, votes and voice messages sent directly over the socket
-- **Session Security**: HttpOnly cookies with SameSite=Lax protection; admin actions that change or download data require a POST
+- **Session Security**: HttpOnly cookies with SameSite=Lax protection; admin actions that change or download data require a POST; admin sessions end whenever the app restarts
+- **Admin Password Required**: Admin login stays off while `admin_password` is the default `changeme` or empty
 - **Brute-force Protection**: Admin panel locks after 10 failed attempts (5 minutes)
-- **No External Exposure**: Only accessible through Home Assistant ingress (no direct port mapping)
-- **File Upload Security**: Filename sanitization, type validation, and size limits
+- **Home Assistant Only**: No port is exposed, and the app refuses every connection that doesn't come from Home Assistant's ingress proxy. Other apps on Home Assistant's internal network can't connect to it directly and pose as a family member
+- **File Upload Security**: Filename sanitization, type validation, and size limits. Uploads never overwrite each other, and a file is only deleted once nothing uses it any more
+- **GIFs from GIPHY Only**: A GIF message can only show an image from GIPHY, so a hand-crafted message can't load an image from another website and log who viewed it
 - **Backup Restore Checks**: A backup file is checked for path tricks and for an implausible decompressed size before anything is extracted
 - **XSS Prevention**: All dynamic content is HTML-escaped, including formatted messages; responses send `X-Content-Type-Options: nosniff`
-- **Slow-Input Protection**: Message formatting and link handling take time in proportion to a message's length, so crafted text can't stall the server or anyone's browser
+- **Slow-Input Protection**: Message formatting, link handling and reading a linked page's preview all take time in proportion to their length, so crafted text or a crafted web page can't stall the server or anyone's browser
 
 See [SECURITY.md](SECURITY.md) for how to report a vulnerability, and for the full list of security issues fixed so far.
 
@@ -430,6 +437,15 @@ See [SECURITY.md](SECURITY.md) for how to report a vulnerability, and for the fu
 - **Home Assistant Companion App** — for push notifications on mobile devices
 - **HTTPS access to Home Assistant** (for example through Home Assistant Cloud, or your own certificate) — for voice messages. Browsers only allow microphone access on secure connections. In the Companion App, also allow microphone access
 - **A person in Home Assistant linked to each family member's login, with a tracked device** (Settings → People) — for the "Where am I?" button on profile cards
+
+### Home Assistant 2026.11
+
+Family Chat works with Home Assistant 2026.11. A few changes in that release show up in the chat:
+
+- **Calendar names** follow Home Assistant's new entity naming (device name followed by the calendar's own name), so some may look different after you update, the same way they do on Home Assistant's dashboards. Saved calendar settings are unaffected.
+- **Legacy Telegram notify services are gone.** If you picked one for notifications, Settings says the device no longer exists. Set up your chat in the Telegram bot integration and pick it under "Notification entities" instead.
+- **Calendar groups** are new. A group isn't offered when adding an event, since Home Assistant can't add events to one, and the Upcoming panel doesn't list its events twice.
+- **New network-scanner device trackers start disabled** (FRITZ!Box, UniFi, NETGEAR, Nmap and similar). If you add one to a person and their "Where am I?" window doesn't know where they are, enable that tracker under Settings → Devices & services → Entities.
 
 ### Architecture Support
 
@@ -452,6 +468,11 @@ See [SECURITY.md](SECURITY.md) for how to report a vulnerability, and for the fu
 | **Mic button says HTTPS is needed** | Open Home Assistant through an `https://` address. Voice messages can't record over plain `http://` |
 | **Mic button says microphone access is blocked** | Allow microphone access for your browser or the Companion App in your phone's settings |
 | **No "Where am I?" button on a profile card** | In Home Assistant, go to Settings → People, open that person, make sure they're linked to their Home Assistant login, and add a device to track. The button can take up to a minute to appear |
+| **Page says "Family Chat only accepts connections through Home Assistant"** | Open the chat from Home Assistant's sidebar, not at port 8099 directly. If it says this inside Home Assistant too, the app log names the address that was refused; please open a GitHub issue with it |
+| **Admin page says admin login is turned off** | Set `admin_password` to something other than `changeme` in the app's Configuration tab, save, and restart the app |
+| **Settings says my notification device no longer exists** | Choose another device and save. If it was a Telegram notify service, set the chat up in the Telegram bot integration and pick it under "Notification entities" |
+| **A link shows "No preview available"** | The site refused the request, took too long, or has nothing to preview. The link itself still works |
+| **A calendar is missing from the add-event list** | It doesn't accept new events in Home Assistant (a holiday calendar, a subscribed feed, or a calendar group), or an admin has restricted the list in the admin panel's Calendars tab |
 | **Mobile sidebar issues** | Tap the ✕ button or dimmed backdrop to close |
 
 ### Debug Logs
@@ -470,6 +491,11 @@ See [CHANGELOG.md](family-chat/CHANGELOG.md) for detailed version history.
 
 **Recent Highlights:**
 
+- **v2.57.0** — Home Assistant 2026.11 updates: notify entities (Telegram bot, Discord) for notifications, a warning when your notification device is gone, and calendar groups and read-only calendars handled properly
+- **v2.56.3** — Previews for YouTube channel and live links, and a fix for web pages that could slow the server down
+- **v2.56.2** — A reaction on the last message no longer hides behind the message box
+- **v2.56.1** — Calendar names follow Home Assistant 2026.11's entity naming
+- **v2.56.0** — Security fixes from a full review (connections only through Home Assistant, admin password required, and more)
 - **v2.55.1** — "Where am I?" shows the map over the chat instead of leaving it
 - **v2.55.0** — Profile cards with birthdate, anniversary, phone number and a "Where am I?" map button
 - **v2.54.0** — Drag a file onto the chat to share it

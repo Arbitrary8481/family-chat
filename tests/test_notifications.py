@@ -130,3 +130,58 @@ class StripFormattingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipIf(server is None, "the app's dependencies (Flask etc.) are not installed")
+class NotifyEntityTests(unittest.TestCase):
+    """Notify entities: Telegram bot chats replace the legacy Telegram
+    notify services removed in Home Assistant 2026.11."""
+
+    def test_entity_is_sent_with_send_message(self):
+        calls = []
+
+        def fake_request(method, path, json_body=None, timeout=5):
+            calls.append((method, path, json_body))
+            return {}, None
+
+        with mock.patch.object(server, "ha_api_request", side_effect=fake_request):
+            ok, error = server.send_ha_notification("entity:notify.family_chat_telegram", "Bob in #random", "hi",
+                                                    channel="random")
+        self.assertTrue(ok, error)
+        self.assertEqual(calls, [("POST", "/services/notify/send_message",
+                                  {"entity_id": "notify.family_chat_telegram", "title": "Bob in #random", "message": "hi"})])
+
+    def test_targets_are_validated(self):
+        for good in ("mobile_app_pixel", "notify.mobile_app_pixel", "entity:notify.telegram_family"):
+            self.assertTrue(server.is_valid_notify_target(good), good)
+        for bad in ("entity:light.kitchen", "entity:notify.x/../y", "entity:notify.", "../states", "entity:"):
+            self.assertFalse(server.is_valid_notify_target(bad), bad)
+        with mock.patch.object(server, "ha_api_request") as api:
+            ok, _ = server.send_ha_notification("entity:notify.a/../../states", "t", "m")
+        self.assertFalse(ok)
+        api.assert_not_called()
+
+    def test_services_endpoint_lists_entities(self):
+        def fake_request(method, path, json_body=None, timeout=5):
+            if path == "/services":
+                return [{"domain": "notify", "services": {"mobile_app_pixel": {}, "send_message": {},
+                                                          "persistent_notification": {}}}], None
+            return [
+                {"entity_id": "notify.telegram_family", "state": "unknown",
+                 "attributes": {"friendly_name": "Telegram Family chat"}},
+                {"entity_id": "notify.gone", "state": "unavailable", "attributes": {}},
+                {"entity_id": "light.kitchen", "state": "on", "attributes": {}},
+            ], None
+
+        client = server.app.test_client()
+        with mock.patch.object(server, "ha_api_request", side_effect=fake_request):
+            data = client.get("/api/notify/services", headers={"X-Remote-User-Id": "u1"}).get_json()
+        self.assertEqual(data["services"], ["mobile_app_pixel", "persistent_notification"])
+        self.assertEqual(data["entities"], [{"value": "entity:notify.telegram_family", "name": "Telegram Family chat"}])
+
+    def test_entity_can_be_saved(self):
+        client = server.app.test_client()
+        response = client.post("/api/notify/prefs", json={"notify_service": "entity:notify.telegram_family", "channels": []},
+                               headers={"X-Remote-User-Id": "notify-entity-user"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(server.get_notify_service("notify-entity-user"), "entity:notify.telegram_family")
