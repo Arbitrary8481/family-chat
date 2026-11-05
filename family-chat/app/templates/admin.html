@@ -553,7 +553,8 @@
                         Which of Home Assistant's calendars people can add new events to from the chat's 📅 button.
                         Leave everything checked (the default) for no restriction. This only limits where new events
                         can be <em>added</em> — the Upcoming panel in the chat still shows events from every calendar,
-                        restricted or not.
+                        restricted or not. Read-only calendars and calendar groups can't take new events, so they're
+                        never offered.
                     </p>
                     {% if calendar_error %}
                     <p class="hint">{{ calendar_error }}</p>
@@ -561,10 +562,17 @@
                     <form method="post" action="./admin/calendars/set">
                         <div class="channel-manage-list">
                             {% for cal in all_calendars %}
+                            {% if cal.can_create %}
                             <label class="calendar-checkbox-row">
                                 <input type="checkbox" name="allowed_calendars" value="{{ cal.entity_id }}"{% if cal.checked %} checked{% endif %}>
                                 {{ cal.name }}
                             </label>
+                            {% else %}
+                            <label class="calendar-checkbox-row" style="opacity: 0.6;" title="Home Assistant doesn't accept new events on this calendar">
+                                <input type="checkbox" disabled>
+                                {{ cal.name }} ({{ 'calendar group' if cal.is_group else 'read-only' }})
+                            </label>
+                            {% endif %}
                             {% endfor %}
                         </div>
                         <button type="submit">Save Calendars</button>

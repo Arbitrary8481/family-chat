@@ -3740,6 +3740,8 @@ function loadNotifySettings() {
     if (!select || !channelList) return;
 
     if (status) status.classList.add('hidden');
+    const missing = document.getElementById('notifyMissingDevice');
+    if (missing) missing.classList.add('hidden');
     select.innerHTML = '<option value="">Loading devices…</option>';
     channelList.innerHTML = '<p class="settings-hint">Loading channels…</p>';
 
@@ -3750,15 +3752,41 @@ function loadNotifySettings() {
     ])
         .then(([servicesData, prefs, channels]) => {
             const services = servicesData.services || [];
+            const entities = servicesData.entities || [];
 
             if (servicesData.error) {
                 select.innerHTML = `<option value="">${escapeHtml(servicesData.error)}</option>`;
-            } else if (services.length === 0) {
+            } else if (services.length === 0 && entities.length === 0) {
                 select.innerHTML = '<option value="">No devices found — open the Home Assistant Companion App on your phone first</option>';
             } else {
+                // Notify entities (Telegram bot chats, Discord channels and
+                // others) are listed by name in their own group.
                 select.innerHTML = '<option value="">Choose a device…</option>' +
-                    services.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+                    (services.length ? '<optgroup label="Phones and notify services">' +
+                        services.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('') +
+                        '</optgroup>' : '') +
+                    (entities.length ? '<optgroup label="Notification entities">' +
+                        entities.map(e => `<option value="${escapeHtml(e.value)}">${escapeHtml(e.name)}</option>`).join('') +
+                        '</optgroup>' : '');
                 if (prefs.notify_service) select.value = prefs.notify_service;
+            }
+            // The saved device is gone from Home Assistant: a phone that was
+            // removed, or an old Telegram notify service (removed in Home
+            // Assistant 2026.11). Say so, instead of quietly showing
+            // "Choose a device…" while notifications fail.
+            const saved = prefs.notify_service || '';
+            const savedValue = saved.startsWith('entity:') ? saved : saved.replace(/^notify\./, '');
+            const known = services.includes(savedValue) || entities.some(e => e.value === savedValue);
+            if (savedValue && !servicesData.error && !known) {
+                const label = savedValue.replace(/^entity:/, '');
+                select.insertAdjacentHTML('beforeend',
+                    `<option value="${escapeHtml(savedValue)}">${escapeHtml(label)} (not found)</option>`);
+                select.value = savedValue;
+                if (missing) {
+                    missing.textContent = `Home Assistant no longer has the device "${label}", so notifications aren't being sent. Choose another device and save.`;
+                    missing.classList.remove('hidden');
+                    select.addEventListener('change', () => missing.classList.add('hidden'), { once: true });
+                }
             }
 
             const subscribed = new Set(prefs.channels || []);

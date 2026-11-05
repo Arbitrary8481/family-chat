@@ -148,3 +148,55 @@ class CalendarNameTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipIf(server is None, "the app's dependencies (Flask etc.) are not installed")
+class CalendarKindTests(unittest.TestCase):
+    """Home Assistant 2026.11 added calendar groups. A group repeats its
+    members' events and can't take new ones, like a read-only calendar."""
+
+    STATES = [
+        {"entity_id": "calendar.family", "attributes": {"friendly_name": "Family", "supported_features": 7}},
+        {"entity_id": "calendar.holidays", "attributes": {"friendly_name": "Holidays"}},
+        {"entity_id": "calendar.school", "attributes": {"friendly_name": "School", "supported_features": 0}},
+        {"entity_id": "calendar.everyone", "attributes": {
+            "friendly_name": "Everyone", "entity_id": ["calendar.family", "calendar.holidays"]}},
+    ]
+
+    def setUp(self):
+        for attr in ("_calendar_names_failed_at", "_ha_version_cache"):
+            setattr(server, attr, None)
+            self.addCleanup(setattr, server, attr, None)
+
+    def api(self, method, path, json_body=None, timeout=5):
+        if path == "/states":
+            return self.STATES, None
+        if path == "/config":
+            return {"version": "2026.11.0"}, None
+        if path == "/template":
+            return None, "not needed here"
+        if path.startswith("/calendars/"):
+            self.fetched.append(path.split("?")[0].rsplit("/", 1)[1])
+            return [], None
+        raise AssertionError(path)
+
+    def test_only_calendars_that_take_events_are_addable(self):
+        with mock.patch.object(server, "ha_api_request", side_effect=self.api), \
+                mock.patch.object(server, "get_allowed_calendar_ids", return_value=None):
+            calendars, error = server.get_addable_calendar_entities()
+        self.assertIsNone(error)
+        self.assertEqual([c["entity_id"] for c in calendars], ["calendar.family"])
+
+    def test_upcoming_skips_calendar_groups(self):
+        self.fetched = []
+        client = server.app.test_client()
+        with mock.patch.object(server, "ha_api_request", side_effect=self.api):
+            response = client.get("/api/calendar/upcoming", headers={"X-Remote-User-Id": "u1"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(sorted(self.fetched), ["calendar.family", "calendar.holidays", "calendar.school"])
+
+    def test_group_detection(self):
+        self.assertTrue(server.calendar_is_group({"entity_id": ["calendar.a"]}))
+        self.assertFalse(server.calendar_is_group({"entity_id": "calendar.a"}))
+        self.assertFalse(server.calendar_is_group({}))
+        self.assertFalse(server.calendar_can_create_events({"supported_features": "1"}))

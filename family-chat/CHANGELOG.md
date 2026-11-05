@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.57.0
+
+Updates for Home Assistant 2026.11, from its final release notes.
+
+### Added
+- **Notify entities can receive notifications.** Settings → Notifications now lists notify entities by name under "Notification entities", alongside phones and other `notify` services. Home Assistant 2026.11 removed the legacy Telegram notify services, and Telegram bot chats are their replacement. Discord channels became notify entities in the same release. They're sent with `notify.send_message`, which only takes a title and a message, so tapping one doesn't open the chat.
+- **A warning when your notification device is gone.** If the device you chose no longer exists in Home Assistant (a removed phone, or a legacy Telegram service after updating to 2026.11), Settings says so and asks you to choose another. Before, it quietly showed "Choose a device…" while notifications failed.
+
+### Fixed
+- **Calendar groups don't list events twice.** Home Assistant 2026.11 can combine calendars into a group, which repeats its members' events. The Upcoming panel now skips groups, so each event shows once, under its own calendar.
+- **Only calendars that accept new events are offered when adding an event.** Holiday calendars, subscribed feeds and calendar groups don't take new events, and Home Assistant refused them with an error. They're now left out of the add-event list, and shown greyed out in the admin panel's Calendars tab.
+
+### Changed
+- **README:** brought up to date with versions 2.56.0 to 2.57.0, a new "Home Assistant 2026.11" section, a new screenshot, and a correction: YouTube links show a title and thumbnail, not an embedded player.
+
 ## 2.56.3
 
 ### Fixed

@@ -3432,13 +3432,37 @@ def notification_link(channel=None):
         link += f'/channel/{urllib.parse.quote(channel, safe="")}'
     return link
 
+# A saved device is either a notify.<name> service (what the Companion App
+# creates for each phone) or a notify entity, stored with this prefix.
+# Notify entities are how newer integrations send messages: Telegram bot
+# chats replace the legacy Telegram notify services removed in Home
+# Assistant 2026.11, and Discord channels became notify entities in the
+# same release. They're sent with notify.send_message, which only takes a
+# title and a message, so a tapped one can't open the chat.
+NOTIFY_ENTITY_PREFIX = 'entity:'
+_NOTIFY_ENTITY_ID = re.compile(r'notify\.[a-z0-9_]+')
+
+def is_valid_notify_target(value):
+    if value.startswith(NOTIFY_ENTITY_PREFIX):
+        return bool(_NOTIFY_ENTITY_ID.fullmatch(value[len(NOTIFY_ENTITY_PREFIX):]))
+    return bool(re.fullmatch(r'(notify\.)?[a-zA-Z0-9_]+', value))
+
 def send_ha_notification(notify_service, title, message, channel=None):
-    """Calls notify.<service> in Home Assistant. notify_service may be
+    """Calls notify.<service> in Home Assistant, or notify.send_message for
+    a notify entity (see NOTIFY_ENTITY_PREFIX). notify_service may be
     given with or without the "notify." prefix. channel, if given, is the
     chat channel this notification is about — used to build a clickAction
     so tapping the notification opens this app directly instead of
     landing on Home Assistant's main dashboard. Returns (ok, error)."""
-    service = (notify_service or '').strip()
+    target = (notify_service or '').strip()
+    if target.startswith(NOTIFY_ENTITY_PREFIX):
+        entity_id = target[len(NOTIFY_ENTITY_PREFIX):]
+        if not _NOTIFY_ENTITY_ID.fullmatch(entity_id):
+            return False, 'Invalid device.'
+        _, error = ha_api_request('POST', '/services/notify/send_message',
+                                  {'entity_id': entity_id, 'title': title, 'message': message})
+        return (error is None), error
+    service = target
     if service.startswith('notify.'):
         service = service[len('notify.'):]
     if not service:
@@ -3485,7 +3509,7 @@ def set_notify_service(user_id, notify_service):
     # purely redundant with the check at call time: rejecting early
     # gives the person an immediate, specific error instead of a
     # notification that silently never arrives.
-    if notify_service and not re.fullmatch(r'(notify\.)?[a-zA-Z0-9_]+', notify_service):
+    if notify_service and not is_valid_notify_target(notify_service):
         notify_service = ''
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -3783,7 +3807,8 @@ def notify_message_subscribers(channel, sender, sender_id, content, msg_type, fi
 def api_notify_services():
     """notify.* services currently registered in Home Assistant — mainly
     one per device with the HA Companion App installed (e.g.
-    notify.mobile_app_johns_iphone) — so settings can offer a dropdown
+    notify.mobile_app_johns_iphone) — plus notify entities (Telegram bot
+    chats, Discord channels and others), so settings can offer a dropdown
     instead of making someone type a service name by hand."""
     data, error = ha_api_request('GET', '/services')
     if error:
@@ -3791,9 +3816,20 @@ def api_notify_services():
     services = []
     for domain_entry in data or []:
         if domain_entry.get('domain') == 'notify':
-            services = sorted(domain_entry.get('services', {}).keys())
+            # send_message isn't a device: it's how notify entities, listed
+            # separately below, are reached.
+            services = sorted(name for name in domain_entry.get('services', {}).keys()
+                              if name != 'send_message')
             break
-    return jsonify({'services': services})
+    entities = []
+    states, states_error = ha_api_request('GET', '/states')
+    for state in (states or []) if not states_error else []:
+        entity_id = state.get('entity_id', '')
+        if _NOTIFY_ENTITY_ID.fullmatch(entity_id) and state.get('state') != 'unavailable':
+            name = (state.get('attributes') or {}).get('friendly_name') or entity_id
+            entities.append({'value': NOTIFY_ENTITY_PREFIX + entity_id, 'name': name})
+    entities.sort(key=lambda e: e['name'].lower())
+    return jsonify({'services': services, 'entities': entities})
 
 @app.route('/api/notify/prefs')
 def api_get_notify_prefs():
@@ -3823,7 +3859,7 @@ def api_set_notify_prefs():
     # Real HA service names (what the dropdown in Settings is actually
     # populated with) only ever look like this — anything else here
     # didn't come from that dropdown.
-    if notify_service and not re.fullmatch(r'(notify\.)?[a-zA-Z0-9_]+', notify_service):
+    if notify_service and not is_valid_notify_target(notify_service):
         return jsonify({'error': 'That device selection is not valid.'}), 400
     set_notify_service(ha_user_id, notify_service)
     set_subscribed_channels(ha_user_id, channels)
@@ -3870,12 +3906,18 @@ def get_calendar_entities():
     for state in data or []:
         entity_id = state.get('entity_id', '')
         if entity_id.startswith('calendar.'):
+            attributes = state.get('attributes') or {}
             name = (
                 registry_names.get(entity_id)
-                or (state.get('attributes') or {}).get('friendly_name')
+                or attributes.get('friendly_name')
                 or entity_id
             )
-            calendars.append({'entity_id': entity_id, 'name': name})
+            calendars.append({
+                'entity_id': entity_id,
+                'name': name,
+                'can_create': calendar_can_create_events(attributes),
+                'is_group': calendar_is_group(attributes),
+            })
     calendars.sort(key=lambda c: c['name'].lower())
     return calendars, None
 
@@ -3943,6 +3985,22 @@ def get_calendar_registry_names():
             names[entity_id] = name
     return names
 
+# Home Assistant's CalendarEntityFeature.CREATE_EVENT. Home Assistant
+# itself refuses calendar.create_event on a calendar without it, such as
+# a holiday calendar, a subscribed feed, or a calendar group.
+CALENDAR_FEATURE_CREATE_EVENT = 1
+
+def calendar_can_create_events(attributes):
+    features = attributes.get('supported_features')
+    return isinstance(features, int) and bool(features & CALENDAR_FEATURE_CREATE_EVENT)
+
+def calendar_is_group(attributes):
+    """A calendar group (new in Home Assistant 2026.11) shows the events of
+    its member calendars, which it lists in its entity_id attribute."""
+    members = attributes.get('entity_id')
+    return isinstance(members, list) and any(
+        isinstance(m, str) and m.startswith('calendar.') for m in members)
+
 def get_allowed_calendar_ids():
     """None means no restriction has ever been configured — every real
     calendar is addable, which is what makes this an opt-in admin
@@ -3963,8 +4021,9 @@ def set_allowed_calendars(entity_ids):
     set_setting('allowed_calendars', json.dumps(sorted(set(entity_ids))))
 
 def get_addable_calendar_entities():
-    """Calendars people can actually create new events on — every real
-    calendar in Home Assistant, unless an admin has restricted the list
+    """Calendars people can actually create new events on — every
+    calendar in Home Assistant that accepts new events (not a holiday
+    calendar, a subscribed feed or a calendar group), unless an admin has restricted the list
     from the admin panel's Calendars tab, in which case only those
     remain. This is the one both the add-event dropdown and (more
     importantly) the server-side validation in
@@ -3975,6 +4034,7 @@ def get_addable_calendar_entities():
     calendars, error = get_calendar_entities()
     if error:
         return None, error
+    calendars = [c for c in calendars if c['can_create']]
     allowed_ids = get_allowed_calendar_ids()
     if allowed_ids is None:
         return calendars, None
@@ -4081,6 +4141,10 @@ def api_calendar_upcoming():
     all_events = []
 
     for cal in calendars:
+        # A calendar group's events are its members' events, which are
+        # listed under their own calendars already.
+        if cal['is_group']:
+            continue
         events, cal_error = get_calendar_events(cal['entity_id'], now, window_end)
         if cal_error:
             continue  # one misbehaving calendar shouldn't blank out all the others
