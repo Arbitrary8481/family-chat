@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.57.1
+
+### Fixed
+- **You can zoom into images on your phone.** The full-size image viewer had no zoom of its own, and the Home Assistant app turns off pinch-to-zoom for pages by default, so photos couldn't be zoomed at all. The viewer now has its own zoom: pinch to zoom up to 5×, double-tap to zoom in on a spot or back out, and drag to move around a zoomed photo. On a computer, use the mouse wheel or trackpad pinch, double-click, and drag.
+
+### Changed
+- **Tapping the photo itself no longer closes the viewer**, so a tap meant for zooming doesn't close it by accident. Tap the dark area around the photo, the × button, or press Escape on a computer.
+- The × button has a darker background so it stays visible over a zoomed-in photo.
+
 ## 2.57.0
 
 Updates for Home Assistant 2026.11, from its final release notes.

@@ -491,6 +491,7 @@ See [CHANGELOG.md](family-chat/CHANGELOG.md) for detailed version history.
 
 **Recent Highlights:**
 
+- **v2.57.1** — Pinch, double-tap and drag to zoom into photos in the image viewer, including in the Home Assistant app
 - **v2.57.0** — Home Assistant 2026.11 updates: notify entities (Telegram bot, Discord) for notifications, a warning when your notification device is gone, and calendar groups and read-only calendars handled properly
 - **v2.56.3** — Previews for YouTube channel and live links, and a fix for web pages that could slow the server down
 - **v2.56.2** — A reaction on the last message no longer hides behind the message box
