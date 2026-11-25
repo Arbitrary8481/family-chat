@@ -4887,19 +4887,235 @@ function updateReaction(messageId, emoji, user, added) {
     renderMessageReactions(messageId);
 }
 
+// Full-size image viewer with its own zoom: pinch, double-tap/double-
+// click, drag to pan when zoomed, and the mouse wheel. It can't rely on
+// the browser's page zoom: the Home Assistant app turns pinch-zoom off
+// by default, and the viewer is a fixed overlay, so zooming the page
+// wouldn't zoom the image anyway. Everything is a CSS transform on the
+// image (translate, then scale about its center), kept in viewerZoom.
+const VIEWER_MAX_SCALE = 5;
+const VIEWER_DOUBLE_TAP_SCALE = 2.5;
+const VIEWER_TAP_SLOP = 10;       // px a tap may wander and still be a tap
+const VIEWER_DOUBLE_TAP_MS = 300;
+
+const viewerZoom = {
+    scale: 1, x: 0, y: 0,
+    pointers: new Map(),   // pointerId -> {x, y} for fingers/mouse down
+    gesture: null,         // what the current pointers started as
+    moved: false,          // the current gesture went beyond a tap
+    suppressClick: false,  // swallow the click that ends a pan/pinch
+    lastTap: null,         // {time, x, y} of the last tap on the image
+    lastDownOnImage: false,
+};
+
+function viewerEls() {
+    return {
+        viewer: document.getElementById('imageViewer'),
+        img: document.getElementById('viewerImage'),
+    };
+}
+
+// The image's untransformed center on screen. Its layout box doesn't
+// move when transformed, and scaling about the center doesn't move the
+// center, so the transformed rect's center minus the translation is it.
+function viewerImageCenter(img) {
+    const r = img.getBoundingClientRect();
+    return { x: r.left + r.width / 2 - viewerZoom.x, y: r.top + r.height / 2 - viewerZoom.y };
+}
+
+// Keeps a zoomed image covering the screen where it's bigger than the
+// screen, and centered where it's smaller, so it can't be lost off-edge.
+function clampViewerPan(img) {
+    const z = viewerZoom;
+    const maxX = Math.max(0, (img.offsetWidth * z.scale - window.innerWidth) / 2);
+    const maxY = Math.max(0, (img.offsetHeight * z.scale - window.innerHeight) / 2);
+    z.x = Math.min(maxX, Math.max(-maxX, z.x));
+    z.y = Math.min(maxY, Math.max(-maxY, z.y));
+}
+
+function applyViewerTransform(animate) {
+    const { viewer, img } = viewerEls();
+    if (!viewer || !img) return;
+    const z = viewerZoom;
+    if (z.scale <= 1.01) { z.scale = 1; z.x = 0; z.y = 0; }
+    clampViewerPan(img);
+    img.classList.toggle('viewer-animate', !!animate);
+    img.style.transform = `translate(${z.x}px, ${z.y}px) scale(${z.scale})`;
+    viewer.classList.toggle('zoomed', z.scale > 1);
+}
+
+// Zooms to newScale keeping the screen point (fx, fy) over the same
+// spot of the image — the point under the fingers, cursor or tap.
+function zoomViewerAt(newScale, fx, fy, animate) {
+    const { img } = viewerEls();
+    if (!img) return;
+    const z = viewerZoom;
+    const s = Math.min(VIEWER_MAX_SCALE, Math.max(1, newScale));
+    const c = viewerImageCenter(img);
+    const ratio = s / z.scale;
+    z.x = (fx - c.x) - (fx - c.x - z.x) * ratio;
+    z.y = (fy - c.y) - (fy - c.y - z.y) * ratio;
+    z.scale = s;
+    applyViewerTransform(animate);
+}
+
+function resetViewerZoom() {
+    Object.assign(viewerZoom, { scale: 1, x: 0, y: 0, gesture: null, moved: false, lastTap: null });
+    viewerZoom.pointers.clear();
+    applyViewerTransform(false);
+}
+
 function openImageViewer(url) {
-    const viewer = document.getElementById('imageViewer');
-    const img = document.getElementById('viewerImage');
+    const { viewer, img } = viewerEls();
     if (viewer && img) {
         img.src = url;
+        resetViewerZoom();
         viewer.classList.remove('hidden');
     }
 }
 
 function closeImageViewer() {
-    const viewer = document.getElementById('imageViewer');
+    const { viewer } = viewerEls();
     if (viewer) viewer.classList.add('hidden');
+    resetViewerZoom();
 }
+
+function viewerPointerSnapshot() {
+    const pts = [...viewerZoom.pointers.values()];
+    if (pts.length >= 2) {
+        const [a, b] = pts;
+        return {
+            mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+            dist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+        };
+    }
+    // A copy: the gesture keeps this as its starting point, and the
+    // pointer's own entry keeps changing as it moves.
+    return { mid: { x: pts[0].x, y: pts[0].y }, dist: 0 };
+}
+
+// (Re)starts the gesture from wherever the pointers are now — called
+// whenever a finger is added or lifted, so going from two fingers back
+// to one carries on as a pan instead of jumping.
+function startViewerGesture() {
+    const z = viewerZoom;
+    if (z.pointers.size === 0) { z.gesture = null; return; }
+    const snap = viewerPointerSnapshot();
+    z.gesture = {
+        pinch: z.pointers.size >= 2,
+        startMid: snap.mid, startDist: snap.dist,
+        startScale: z.scale, startX: z.x, startY: z.y,
+    };
+}
+
+(function setUpImageViewerZoom() {
+    const { viewer, img } = viewerEls();
+    if (!viewer || !img) return;
+    const z = viewerZoom;
+
+    viewer.addEventListener('pointerdown', (e) => {
+        if (e.target.closest('.viewer-close')) return;
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        if (z.pointers.size === 0) { z.moved = false; z.suppressClick = false; }
+        // Whether it went down on the image is noted now: once the viewer
+        // captures the pointer, pointerup's target is the viewer itself.
+        z.pointers.set(e.pointerId, {
+            x: e.clientX, y: e.clientY, downX: e.clientX, downY: e.clientY,
+            onImage: e.target === img,
+        });
+        try { viewer.setPointerCapture(e.pointerId); } catch (_) { /* not supported */ }
+        z.lastDownOnImage = e.target === img;
+        if (z.pointers.size >= 2) z.moved = true;  // two fingers is never a tap
+        startViewerGesture();
+        e.preventDefault();
+    });
+
+    viewer.addEventListener('pointermove', (e) => {
+        const p = z.pointers.get(e.pointerId);
+        if (!p || !z.gesture) return;
+        p.x = e.clientX; p.y = e.clientY;
+        if (Math.hypot(p.x - p.downX, p.y - p.downY) > VIEWER_TAP_SLOP) z.moved = true;
+        const g = z.gesture;
+        const snap = viewerPointerSnapshot();
+        if (g.pinch && z.pointers.size >= 2) {
+            const s = Math.min(VIEWER_MAX_SCALE, Math.max(1, g.startScale * snap.dist / g.startDist));
+            // Keep the image point that started under the fingers' midpoint
+            // under their midpoint now: zooms and pans in one motion.
+            const c = viewerImageCenter(img);
+            z.x = (snap.mid.x - c.x) - (g.startMid.x - c.x - g.startX) * (s / g.startScale);
+            z.y = (snap.mid.y - c.y) - (g.startMid.y - c.y - g.startY) * (s / g.startScale);
+            z.scale = s;
+            applyViewerTransform(false);
+        } else if (z.scale > 1 && z.moved) {
+            viewer.classList.add('panning');
+            z.x = g.startX + (snap.mid.x - g.startMid.x);
+            z.y = g.startY + (snap.mid.y - g.startMid.y);
+            applyViewerTransform(false);
+        }
+    });
+
+    function endPointer(e) {
+        const p = z.pointers.get(e.pointerId);
+        if (!p) return;
+        z.pointers.delete(e.pointerId);
+        viewer.classList.remove('panning');
+        if (z.moved) z.suppressClick = true;
+
+        // A tap (one pointer, didn't wander) on the image: two in quick
+        // succession toggle zoom. Taps on the dark backdrop close the
+        // viewer through the click handler below, as before.
+        if (e.type === 'pointerup' && !z.moved && z.pointers.size === 0 && p.onImage) {
+            const now = Date.now();
+            const last = z.lastTap;
+            if (last && now - last.time < VIEWER_DOUBLE_TAP_MS &&
+                Math.hypot(e.clientX - last.x, e.clientY - last.y) < VIEWER_TAP_SLOP * 3) {
+                z.lastTap = null;
+                if (z.scale > 1) {
+                    z.scale = 1;
+                    applyViewerTransform(true);
+                } else {
+                    zoomViewerAt(VIEWER_DOUBLE_TAP_SCALE, e.clientX, e.clientY, true);
+                }
+            } else {
+                z.lastTap = { time: now, x: e.clientX, y: e.clientY };
+            }
+        }
+        startViewerGesture();
+    }
+    viewer.addEventListener('pointerup', endPointer);
+    viewer.addEventListener('pointercancel', endPointer);
+
+    viewer.addEventListener('click', (e) => {
+        if (e.target.closest('.viewer-close')) { closeImageViewer(); return; }
+        if (z.suppressClick) { z.suppressClick = false; return; }
+        // Only the backdrop closes it; taps on the image are for zooming.
+        // Checked against where the press started, since pointer capture
+        // can make the click's target the viewer even for a tap on the image.
+        if (e.target === viewer && !z.lastDownOnImage) closeImageViewer();
+    });
+
+    viewer.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        // Trackpad pinches arrive as ctrl+wheel with small deltas, so
+        // they get a stronger factor than a mouse wheel's big notches.
+        const factor = Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015));
+        zoomViewerAt(z.scale * factor, e.clientX, e.clientY, false);
+    }, { passive: false });
+
+    // iOS Safari's own pinch gesture events would otherwise zoom the
+    // page underneath on older versions that ignore touch-action.
+    viewer.addEventListener('gesturestart', (e) => e.preventDefault());
+
+    // A different-sized image after a rotation could leave the pan out
+    // of bounds, so re-clamp.
+    window.addEventListener('resize', () => {
+        if (!viewer.classList.contains('hidden')) applyViewerTransform(false);
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !viewer.classList.contains('hidden')) closeImageViewer();
+    });
+})();
 
 function addToSharedMedia(url) {
     const grid = document.getElementById('sharedMedia');

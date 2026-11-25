@@ -2230,6 +2230,13 @@ body {
     justify-content: center;
     z-index: 2000;
     cursor: zoom-out;
+    /* The viewer does its own pinch/pan/double-tap zoom (see
+       script.js), so the browser mustn't treat those gestures as page
+       zoom or scrolling. The Home Assistant app turns page pinch-zoom
+       off by default anyway, which is why zooming never worked here. */
+    touch-action: none;
+    overflow: hidden;
+    overscroll-behavior: contain;
 }
 
 .image-viewer img {
@@ -2237,15 +2244,38 @@ body {
     max-height: 90%;
     object-fit: contain;
     border-radius: 8px;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    transform-origin: center center;
+    will-change: transform;
+    cursor: zoom-in;
+}
+
+/* Eases double-tap and wheel zooms; turned off while a finger or the
+   mouse is moving the image, so it follows without lag. */
+.image-viewer img.viewer-animate {
+    transition: transform 0.2s ease-out;
+}
+
+.image-viewer.zoomed img {
+    cursor: grab;
+}
+
+.image-viewer.zoomed.panning img {
+    cursor: grabbing;
 }
 
 .viewer-close {
     position: absolute;
     top: 24px;
     right: 24px;
-    background: rgba(255,255,255,0.1);
+    /* Dark enough to stay visible over a zoomed-in light image. */
+    background: rgba(0,0,0,0.55);
     border: none;
     color: white;
+    z-index: 1;
     font-size: 32px;
     width: 48px;
     height: 48px;
